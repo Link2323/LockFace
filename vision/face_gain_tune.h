@@ -469,7 +469,7 @@ inline bool SettleFace(const std::function<bool(float&)>& measure,
                                   std::chrono::steady_clock::now() - start).count())) {
             luma = sample;
             if (cfg.writes) cfg.writes->lastSettledLuma = sample;
-            FACELOGIN_INFO(L"Sensor settle: face luma %.0f after %lld ms (%s)",
+            FACELOGIN_INFO(L"Sensor settle: face luma %.2f after %lld ms (%s)",
                            sample,
                            std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - start).count(),
@@ -598,7 +598,7 @@ inline int StepKnob(const KnobTrio& knob,
         float measured = -1.0f;
         const auto stepStart = std::chrono::steady_clock::now();
         measurementValid = SettleFace(measure, isCancelled, cfg, measured, luma, up ? 1 : -1);
-        FACELOGIN_INFO(L"Tune step: %s %ld→%ld, face luma %.0f→%.0f — %s (%lld ms)",
+        FACELOGIN_INFO(L"Tune step: %s %ld→%ld, face luma %.2f→%.2f — %s (%lld ms)",
                        knob.name, prevVal, cur, luma, measured,
                        measurementValid ? L"settled" : L"unconfirmed",
                        static_cast<long long>(
@@ -725,7 +725,7 @@ inline int TuneFaceExposure(float firstLuma,
             const float beforeTakeover = luma;
             const auto takeoverStart = std::chrono::steady_clock::now();
             measurementValid = detail::SettleFace(measure, isCancelled, cfg, luma);
-            FACELOGIN_INFO(L"AE takeover: exposure pinned at %ld, face luma %.0f→%.0f — "
+            FACELOGIN_INFO(L"AE takeover: exposure pinned at %ld, face luma %.2f→%.2f — "
                            L"%s (%lld ms)",
                            current, beforeTakeover, luma,
                            measurementValid ? L"settled" : L"unconfirmed",
@@ -784,7 +784,7 @@ inline int TuneFaceExposure(float firstLuma,
         const float before = luma;
         if (cfg.recovery) cfg.recovery->Arm(before, -1);
         measurementValid = detail::SettleFace(measure, isCancelled, cfg, luma, before, -1);
-        FACELOGIN_INFO(L"Short exposure preference: %ld→%ld, face %.0f→%.0f (%s)",
+        FACELOGIN_INFO(L"Short exposure preference: %ld→%ld, face %.2f→%.2f (%s)",
                        cur, cur - granule, before, luma,
                        measurementValid ? L"settled" : L"unconfirmed");
         if (!measurementValid || before - luma < cfg.deadKnobRise) break;
@@ -799,22 +799,28 @@ inline int TuneFaceExposure(float firstLuma,
     // what exposure cannot: persisted dark-scene gain keeps a brighter room
     // washed even at the exposure floor (2026-09-13: exposure -2 + gain 54
     // read face luma 178).
-    const bool gainUp = luma < cfg.targetLumaLow;
-    const bool gainDown = luma > cfg.targetLumaHigh;
-    if (measurementValid && (gainUp || gainDown) && gainDeadSteps < 2 &&
-        (!gainUp || gainSteps < cfg.maxSteps) &&
-        detail::KnobReady(knobs.gainRange, knobs.gainSet)) {
+    int gainDownSteps = 0;
+    const auto fineTuneGain = [&] {
+        const bool gainUp = luma < cfg.targetLumaLow;
+        const bool gainDown = luma > cfg.targetLumaHigh;
+        const int available = cfg.maxSteps - (gainUp ? gainSteps : gainDownSteps);
+        if (!measurementValid || !(gainUp || gainDown) || gainDeadSteps >= 2 ||
+            available <= 0 || !detail::KnobReady(knobs.gainRange, knobs.gainSet)) return;
         const detail::KnobTrio gain{
             knobs.gainRange, knobs.gainGet, knobs.gainSet,
             cfg.maxGainBoostFraction, false, LONG_MAX, true, L"gain"};
         wchar_t* seg = gainSeg();
         GainTuneConfig remaining = cfg;
-        if (gainUp) remaining.maxSteps -= gainSteps;
-        steps += detail::StepKnob(gain, gainUp, luma, measure,
-                                  isCancelled, remaining, seg,
-                                  96 - static_cast<size_t>(seg - gainText),
-                                  measurementValid, &gainDeadSteps);
-    }
+        remaining.maxSteps = available;
+        const int applied = detail::StepKnob(gain, gainUp, luma, measure,
+                                             isCancelled, remaining, seg,
+                                             96 - static_cast<size_t>(seg - gainText),
+                                             measurementValid, &gainDeadSteps);
+        if (gainUp) gainSteps += applied;
+        else gainDownSteps += applied;
+        steps += applied;
+    };
+    fineTuneGain();
     // Extreme-dark fallback: the cap plus a maxed (or dead/absent) gain
     // still leave the face under minFaceLuma — the room is darker than
     // in-band can reach. Spend frame rate for photons: one uncapped
@@ -843,10 +849,21 @@ inline int TuneFaceExposure(float firstLuma,
                                   isCancelled, cfg,
                                   expText + wcslen(expText),
                                   96 - wcslen(expText), measurementValid);
+        // A coarse dark fallback can return above the bright limit. The
+        // earlier fine pass saw the dark state, so it could not trim gain
+        // there. Finish that trim now instead of leaving the next pre-count
+        // correction to repeat the same exposure down/up pair. Use only the
+        // remaining gain budget and the original settle/cancellation gate.
+        if (measurementValid && luma > cfg.maxFaceLuma) {
+            FACELOGIN_INFO(L"Post-fallback bright correction: face luma %.2f > %.2f, "
+                           L"gain down budget %d", luma, cfg.maxFaceLuma,
+                           cfg.maxSteps - gainDownSteps);
+            fineTuneGain();
+        }
     }
 
-    FACELOGIN_INFO(L"Face exposure tune: face luma %.0f (%s) → exposure %s, gain %s → "
-                   L"face luma now %.0f (target %.0f–%.0f, %s) — %lld ms",
+    FACELOGIN_INFO(L"Face exposure tune: face luma %.2f (%s) → exposure %s, gain %s → "
+                   L"face luma now %.2f (target %.2f–%.2f, %s) — %lld ms",
                    firstLuma, up ? L"dark" : (shorten ? L"shorten" : L"over-bright"), expText, gainText,
                     luma, cfg.minFaceLuma, cfg.maxFaceLuma,
                     measurementValid ? L"settled" : L"unconfirmed",
@@ -880,10 +897,26 @@ inline int TuneFaceExposure(float firstLuma,
                             const GainTuneConfig& cfg = {}) {
     unsigned long long lastSeq = 0;
     bool haveSeq = false;
-    return TuneFaceExposure(firstLuma, knobs, [&](float& luma) {
-        return detail::GrabMeasure(grab, detector, isCancelled, cameraRotation,
-                                   cfg, lastSeq, haveSeq, luma);
+    unsigned long long firstSeq = 0;
+    unsigned int samples = 0;
+    const int steps = TuneFaceExposure(firstLuma, knobs, [&](float& luma) {
+        const bool measured = detail::GrabMeasure(grab, detector, isCancelled, cameraRotation,
+                                                  cfg, lastSeq, haveSeq, luma);
+        if (measured) {
+            if (samples == 0) firstSeq = lastSeq;
+            ++samples;
+        }
+        return measured;
     }, isCancelled, cfg);
+    if (steps > 0) {
+        const auto state = ReadTuneKnobState(knobs);
+        FACELOGIN_INFO(L"Face tune measurements: %u face samples, seq %llu→%llu; "
+                       L"exposure %ld (known=%d), gain %ld (known=%d), manual=%d",
+                       samples, firstSeq, lastSeq, state.exposure, state.hasExposure,
+                       state.gain, state.hasGain,
+                       state.hasExposureMode ? (state.exposureManual ? 1 : 0) : -1);
+    }
+    return steps;
 }
 
 inline bool ConfirmPendingFaceTune(const SensorKnobs& knobs,
@@ -1218,7 +1251,7 @@ inline int TuneFaceExposure(const SensorKnobs& knobs,
             if (luma < 0.0f) return 0;
             if (luma >= cfg.minFaceLuma && luma <= cfg.maxFaceLuma &&
                 !detail::CanShortenExposure(luma, knobs, cfg)) {
-                FACELOGIN_INFO(L"Face exposure tune: not needed (face luma %.0f)", luma);
+                FACELOGIN_INFO(L"Face exposure tune: not needed (face luma %.2f)", luma);
                 if (cfg.recovery && cfg.recovery->pending)
                     return TuneFaceExposure(luma, knobs, grab, detector, isCancelled,
                                             cameraRotation, cfg);

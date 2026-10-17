@@ -365,10 +365,10 @@ PreCountCorrection AuthPipeline::CorrectExposureBeforeFirstCount(
             (lateLuma < tuneCfg.minFaceLuma || lateLuma > tuneCfg.maxFaceLuma)) {
             --state.lateTuneBudget;
             state.timing.Suspend(std::chrono::steady_clock::now());
-            FACELOGIN_INFO(L"Late exposure correction: face luma %.0f out of band "
-                           L"[%.0f–%.0f] before first counted frame — tuning "
+            FACELOGIN_INFO(L"Late exposure correction: face luma %.2f out of band "
+                           L"[%.2f–%.2f] before first counted frame (seq %llu) — tuning "
                            L"(budget left %d)",
-                           lateLuma, tuneCfg.minFaceLuma, tuneCfg.maxFaceLuma,
+                           lateLuma, tuneCfg.minFaceLuma, tuneCfg.maxFaceLuma, cur.seq,
                            state.lateTuneBudget);
             // The triggering frame is discarded after the tune: the
             // knobs and the camera stream may both have moved. The

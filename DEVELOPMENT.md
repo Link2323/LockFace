@@ -42,6 +42,8 @@
 
 曝光确认中断后的接续复核可先运行 `build/tools/auth_pipeline/Release/AuthPipelineTest.exe --tune-recovery`，覆盖固定场景连续重试及身份/PAD 拒绝、取消、断开、漂移和旧帧；此入口不能替代完整自动测试及真实相机、GUI 和锁屏验收。
 
+曝光粗调过暗后回退、并在首绑前重复纠正的固定场景可运行 `build/tools/auth_pipeline/Release/AuthPipelineTest.exe --bright-fallback`；配合 `FaceGainTuneTest` 验证回退后增益细调及未确认/取消保护。此场景假定增益有效，真实设备无增益或增益无响应时仍须独立测量。
+
 运行期边界以 [`AGENTS.md`](AGENTS.md) 为准：服务是命名管道服务端，Credential Provider 是 LogonUI 内 DLL，Enrollment 是独立 GUI；安装器非常驻且不参与 IPC。
 
 ## 关键文件索引

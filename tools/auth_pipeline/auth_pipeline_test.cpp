@@ -378,6 +378,50 @@ void TestNoFaceDarkRecovery(bool lateEntry = false, bool padPass = true,
 }
 enum class TuneRecoveryScene { Stable, PadFailure, IdentityReject, Cancel, Disconnect, Drift, Frozen };
 
+void TestBrightFallbackFinishesBeforeBinding() {
+    long exposure = -10, gain = 63;
+    std::vector<long> exposureWrites;
+    unsigned long long sequence = 0;
+    unsigned int bindings = 0;
+    g_padScore = 1.0f;
+    const auto result = Run(true,
+        [&](const std::vector<float>&, unsigned int, float, float, float) {
+            ++bindings;
+            Check(exposureWrites.size() == 2 && gain < 63,
+                  "binding starts only after fallback and fine gain correction");
+            return BindingDecision{BindingDecisionKind::Accept, {}};
+        }, [] { return false; }, [] { return false; }, ipc::AUTH_TIMEOUT_SECONDS,
+        [] { return false; }, [&](AuthPipelineCallbacks& callbacks, AuthPipelineConfig&) {
+            auto& knobs = callbacks.sensorKnobs;
+            knobs.exposureRange = [](long& lo, long& hi, long& step) {
+                lo = -11; hi = -1; step = 1; return true;
+            };
+            knobs.exposureGet = [&](long& value) { value = exposure; return true; };
+            knobs.exposureSet = [&](long value) {
+                exposure = value; exposureWrites.push_back(value); return true;
+            };
+            knobs.exposureIsManual = [](bool& manual) { manual = true; return true; };
+            knobs.gainRange = [](long& lo, long& hi, long& step) {
+                lo = 0; hi = 63; step = 1; return true;
+            };
+            knobs.gainGet = [&](long& value) { value = gain; return true; };
+            knobs.gainSet = [&](long value) { gain = value; return true; };
+            callbacks.grabFrame = [&](FrameImage& frame, unsigned long long& seq) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                seq = ++sequence;
+                const auto luma = static_cast<unsigned char>(
+                    (exposure == -11 ? 38.0f : 121.0f) * (1.0f + 0.01f * (gain - 63)));
+                frame = FrameImage(160, 160);
+                for (size_t i = 0; i < frame.size(); ++i) frame[i] = RgbPixel(luma, luma, luma);
+                return true;
+            };
+        });
+    Check(result.outcome == AuthOutcome::Succeeded && bindings == 3,
+          "bright fallback retains all identity and PAD checks");
+    Check(exposureWrites == std::vector<long>({-11, -10}),
+          "preparation and pre-count correction do not repeat the coarse exposure round trip");
+}
+
 void TestInterruptedTuneRecovery(TuneRecoveryScene scene = TuneRecoveryScene::Stable) {
     wchar_t dir[MAX_PATH]{}, path[MAX_PATH]{};
     Check(GetTempPathW(MAX_PATH, dir) && GetTempFileNameW(dir, L"ftr", 0, path),
@@ -597,6 +641,10 @@ void TestWarmupSeeds() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--bright-fallback") == 0) {
+        TestBrightFallbackFinishesBeforeBinding();
+        return g_failures == 0 ? 0 : 1;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--tune-recovery") == 0) {
         TestTuneRecoveries();
         return g_failures == 0 ? 0 : 1;
@@ -605,6 +653,7 @@ int main(int argc, char** argv) {
         TestWarmupSeeds();
         return g_failures == 0 ? 0 : 1;
     }
+    TestBrightFallbackFinishesBeforeBinding();
     TestTuneRecoveries();
     TestWarmupSeeds();
     TestNoFaceDarkRecovery();

@@ -48,6 +48,63 @@ GainTuneConfig Config(const StateFile& file) {
 }
 const auto noCancel = [] { return false; };
 
+void TestBrightFineCorrectionAvoidsExposureRoundTrip() {
+    StateFile file;
+    Sensor sensor;
+    sensor.exposure = -10;
+    sensor.gain = 63;
+    auto knobs = sensor.Knobs();
+    std::vector<long> exposureWrites;
+    knobs.exposureRange = [](long& lo, long& hi, long& step) {
+        lo = -11; hi = -1; step = 1; return true;
+    };
+    knobs.exposureSet = [&](long value) {
+        sensor.exposure = value; exposureWrites.push_back(value); return true;
+    };
+    const auto lumaNow = [&] {
+        return (sensor.exposure == -11 ? 38.0f : 120.4f) *
+               (1.0f + 0.01f * static_cast<float>(sensor.gain - 63));
+    };
+    const auto measure = [&](float& luma) { luma = lumaNow(); return true; };
+    auto cfg = Config(file);
+    for (int round = 0; round < 2; ++round)
+        TuneFaceExposure(lumaNow(), knobs, measure, noCancel, cfg);
+    Check(exposureWrites == std::vector<long>({-11, -10}),
+          "fine gain after exposure fallback prevents a repeated coarse round trip");
+    Check(lumaNow() >= cfg.minFaceLuma && lumaNow() <= cfg.maxFaceLuma,
+          "bright fine correction lands in the face band");
+}
+
+void TestFallbackFineCorrectionMustSettle() {
+    for (bool cancel : {false, true}) {
+        StateFile file;
+        Sensor sensor;
+        sensor.exposure = -10;
+        sensor.gain = 63;
+        auto knobs = sensor.Knobs();
+        knobs.exposureRange = [](long& lo, long& hi, long& step) {
+            lo = -11; hi = -1; step = 1; return true;
+        };
+        auto cfg = Config(file);
+        FaceTuneRecovery recovery;
+        cfg.recovery = &recovery;
+        cfg.maxSteps = 1;
+        Check(SaveTuneKnobState(file.path, knobs), "seed fallback fine correction checkpoint");
+        const auto measure = [&](float& luma) {
+            if (!sensor.gainWrites.empty()) return false;
+            luma = sensor.exposure == -11 ? 38.0f : 120.4f;
+            return true;
+        };
+        const auto cancelled = [&] { return cancel && !sensor.gainWrites.empty(); };
+        Check(TuneFaceExposure(120.4f, knobs, measure, cancelled, cfg) == 3 &&
+                  sensor.gainWrites.size() == 1 && recovery.pending,
+              "post-fallback trim respects gain budget and retains unconfirmed write");
+        TuneKnobState saved;
+        Check(LoadTuneKnobState(file.path, saved) && saved.gain == 63,
+              "lost face or cancellation during final trim never saves unconfirmed gain");
+    }
+}
+
 void TestConsecutiveDarkUnlocks() {
     StateFile file;
     Sensor sensor;
@@ -859,6 +916,8 @@ int main(int argc, char** argv) {
         return failures ? 1 : 0;
     }
     TestResponseGate();
+    TestBrightFineCorrectionAvoidsExposureRoundTrip();
+    TestFallbackFineCorrectionMustSettle();
     TestShortExposurePolicy();
     if(argc==2) ReplayResponseCsv(argv[1]);
     TestWhiteoutEvidence();
