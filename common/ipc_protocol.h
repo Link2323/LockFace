@@ -4,7 +4,7 @@
 #include <chrono>
 #include <string>
 
-// FaceLogin IPC Protocol Definitions
+// LockFace IPC Protocol Definitions
 //
 // Transport: Named pipe \\.\pipe\FaceLoginPipe
 // Framing: UTF-16LE text, null-terminated

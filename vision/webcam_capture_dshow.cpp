@@ -22,7 +22,7 @@ bool WebcamCaptureDS::InitializeCOM() {
     if (s_comRefCount == 0) {
         HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (hr == RPC_E_CHANGED_MODE) {
-            // WebView2 initializes FaceLoginConsole's UI thread as STA. Do
+            // WebView2 initializes LockFaceConsole's UI thread as STA. Do
             // not try to change it to MTA: DirectShow operates correctly in
             // that existing apartment, which remains owned by the UI host.
             FACELOGIN_INFO(L"DS using existing COM apartment");

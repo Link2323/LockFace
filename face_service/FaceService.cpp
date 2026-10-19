@@ -24,7 +24,7 @@
 
 namespace facelogin {
 
-static constexpr wchar_t SERVICE_NAME[] = L"FaceLoginService";
+static constexpr wchar_t SERVICE_NAME[] = L"LockFaceService";
 
 // Decide whether the service should preload models immediately. At the sign-in
 // screen or an already-locked console we preserve cold-logon responsiveness;
@@ -110,7 +110,7 @@ void WINAPI FaceService::ServiceMain(DWORD argc, LPWSTR* argv) {
     service.m_status.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(service.m_hStatus, &service.m_status);
 
-    FACELOGIN_INFO(L"FaceLoginService started");
+    FACELOGIN_INFO(L"LockFaceService started");
 
     service.Run();
     // HandlerEx only requested the stop. Perform joins, job teardown and pipe
@@ -121,7 +121,7 @@ void WINAPI FaceService::ServiceMain(DWORD argc, LPWSTR* argv) {
     service.m_status.dwCurrentState = SERVICE_STOPPED;
     service.m_status.dwWin32ExitCode = NO_ERROR;
     SetServiceStatus(service.m_hStatus, &service.m_status);
-    FACELOGIN_INFO(L"FaceLoginService stopped");
+    FACELOGIN_INFO(L"LockFaceService stopped");
 }
 
 DWORD WINAPI FaceService::HandlerEx(DWORD control, DWORD eventType,
@@ -340,7 +340,7 @@ bool FaceService::Initialize() {
     // below.
     m_config = LoadConfig(m_dataDir);
 
-    FACELOGIN_INFO(L"=== FaceLoginService initializing ===");
+    FACELOGIN_INFO(L"=== LockFaceService initializing ===");
     FACELOGIN_INFO(L"Data dir: %s", m_dataDir.c_str());
     FACELOGIN_INFO(L"Models dir: %s", m_modelsDir.c_str());
 
@@ -886,7 +886,7 @@ bool FaceService::Install(const std::wstring& exePath) {
     }
 
     SC_HANDLE hService = CreateServiceW(
-        hSCManager, SERVICE_NAME, L"FaceLogin Authentication Service",
+        hSCManager, SERVICE_NAME, L"LockFace 人脸认证服务",
         SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
         SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
         exePath.c_str(), nullptr, nullptr, nullptr,
@@ -908,7 +908,7 @@ bool FaceService::Install(const std::wstring& exePath) {
 
     SERVICE_DESCRIPTIONW desc = {};
     desc.lpDescription = const_cast<LPWSTR>(
-        L"FaceLogin \u2014 custom face recognition authentication for Windows login");
+        L"LockFace \u2014 基于人脸识别的 Windows 登录认证服务");
     ChangeServiceConfig2W(hService, SERVICE_CONFIG_DESCRIPTION, &desc);
 
     SERVICE_FAILURE_ACTIONSW fa = {};

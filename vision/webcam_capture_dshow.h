@@ -1,6 +1,6 @@
 #pragma once
 
-// DirectShow webcam capture — used by every FaceLogin camera path.
+// DirectShow webcam capture — used by every LockFace camera path.
 //
 // Filter graph: [Capture] -> [optional converter] -> [SampleGrabber (RGB24)]
 //               -> [Null Renderer]

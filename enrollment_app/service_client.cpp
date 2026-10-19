@@ -110,7 +110,7 @@ static RequestAckOutcome RequestAckRoundTrip(HANDLE hPipe,
     return outcome;
 }
 
-// Notify the FaceLogin service to reload the user database after a write and
+// Notify the LockFace service to reload the user database after a write and
 // keep the connection alive until the service acknowledges RELOAD_OK. The
 // service accepts connections with an event-driven ConnectNamedPipe and waits
 // for CONTROL_ACK before disconnecting, so both directions have an explicit,

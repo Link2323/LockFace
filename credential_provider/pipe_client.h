@@ -9,7 +9,7 @@
 namespace facelogin {
 
 // Named pipe client for the credential provider DLL.
-// Connects to the FaceLogin service to send/receive authentication messages.
+// Connects to the LockFace service to send/receive authentication messages.
 //
 // Runs in LogonUI.exe (SYSTEM context on Secure Desktop).
 // The background read thread waits on an OVERLAPPED ReadFile event and the
@@ -34,7 +34,7 @@ public:
     PipeClient(const PipeClient&) = delete;
     PipeClient& operator=(const PipeClient&) = delete;
 
-    // Connect to the FaceLogin named pipe server.
+    // Connect to the LockFace named pipe server.
     // Retries for up to ~5 seconds (pipe server may not be ready yet).
     // pipeName overrides ipc::PIPE_NAME for dev/test tools only.
     bool Connect(DWORD timeoutMs = 5000, const wchar_t* pipeName = nullptr);

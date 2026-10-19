@@ -7,14 +7,14 @@
 
 // Named mutex to prevent multiple instances
 static constexpr wchar_t SINGLE_INSTANCE_MUTEX[] =
-    L"Global\\FaceLoginService_SingleInstance";
+    L"Global\\LockFaceService_SingleInstance";
 
 // Entry point for the Windows service executable.
 // Usage:
-//   FaceLoginService.exe                    — Run as service (SCM entry)
-//   FaceLoginService.exe -install           — Install the service
-//   FaceLoginService.exe -uninstall         — Uninstall the service
-//   FaceLoginService.exe -auth-worker ...   — private parent-launched worker
+//   LockFaceService.exe                    — Run as service (SCM entry)
+//   LockFaceService.exe -install           — Install the service
+//   LockFaceService.exe -uninstall         — Uninstall the service
+//   LockFaceService.exe -auth-worker ...   — private parent-launched worker
 
 namespace {
 
@@ -119,7 +119,7 @@ int wmain(int argc, wchar_t* argv[]) {
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         CloseHandle(hMutex);
-        wprintf(L"FaceLoginService is already running.\n");
+        wprintf(L"LockFaceService is already running.\n");
         return 0;
     }
     // Mutex held for the lifetime of this process — released on exit.
@@ -129,26 +129,26 @@ int wmain(int argc, wchar_t* argv[]) {
         wchar_t exePath[MAX_PATH];
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         if (facelogin::FaceService::Install(exePath)) {
-            wprintf(L"FaceLoginService installed successfully.\n");
-            wprintf(L"Start with: sc start FaceLoginService\n");
+            wprintf(L"LockFaceService installed successfully.\n");
+            wprintf(L"Start with: sc start LockFaceService\n");
             return 0;
         }
-        wprintf(L"ERROR: Failed to install FaceLoginService.\n");
+        wprintf(L"ERROR: Failed to install LockFaceService.\n");
         return 1;
     }
 
     if (uninstallMode) {
         if (facelogin::FaceService::Uninstall()) {
-            wprintf(L"FaceLoginService uninstalled successfully.\n");
+            wprintf(L"LockFaceService uninstalled successfully.\n");
             return 0;
         }
-        wprintf(L"ERROR: Failed to uninstall FaceLoginService.\n");
+        wprintf(L"ERROR: Failed to uninstall LockFaceService.\n");
         return 1;
     }
 
     // Default: run as a Windows service via SCM
     SERVICE_TABLE_ENTRYW serviceTable[] = {
-        { const_cast<LPWSTR>(L"FaceLoginService"),
+        { const_cast<LPWSTR>(L"LockFaceService"),
           facelogin::FaceService::ServiceMain },
         { nullptr, nullptr }
     };
@@ -157,11 +157,11 @@ int wmain(int argc, wchar_t* argv[]) {
         DWORD err = GetLastError();
         if (err == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
             // Not started by SCM — print usage
-            wprintf(L"FaceLoginService — Custom Face Recognition Login for Windows\n\n");
+            wprintf(L"LockFaceService — Custom Face Recognition Login for Windows\n\n");
             wprintf(L"Usage:\n");
-            wprintf(L"  FaceLoginService.exe                 Run as Windows service\n");
-            wprintf(L"  FaceLoginService.exe -install        Install the service\n");
-            wprintf(L"  FaceLoginService.exe -uninstall      Uninstall the service\n");
+            wprintf(L"  LockFaceService.exe                 Run as Windows service\n");
+            wprintf(L"  LockFaceService.exe -install        Install the service\n");
+            wprintf(L"  LockFaceService.exe -uninstall      Uninstall the service\n");
             return 0;
         }
         return static_cast<int>(err);

@@ -57,13 +57,13 @@ void TestModelFailureMessages() {
         facelogin::ModelLoadFailureMessage(ModelLoadFailure::None);
 
     Check(detector.find(L"检测模型完整性校验失败") == 0 &&
-              detector.find(L"重新安装 FaceLogin") != std::wstring::npos,
+              detector.find(L"重新安装 LockFace") != std::wstring::npos,
           "detector integrity copy names the category and the reinstall action");
     Check(recognizer.find(L"识别模型完整性校验失败") == 0 &&
-              recognizer.find(L"重新安装 FaceLogin") != std::wstring::npos,
+              recognizer.find(L"重新安装 LockFace") != std::wstring::npos,
           "recognizer integrity copy names the category and the reinstall action");
     Check(pad.find(L"活体模型完整性校验失败") == 0 &&
-              pad.find(L"重新安装 FaceLogin") != std::wstring::npos,
+              pad.find(L"重新安装 LockFace") != std::wstring::npos,
           "PAD integrity copy names the category and the reinstall action");
     Check(load.find(L"认证模型加载失败") == 0 && load == none,
           "generic load copy covers Load and unknown reasons");

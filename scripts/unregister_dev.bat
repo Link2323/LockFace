@@ -2,11 +2,11 @@
 setlocal enabledelayedexpansion
 
 REM ============================================================================
-REM FaceLogin - Unregister dev credential provider
+REM LockFace - Unregister dev credential provider
 REM
 REM Cleans up legacy development registrations, so the "Face Login" tile
 REM stops appearing on the lock screen:
-REM   1. Kills any running FaceLoginService (SCM service / worker)
+REM   1. Kills any running LockFaceService (SCM service / worker)
 REM   2. Unregisters the credential provider DLL (regsvr32 /u)
 REM   3. Removes leftover registry registrations (safety net -- regsvr32 /u
 REM      can't run if the DLL is already gone, and reg delete covers that)
@@ -18,7 +18,7 @@ REM window flashes closed again you can read the log to see exactly how far the
 REM script got before dying.
 REM
 REM This is a dev-cleanup script only -- it does NOT touch the formal
-REM installer (FaceLoginSetup.exe). Use the installer for new deployments.
+REM installer (LockFaceSetup.exe). Use the installer for new deployments.
 REM
 REM (NOTE: keep this file pure-ASCII -- cmd.exe on a GBK codepage chokes on
 REM  multi-byte UTF-8 chars like em-dash and the whole script silently mis-parses.)
@@ -39,25 +39,25 @@ if %errorlevel% neq 0 (
 
 echo.
 echo ============================================
-echo   FaceLogin - Unregister Dev Credential Provider
+echo   LockFace - Unregister Dev Credential Provider
 echo ============================================
 echo.
 
-set "DLL=%SystemRoot%\System32\FaceLoginCredentialProvider.dll"
+set "DLL=%SystemRoot%\System32\LockFaceCredentialProvider.dll"
 set "CLSID={B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}"
 set "CPKEY=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\%CLSID%"
 set "CLSIDKEY=HKLM\SOFTWARE\Classes\CLSID\%CLSID%"
 
-REM ---- [1/5] Kill all running FaceLoginService instances ----
-call :note "[1/5] Killing FaceLoginService instances..."
-taskkill /F /IM FaceLoginService.exe >nul 2>&1
+REM ---- [1/5] Kill all running LockFaceService instances ----
+call :note "[1/5] Killing LockFaceService instances..."
+taskkill /F /IM LockFaceService.exe >nul 2>&1
 if !errorlevel! equ 0 (
     call :note "  Killed running instance(s)."
 ) else (
     call :note "  No running instance found (ok)."
 )
-sc stop FaceLoginService >nul 2>&1
-sc delete FaceLoginService >nul 2>&1
+sc stop LockFaceService >nul 2>&1
+sc delete LockFaceService >nul 2>&1
 REM Sleep WITHOUT timeout.exe -- timeout can abort the whole batch when stdin
 REM is redirected. ping never fails, so it can't kill the script.
 ping -n 3 127.0.0.1 >nul

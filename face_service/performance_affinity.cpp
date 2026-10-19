@@ -40,7 +40,7 @@ DWORD_PTR GetPerformanceCoreMask() {
         if (info->Size == 0 || offset + info->Size > buffer.size()) return 0;
         if (info->Relationship == RelationProcessorCore &&
             info->Processor.EfficiencyClass == maxEfficiencyClass) {
-            // FaceLogin is x64 and currently restricted to a single processor
+            // LockFace is x64 and currently restricted to a single processor
             // group. Do not silently form an invalid multi-group affinity mask.
             if (info->Processor.GroupCount != 1) return 0;
             mask |= info->Processor.GroupMask[0].Mask;

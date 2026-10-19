@@ -21,11 +21,11 @@ enum class ModelLoadFailure {
 inline const wchar_t* ModelLoadFailureMessage(ModelLoadFailure failure) {
     switch (failure) {
     case ModelLoadFailure::DetectorIntegrity:
-        return L"检测模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 FaceLogin";
+        return L"检测模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 LockFace";
     case ModelLoadFailure::RecognizerIntegrity:
-        return L"识别模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 FaceLogin";
+        return L"识别模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 LockFace";
     case ModelLoadFailure::PadIntegrity:
-        return L"活体模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 FaceLogin";
+        return L"活体模型完整性校验失败，文件可能被篡改或损坏，请使用密码登录并重新安装 LockFace";
     case ModelLoadFailure::Load:
     case ModelLoadFailure::None:
         break;

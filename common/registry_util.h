@@ -3,7 +3,7 @@
 #include <windows.h>
 #include <string>
 
-// Registry key used for all FaceLogin configuration
+// Registry key used for all LockFace configuration
 const wchar_t FACELOGIN_REG_KEY[] = L"SOFTWARE\\FaceLogin";
 
 // Value names

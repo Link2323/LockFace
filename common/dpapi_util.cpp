@@ -24,7 +24,7 @@ std::vector<uint8_t> DpapiUtil::Protect(const uint8_t* data, size_t size) {
 
     DATA_BLOB blobOut = {};
 
-    if (!CryptProtectData(&blobIn, L"FaceLogin encrypted credential",
+    if (!CryptProtectData(&blobIn, L"LockFace encrypted credential",
                           nullptr, nullptr, nullptr,
                           kFlags, &blobOut)) {
         return {};

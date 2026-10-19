@@ -558,7 +558,7 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
     if (length == 0 || length >= MAX_PATH) return "Unable to locate the console license files.";
     const auto path = std::filesystem::path(exePath).parent_path() / name;
     std::ifstream file(path, std::ios::binary);
-    if (!file) return "License document is unavailable. Reinstall FaceLogin or restore the license files beside FaceLoginConsole.exe.";
+    if (!file) return "License document is unavailable. Reinstall LockFace or restore the license files beside LockFaceConsole.exe.";
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 

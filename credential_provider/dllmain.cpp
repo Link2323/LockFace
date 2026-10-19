@@ -108,12 +108,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             std::wstring logPath = logDir + L"\\log\\credential_provider.log";
             facelogin::Logger::Instance().SetLogFile(logPath);
             facelogin::Logger::Instance().SetMinLevel(facelogin::LogLevel::Info);
-            FACELOGIN_INFO(L"=== FaceLogin Credential Provider DLL loaded ===");
+            FACELOGIN_INFO(L"=== LockFace Credential Provider DLL loaded ===");
         }
         break;
 
     case DLL_PROCESS_DETACH:
-        FACELOGIN_INFO(L"=== FaceLogin Credential Provider DLL unloaded ===");
+        FACELOGIN_INFO(L"=== LockFace Credential Provider DLL unloaded ===");
         break;
     }
 
@@ -148,7 +148,7 @@ STDAPI DllCanUnloadNow() {
 // ============================================================================
 
 static const wchar_t* CLSID_STRING = L"{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}";
-static const wchar_t* PROVIDER_NAME = L"FaceLogin Credential Provider";
+static const wchar_t* PROVIDER_NAME = L"LockFace Credential Provider";
 
 STDAPI DllRegisterServer() {
     // Register under HKEY_CLASSES_ROOT\CLSID\{GUID}

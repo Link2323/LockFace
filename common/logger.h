@@ -91,8 +91,16 @@ private:
 };
 
 // Convenience macros for file/line info
+// __FUNCTIONW__ is namespace-qualified under MSVC ("facelogin::Class::Func");
+// strip the leading namespace so log lines stay readable and product-neutral.
+inline const wchar_t* LogSiteName(const wchar_t* fn) {
+    if (const wchar_t* sep = wcsstr(fn, L"::")) return sep + 2;
+    return fn;
+}
+
 #define FACELOGIN_LOG(level, fmt, ...) \
-    facelogin::Logger::Instance().Log(level, L"[%s:%d] " fmt, __FUNCTIONW__, __LINE__, ##__VA_ARGS__)
+    facelogin::Logger::Instance().Log(level, L"[%s:%d] " fmt, \
+        facelogin::LogSiteName(__FUNCTIONW__), __LINE__, ##__VA_ARGS__)
 
 #define FACELOGIN_DEBUG(fmt, ...) FACELOGIN_LOG(facelogin::LogLevel::Debug, fmt, ##__VA_ARGS__)
 #define FACELOGIN_INFO(fmt, ...)  FACELOGIN_LOG(facelogin::LogLevel::Info, fmt, ##__VA_ARGS__)
