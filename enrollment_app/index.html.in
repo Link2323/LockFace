@@ -363,7 +363,7 @@
     </ul>
     <label class="chk-row consent-check">
       <input type="checkbox" id="consent-agree">
-      我已阅读并同意《FaceLogin 人脸识别隐私说明与知情同意书》
+      我已阅读并同意《LockFace 人脸识别隐私说明与知情同意书》
     </label>
     <p class="dim" id="consent-hint">勾选后才能启动摄像头和人脸采集。</p>
     <button class="btn btn-primary" id="btn-consent-accept" onclick="onConsentAccept()" disabled>
