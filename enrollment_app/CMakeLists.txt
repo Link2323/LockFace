@@ -40,7 +40,7 @@ add_library(facelogin_enrollment_support STATIC
 target_link_libraries(facelogin_enrollment_support PUBLIC facelogin_common)
 target_include_directories(facelogin_enrollment_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-add_executable(FaceLoginConsole
+add_executable(LockFaceConsole
     main.cpp
     WebviewHost.cpp
     EnrollmentWizard.cpp
@@ -51,12 +51,12 @@ add_executable(FaceLoginConsole
     enrollment_accounts.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/resource.rc
 )
-facelogin_add_version_rc(FaceLoginConsole VFT_APP
-    "FaceLogin enrollment console" FaceLoginConsole.exe)
+facelogin_add_version_rc(LockFaceConsole VFT_APP
+    "LockFace enrollment console" LockFaceConsole.exe)
 configure_file(version.h.in ${CMAKE_CURRENT_BINARY_DIR}/version.h @ONLY)
-target_include_directories(FaceLoginConsole PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(LockFaceConsole PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-target_link_libraries(FaceLoginConsole PRIVATE
+target_link_libraries(LockFaceConsole PRIVATE
     facelogin_enrollment_support
     facelogin_camera
     facelogin_inference
@@ -70,7 +70,7 @@ target_link_libraries(FaceLoginConsole PRIVATE
     netapi32
 )
 
-target_include_directories(FaceLoginConsole PRIVATE
+target_include_directories(LockFaceConsole PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/webview2/include
 )
@@ -89,32 +89,32 @@ if(NOT EXISTS "${WEBVIEW2_LOADER_STATIC_LIB}")
 endif()
 
 # Link WebView2 loader static library
-target_link_libraries(FaceLoginConsole PRIVATE
+target_link_libraries(LockFaceConsole PRIVATE
     ${WEBVIEW2_LOADER_STATIC_LIB}
 )
 
 # WebView2Loader is statically linked (WebView2LoaderStatic.lib) — no DLL needed
 
-set_target_properties(FaceLoginConsole PROPERTIES
+set_target_properties(LockFaceConsole PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
 # Embed DPI-aware manifest for sharp text on high-DPI displays
-target_sources(FaceLoginConsole PRIVATE FaceLoginEnrollment.manifest)
+target_sources(LockFaceConsole PRIVATE FaceLoginEnrollment.manifest)
 set_source_files_properties(FaceLoginEnrollment.manifest PROPERTIES
     VS_TOOL_OVERRIDE "manifest"
     HEADER_FILE_ONLY TRUE
 )
 
 # Custom output directory
-set_target_properties(FaceLoginConsole PROPERTIES
+set_target_properties(LockFaceConsole PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources"
 )
 
 # assets/models is the sole source for every runtime ONNX model. Generate the
 # installer's ignored packaging copies whenever the enrollment console builds;
 # exact go:embed patterns make an incomplete model set a hard build failure.
-add_custom_command(TARGET FaceLoginConsole POST_BUILD
+add_custom_command(TARGET LockFaceConsole POST_BUILD
     COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
             "${CMAKE_SOURCE_DIR}/scripts/stage_licenses.ps1"
     COMMAND ${CMAKE_COMMAND} -E make_directory

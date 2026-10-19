@@ -12,7 +12,7 @@ import (
 // the uninstaller after deleting the setup exe.
 const uninstallRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\FaceLogin`
 
-// WriteUninstallEntry registers FaceLogin in Add/Remove Programs.
+// WriteUninstallEntry registers LockFace in Add/Remove Programs.
 // UninstallString points at the slim uninstaller deployed by the installer
 // into the install directory (uninstall.exe is always in uninstall mode, so
 // no arguments are needed). NoModify/NoRepair hide the change/repair buttons
@@ -31,20 +31,20 @@ func WriteUninstallEntry(installDir, version string) error {
 		}
 		return nil
 	}
-	if err := set("DisplayName", "FaceLogin 人脸识别登录"); err != nil {
+	if err := set("DisplayName", "LockFace 人脸识别登录"); err != nil {
 		return err
 	}
 	if err := set("DisplayVersion", version); err != nil {
 		return err
 	}
-	if err := set("Publisher", "FaceLogin"); err != nil {
+	if err := set("Publisher", "LockFace"); err != nil {
 		return err
 	}
 	// Quoted: the path usually contains spaces (C:\Program Files\...).
 	if err := set("UninstallString", `"`+uninstaller+`"`); err != nil {
 		return err
 	}
-	if err := set("DisplayIcon", filepath.Join(installDir, "FaceLoginConsole.exe")); err != nil {
+	if err := set("DisplayIcon", filepath.Join(installDir, "LockFaceConsole.exe")); err != nil {
 		return err
 	}
 	if err := k.SetDWordValue("NoModify", 1); err != nil {

@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="assets/logo.png" alt="FaceLogin Logo" width="200">
+  <img src="assets/logo.png" alt="LockFace Logo" width="200">
 </p>
 
 <p align="center">
-  基于 Windows Credential Provider 框架的摄像头人脸识别解锁系统。<br>
+  **LockFace** — 基于 Windows Credential Provider 框架的摄像头人脸识别解锁系统。<br>
   在锁屏界面集成"人脸登录"磁贴，看一眼即可解锁 — 支持本地账户和微软在线账户 (MSA)。
 </p>
 
@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="DEVELOPMENT.md"><img src="https://img.shields.io/badge/platform-Windows%2010%2B%20x64-blue" alt="Platform"></a>
   <a href="DEVELOPMENT.md"><img src="https://img.shields.io/badge/language-C%2B%2B20%20%7C%20Go-orange" alt="Language"></a>
-  <a href="https://github.com/Link2323/FaceLogin/releases"><img src="https://img.shields.io/badge/version-1.9.0%20(Link2323%20fork)-green" alt="Version"></a>
+  <a href="https://github.com/Link2323/LockFace/releases"><img src="https://img.shields.io/badge/version-1.9.0%20(LockFace)-green" alt="Version"></a>
 </p>
 
 ---
@@ -22,7 +22,7 @@
 
 | 🎯 多角度识别 | 🔒 双重活体检测 | ⚡ ONNX 高性能 |
 |:---:|:---:|:---:|
-| 正面 + 左右 30° 三角度录入<br>**多角度人脸识别** | MiniFAS V2 + V1SE 融合<br>防照片/视频/面具攻击 | SCRFD 检测 + SFace<br>ONNX 全流程本地推理 |
+| 正面 + 左右 30° 三角度录入<br>**多角度人脸识别** | MiniFAS V2 + V1SE 融合<br>防照片/屏幕重放攻击 | SCRFD 检测 + SFace<br>ONNX 全流程本地推理 |
 
 | Windows 原生锁屏集成 | 多账户支持 | 安全存储 |
 |:---:|:---:|:---:|
@@ -30,7 +30,7 @@
 
 </div>
 
-> **关于多角度识别**：本 fork 的核心增强。传统单正脸录入在用户偏头、侧对摄像头时极易误拒；本版本支持录入正面、左转 30°、右转 30° 三个角度，认证时三角度模板协同匹配，**显著扩展了可识别的头部姿态范围**，侧脸场景下的解锁成功率大幅提升。
+> **关于多角度识别**：本项目的核心增强。传统单正脸录入在用户偏头、侧对摄像头时极易误拒；本版本支持录入正面、左转 30°、右转 30° 三个角度，认证时三角度模板协同匹配，**显著扩展了可识别的头部姿态范围**，侧脸场景下的解锁成功率大幅提升。
 
 ---
 
@@ -40,15 +40,15 @@
 flowchart TB
     subgraph LockScreen["Windows 锁屏界面"]
         LogonUI["LogonUI.exe"]
-        CP["FaceLogin<br/>CredentialProvider.dll"]
+        CP["LockFace<br/>CredentialProvider.dll"]
     end
 
     subgraph Service["人脸认证服务"]
-        Svc["FaceLoginService.exe"]
+        Svc["LockFaceService.exe"]
     end
 
     subgraph Enrollment["注册控制台"]
-        Console["FaceLoginConsole.exe"]
+        Console["LockFaceConsole.exe"]
     end
 
     subgraph Storage["数据存储"]
@@ -75,11 +75,11 @@ flowchart TB
 
 ### 第一步：安装
 
-从 [Releases](https://github.com/Link2323/FaceLogin/releases) 下载 `FaceLoginSetup.exe`，运行后选择安装目录（建议保留默认的 `C:\Program Files\` 以获得系统级 ACL 保护），点击 **安装**。
+从 [Releases](https://github.com/Link2323/LockFace/releases) 下载 `LockFaceSetup.exe`，运行后选择安装目录（建议保留默认的 `C:\Program Files\` 以获得系统级 ACL 保护），点击 **安装**。
 
 ### 第二步：录入人脸
 
-以管理员身份运行 `FaceLoginConsole.exe`，按提示完成活体检测，输入密码，点击 **保存并录入**。除正脸外，可继续录入左右 30° 侧脸角度以获得更稳定的识别。
+以管理员身份运行 `LockFaceConsole.exe`，按提示完成活体检测，输入密码，点击 **保存并录入**。除正脸外，可继续录入左右 30° 侧脸角度以获得更稳定的识别。
 
 ### 第三步：解锁
 
@@ -87,7 +87,7 @@ flowchart TB
 
 ### 卸载
 
-运行安装程序切换到 **卸载** 标签页，或手动执行 `regsvr32 /u FaceLoginCredentialProvider.dll`。
+运行安装程序切换到 **卸载** 标签页，或手动执行 `regsvr32 /u LockFaceCredentialProvider.dll`。
 
 ---
 
@@ -143,7 +143,7 @@ flowchart TB
 ## 项目结构
 
 ```
-FaceLogin/
+LockFace/
 ├── common/                 # 公共库（日志、IPC协议、DPAPI、配置）
 ├── vision/                 # 共用相机采集、模型推理与曝光控制
 ├── storage/                # 共用凭据数据库与人脸匹配
@@ -217,9 +217,9 @@ wails build -clean -platform windows/amd64
 
 ## 开源协议
 
-[MIT License](LICENSE) © 2026 美国伐木工&EthanZer0
+[MIT License](LICENSE) © 2026 Link2323 & EthanZer0
 
-MIT 适用于 FaceLogin 自有代码。第三方代码的许可与版权声明见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)；预训练模型遵守 [单独的模型许可](docs/model-licenses.md)。当前四个模型按各发布方的 Apache-2.0 声明分发；SFace 模型目录声明覆盖权重，无需另行申请个别授权。旧 R50 已退出安装载荷，其授权申请只作历史归档。
+MIT 适用于 LockFace 自有代码。LockFace 源自 EthanZer0/FaceLogin（MIT）的独立开发分支，2026 年 10 月起独立维护。第三方代码的许可与版权声明见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)；预训练模型遵守 [单独的模型许可](docs/model-licenses.md)。当前四个模型按各发布方的 Apache-2.0 声明分发；SFace 模型目录声明覆盖权重，无需另行申请个别授权。旧 R50 已退出安装载荷，其授权申请只作历史归档。
 
 安装器和卸载器页脚提供“许可说明”，安装目录同时包含这三份声明文件。
 

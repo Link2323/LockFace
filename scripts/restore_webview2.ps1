@@ -1,7 +1,7 @@
 # Restores the gitignored WebView2 loader static library.
 #
 # enrollment_app/webview2/lib/WebView2LoaderStatic.lib is ignored by git
-# (*.lib) and therefore missing on a fresh clone; FaceLoginConsole then fails
+# (*.lib) and therefore missing on a fresh clone; LockFaceConsole then fails
 # to link with LNK1181. This script is the one canonical restore path —
 # docs/BUILD.md points here instead of repeating the curl/unzip commands.
 #

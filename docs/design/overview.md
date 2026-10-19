@@ -1,16 +1,16 @@
-# FaceLogin 设计概览
+# LockFace 设计概览
 
-FaceLogin 是面向 Windows 的人脸登录应用，通过 Credential Provider 接入登录与锁屏界面。本文只概述组件和安全边界；任务入口见 [`DEVELOPMENT.md`](../../DEVELOPMENT.md)，运行细节见 [`face-service.md`](../modules/face-service.md) 与 [`windows-clients.md`](../modules/windows-clients.md)，构建和运维分别见 [`BUILD.md`](../BUILD.md) 与 [`operations.md`](../operations/operations.md)。
+LockFace 是面向 Windows 的人脸登录应用，通过 Credential Provider 接入登录与锁屏界面。本文只概述组件和安全边界；任务入口见 [`DEVELOPMENT.md`](../../DEVELOPMENT.md)，运行细节见 [`face-service.md`](../modules/face-service.md) 与 [`windows-clients.md`](../modules/windows-clients.md)，构建和运维分别见 [`BUILD.md`](../BUILD.md) 与 [`operations.md`](../operations/operations.md)。
 
 ## 组件
 
 | 组件 | 主要职责 |
 |---|---|
-| `FaceLoginService.exe` | 持有用户数据和公共命名管道；锁屏时预载认证 worker。 |
-| `FaceLoginService.exe -auth-worker` | 按请求打开 DirectShow 摄像头，运行检测、活体和特征提取；完成后退出。 |
-| `FaceLoginCredentialProvider.dll` | 将认证结果交给 Windows 登录流程。 |
-| `FaceLoginConsole.exe` | 管理注册信息和设置，通过命名管道通知服务重载。 |
-| `FaceLoginSetup.exe` | 安装和卸载，不参与运行时认证。 |
+| `LockFaceService.exe` | 持有用户数据和公共命名管道；锁屏时预载认证 worker。 |
+| `LockFaceService.exe -auth-worker` | 按请求打开 DirectShow 摄像头，运行检测、活体和特征提取；完成后退出。 |
+| `LockFaceCredentialProvider.dll` | 将认证结果交给 Windows 登录流程。 |
+| `LockFaceConsole.exe` | 管理注册信息和设置，通过命名管道通知服务重载。 |
+| `LockFaceSetup.exe` | 安装和卸载，不参与运行时认证。 |
 
 核心实现使用 C++20、ONNX Runtime 和 Windows API；安装器使用 Go/Wails 与 Vue，注册界面使用 WebView2。认证模型、数据版本和阈值状态以 [`face-service.md`](../modules/face-service.md) 及 [`sface-trial.md`](../work/in-progress/sface-trial.md) 为准。
 

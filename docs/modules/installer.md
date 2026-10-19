@@ -2,7 +2,7 @@
 
 目录：`installer/FaceLoginSetup/`
 
-`FaceLoginSetup.exe` 使用 Go、Wails v2 和 Vue 3，负责部署与卸载，不参与运行时认证或命名管道通信。构建命令与资源白名单只在 [`BUILD.md`](../BUILD.md) 维护。
+`LockFaceSetup.exe` 使用 Go、Wails v2 和 Vue 3，负责部署与卸载，不参与运行时认证或命名管道通信。构建命令与资源白名单只在 [`BUILD.md`](../BUILD.md) 维护。
 
 ## 代码入口
 

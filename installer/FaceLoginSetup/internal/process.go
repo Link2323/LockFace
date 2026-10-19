@@ -9,7 +9,7 @@ import (
 )
 
 // KillProcessesByName terminates every running process whose image name
-// matches imageName case-insensitively (e.g. "FaceLoginConsole.exe") and
+// matches imageName case-insensitively (e.g. "LockFaceConsole.exe") and
 // waits for each to exit, so the image lock the process holds on its exe is
 // released before the caller overwrites or deletes that file. Returns how
 // many processes were terminated. Processes that cannot be opened (access

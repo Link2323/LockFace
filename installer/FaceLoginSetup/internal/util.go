@@ -110,7 +110,7 @@ func DeleteRegKey() error {
 
 // GetDefaultInstallDir returns the default install path.
 func GetDefaultInstallDir() string {
-	return filepath.Join(os.Getenv("ProgramFiles"), "FaceLogin")
+	return filepath.Join(os.Getenv("ProgramFiles"), "LockFace")
 }
 
 // FileExists checks if a file exists and is not a directory.
@@ -125,8 +125,8 @@ func DirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// IsSafeInstallDir returns true only when path looks like a real FaceLogin
-// install directory, i.e. the directory name contains "FaceLogin" (case-
+// IsSafeInstallDir returns true only when path looks like a real LockFace
+// install directory, i.e. the directory name contains "LockFace" (case-
 // insensitive) and it holds the service executable or another known install
 // marker. Used before an
 // uninstall deletes the tree: without this guard, a corrupted/malicious
@@ -138,16 +138,16 @@ func IsSafeInstallDir(path string) bool {
 		return false
 	}
 
-	// 1) Directory name must contain "FaceLogin" (case-insensitive).
+	// 1) Directory name must contain "LockFace" (case-insensitive).
 	base := strings.ToLower(filepath.Base(filepath.Clean(path)))
-	if !strings.Contains(base, "facelogin") {
+	if !strings.Contains(base, "lockface") {
 		return false
 	}
 
 	// 2) A current install contains the service executable. An older uninstall
 	//    may already have removed that file while leaving a known payload or
 	//    runtime-data directory behind, so accept those explicit markers too.
-	svcPath := filepath.Join(path, "FaceLoginService.exe")
+	svcPath := filepath.Join(path, "LockFaceService.exe")
 	if FileExists(svcPath) {
 		return true
 	}
@@ -157,8 +157,8 @@ func IsSafeInstallDir(path string) bool {
 		}
 	}
 	for _, marker := range []string{
-		"FaceLoginConsole.exe",
-		"FaceLoginCredentialProvider.dll",
+		"LockFaceConsole.exe",
+		"LockFaceCredentialProvider.dll",
 		"PadCalibration.exe",
 		"EmbeddingTest.exe",
 		"CameraLifecycleTest.exe",

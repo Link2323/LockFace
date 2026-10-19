@@ -52,9 +52,9 @@ func main() {
 
 	app := NewApp()
 
-	title := "FaceLogin 安装程序"
+	title := "LockFace 安装程序"
 	if uninstallerBuild {
-		title = "FaceLogin 卸载程序"
+		title = "LockFace 卸载程序"
 	}
 
 	err := wails.Run(&options.App{

@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-const SERVICE_NAME = "FaceLoginService"
+const SERVICE_NAME = "LockFaceService"
 
 // ServiceExists checks if the named service is installed.
 func ServiceExists(name string) (bool, error) {
@@ -36,7 +36,7 @@ func ServiceExists(name string) (bool, error) {
 }
 
 // stopService kills the service process and waits for SCM to observe STOPPED.
-// FaceLoginService does not handle a graceful SCM stop request, so the
+// LockFaceService does not handle a graceful SCM stop request, so the
 // process is terminated directly. The wait closes the race between process
 // exit and the SCM state update.
 func stopService(s *mgr.Service) error {
@@ -44,7 +44,7 @@ func stopService(s *mgr.Service) error {
 		return nil
 	}
 
-	_, _ = RunCommand("taskkill", "/f", "/im", "FaceLoginService.exe")
+	_, _ = RunCommand("taskkill", "/f", "/im", "LockFaceService.exe")
 
 	for i := 0; i < 10; i++ {
 		time.Sleep(500 * time.Millisecond)
@@ -136,8 +136,8 @@ func createService(m *mgr.Mgr, exePath string) (*mgr.Service, error) {
 		mgr.Config{
 			StartType:    mgr.StartAutomatic,
 			ErrorControl: mgr.ErrorNormal,
-			DisplayName:  "FaceLogin 人脸认证服务",
-			Description:  "FaceLogin — 基于人脸识别的 Windows 登录认证服务",
+			DisplayName:  "LockFace 人脸认证服务",
+			Description:  "LockFace — 基于人脸识别的 Windows 登录认证服务",
 			ServiceType:  windows.SERVICE_WIN32_OWN_PROCESS,
 		},
 	)

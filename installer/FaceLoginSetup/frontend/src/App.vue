@@ -254,7 +254,7 @@ onMounted(async () => {
   } catch (err: any) {
     // Keep installDir non-empty so the install button isn't permanently disabled
     // on a marshalling failure — surface the error as the result banner instead.
-    installDir.value = 'C:\\Program Files\\FaceLogin'
+    installDir.value = 'C:\\Program Files\\LockFace'
     resultMessage.value = '初始化失败：' + (err?.message || String(err))
     resultSuccess.value = false
     showResult.value = true
@@ -356,7 +356,7 @@ async function doExit() {
 }
 
 async function doUninstall() {
-  if (!confirm('确定要卸载 FaceLogin 人脸登录吗？\n\n⚠️ 卸载将删除所有程序文件、人脸数据和日志，且不可恢复！')) return
+  if (!confirm('确定要卸载 LockFace 人脸登录吗？\n\n⚠️ 卸载将删除所有程序文件、人脸数据和日志，且不可恢复！')) return
 
   running.value = true
   showResult.value = false
@@ -391,7 +391,7 @@ async function doUninstall() {
   <div class="flex flex-col h-screen bg-white select-none">
     <!-- Header -->
     <div class="px-8 pt-8 pb-2">
-      <h1 class="text-2xl font-light tracking-tight text-gray-900">FaceLogin</h1>
+      <h1 class="text-2xl font-light tracking-tight text-gray-900">LockFace</h1>
       <p class="text-sm text-gray-400 font-light">人脸识别登录系统 · {{ showInstall ? '安装程序' : '卸载程序' }}</p>
     </div>
 
@@ -449,7 +449,7 @@ async function doUninstall() {
             </button>
           </div>
           <p class="mt-2 text-xs" :class="consentAccepted ? 'text-gray-700' : 'text-gray-500'">
-            {{ consentAccepted ? '已阅读并同意《FaceLogin 人脸识别隐私说明与知情同意书》' : '安装前需完整阅读并同意隐私说明' }}
+            {{ consentAccepted ? '已阅读并同意《LockFace 人脸识别隐私说明与知情同意书》' : '安装前需完整阅读并同意隐私说明' }}
           </p>
         </div>
 
@@ -464,14 +464,14 @@ async function doUninstall() {
       <!-- Uninstall mode -->
       <div v-if="!showInstall && !running && !showResult">
         <p class="text-sm text-gray-600 leading-relaxed">
-          卸载将停止并删除 FaceLogin 服务、注销登录组件、删除全部程序文件，
+          卸载将停止并删除 LockFace 服务、注销登录组件、删除全部程序文件，
           以及 <strong>人脸数据和日志（不可恢复）</strong>，并移除安装目录。
         </p>
         <button
           class="mt-6 w-full py-2.5 text-sm font-medium border border-gray-300 text-gray-700
                  hover:bg-gray-100 transition-colors disabled:opacity-40"
           @click="doUninstall"
-        >卸载 FaceLogin</button>
+        >卸载 LockFace</button>
       </div>
 
       <!-- Progress -->
@@ -591,7 +591,7 @@ async function doUninstall() {
               class="mt-0.5 h-4 w-4 flex-shrink-0 accent-gray-900" />
             <span class="text-xs leading-relaxed text-gray-700">
               我已完整阅读并同意
-              <span class="font-medium text-gray-900">《FaceLogin 人脸识别隐私说明与知情同意书》</span>
+              <span class="font-medium text-gray-900">《LockFace 人脸识别隐私说明与知情同意书》</span>
             </span>
           </label>
           <div class="mt-2.5 flex items-center justify-between gap-4">

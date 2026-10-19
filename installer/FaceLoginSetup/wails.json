@@ -1,19 +1,15 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "FaceLoginSetup",
-  "outputfilename": "FaceLoginSetup",
+  "outputfilename": "LockFaceSetup",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "Info": {
-    "productName": "FaceLogin Setup",
+    "productName": "LockFace Setup",
     "productVersion": "1.9.0",
     "fileVersion": "1.9.0",
-    "fileDescription": "FaceLogin installer"
-  },
-  "author": {
-    "name": "Sylvan",
-    "email": "sylvan@localhost"
+    "fileDescription": "LockFace installer"
   }
 }

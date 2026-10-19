@@ -15,7 +15,7 @@ func TestUninstallCleanupRemovesCameraTuneResidue(t *testing.T) {
 			name = "slim"
 		}
 		t.Run(name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "FaceLogin")
+			dir := filepath.Join(t.TempDir(), "LockFace")
 			if err := os.MkdirAll(filepath.Join(dir, "models"), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +47,7 @@ func TestUninstallCleanupRemovesCameraTuneResidue(t *testing.T) {
 }
 
 func TestUpgradePreservesCameraTuneState(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "FaceLogin")
+	dir := filepath.Join(t.TempDir(), "LockFace")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestUpgradePreservesCameraTuneState(t *testing.T) {
 }
 
 func TestFinalizeRecognizesOnlyCameraTuneResidue(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "FaceLogin")
+	dir := filepath.Join(t.TempDir(), "LockFace")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestRemoveAllOrScheduleRebootRemovesWritableTreeImmediately(t *testing.T) {
 }
 
 func TestUninstallCleanupRemovesObservedLegacyResidue(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "FaceLogin")
+	dir := filepath.Join(t.TempDir(), "LockFace")
 	if err := os.MkdirAll(filepath.Join(dir, "models"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestUninstallCleanupRemovesObservedLegacyResidue(t *testing.T) {
 }
 
 func TestRemoveInstalledDirReportsUnknownRootFile(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "FaceLogin")
+	dir := filepath.Join(t.TempDir(), "LockFace")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

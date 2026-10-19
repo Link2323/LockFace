@@ -30,9 +30,9 @@ cmake --build build --config Release --parallel
 
 | 目标 | 输出 |
 |---|---|
-| `FaceLoginService` | `build/face_service/Release/FaceLoginService.exe` |
-| `FaceLoginCredentialProvider` | `build/credential_provider/Release/FaceLoginCredentialProvider.dll` |
-| `FaceLoginConsole` | `installer/FaceLoginSetup/resources/FaceLoginConsole.exe` |
+| `LockFaceService` | `build/face_service/Release/LockFaceService.exe` |
+| `LockFaceCredentialProvider` | `build/credential_provider/Release/LockFaceCredentialProvider.dll` |
+| `LockFaceConsole` | `installer/FaceLoginSetup/resources/LockFaceConsole.exe` |
 
 开发测试从根 CMake 单独构建。无硬件自动化回归使用统一入口：
 
@@ -65,7 +65,7 @@ cmake --build build --config Release --target EnrollmentSupportTest IpcProtocolT
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_installer.ps1
 ```
 
-脚本只负责产品构建与打包：显式串行构建 `FaceLoginService`、`FaceLoginCredentialProvider`、`FaceLoginConsole`，恢复前端依赖、生成许可声明、构建 slim 卸载器、按白名单同步资源和已有模型、压缩载荷并生成完整安装包。前端的 TypeScript 编译属于产品构建。完成后输出路径、大小、SHA-256 和 ProductVersion。
+脚本只负责产品构建与打包：显式串行构建 `LockFaceService`、`LockFaceCredentialProvider`、`LockFaceConsole`，恢复前端依赖、生成许可声明、构建 slim 卸载器、按白名单同步资源和已有模型、压缩载荷并生成完整安装包。前端的 TypeScript 编译属于产品构建。完成后输出路径、大小、SHA-256 和 ProductVersion。
 
 ### 构建环境排障
 
@@ -80,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_installer.ps1
 
 SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 文件，运行哈希与原始上游不同；文件名和载荷数量不变。普通构建复用 `assets/models/` 已验证文件；确需补模型时，下载器验证上游、规范化并验证衍生哈希后才替换。不得把原始上游文件直接放入载荷。
 
-1. 显式串行构建产品目标：`cmake --build build --config Release --target FaceLoginService FaceLoginCredentialProvider FaceLoginConsole --parallel 1`。
+1. 显式串行构建产品目标：`cmake --build build --config Release --target LockFaceService LockFaceCredentialProvider LockFaceConsole --parallel 1`。
 2. 运行 `npm --prefix installer/FaceLoginSetup/frontend ci`，再运行 `scripts/update_third_party_notices.ps1`。
 3. 在 `installer/FaceLoginSetup/` 构建 slim 卸载器：`wails build -tags slim -platform windows/amd64 -ldflags "-s -w"`；将生成的 EXE 复制到 `resources/uninstall.exe`。
 4. 将 Service、Credential Provider 和恰好五个运行时 DLL 复制到 `resources/`。Console 与四个模型已由 CMake 放入该目录。

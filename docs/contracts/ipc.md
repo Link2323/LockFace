@@ -1,12 +1,12 @@
 # IPC 契约
 
-本文定义 FaceLogin 运行期命名管道的兼容边界。实现事实源是 [`common/ipc_protocol.h`](../../common/ipc_protocol.h)、[`common/ipc_protocol.cpp`](../../common/ipc_protocol.cpp)、[`face_service/pipe_server.cpp`](../../face_service/pipe_server.cpp) 和各客户端读写代码；本文用于解释跨文件约束。
+本文定义 LockFace 运行期命名管道的兼容边界。实现事实源是 [`common/ipc_protocol.h`](../../common/ipc_protocol.h)、[`common/ipc_protocol.cpp`](../../common/ipc_protocol.cpp)、[`face_service/pipe_server.cpp`](../../face_service/pipe_server.cpp) 和各客户端读写代码；本文用于解释跨文件约束。
 
 ## 参与方
 
-- 服务端：`FaceLoginService.exe`
-- 认证客户端：LogonUI 中加载的 `FaceLoginCredentialProvider.dll`
-- 管理客户端：`FaceLoginConsole.exe`，当前通过管道发送 `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS`
+- 服务端：`LockFaceService.exe`
+- 认证客户端：LogonUI 中加载的 `LockFaceCredentialProvider.dll`
+- 管理客户端：`LockFaceConsole.exe`，当前通过管道发送 `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS`
 
 安装器不参与运行期 IPC。注册控制台的服务日志页面直接读取 `<DataPath>\log\service.log`，以避开固定消息缓冲区限制。
 

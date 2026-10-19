@@ -1,4 +1,4 @@
-# FaceLogin — Agent Guide
+# LockFace — Agent Guide
 
 本文件只记录跨模块的稳定约束和不易从代码中看出的注意事项。任务入口与验证命令见 [`DEVELOPMENT.md`](DEVELOPMENT.md)；IPC、存储格式、模块生命周期和构建资源清单分别以 [`docs/contracts/`](docs/contracts/)、[`docs/modules/`](docs/modules/) 和 [`docs/BUILD.md`](docs/BUILD.md) 为准。文档与实现冲突时，以代码和实际构建、验证结果为准；修正本次改动涉及的文档事实，并简要记录其他发现的不一致。
 
@@ -15,7 +15,7 @@
 
 ## 项目与目录
 
-FaceLogin 是 Windows x64 桌面应用，核心为 C++20，安装器使用 Go/Wails，安装器前端使用 TypeScript/Vue，注册界面使用内嵌 HTML/CSS/JavaScript。
+LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安装目录、默认路径与服务名已改为 LockFace*。仍保留 FaceLogin 的内部标识：注册表键 `HKLM\SOFTWARE\FaceLogin` 与卸载键、`%ProgramData%\FaceLogin` 回退、`%LOCALAPPDATA%\FaceLogin\WebView2`、管道名 `\\.\pipe\FaceLoginPipe`、Go module 目录 `installer/FaceLoginSetup`、CMake `project(FaceLogin)`、CLSID 与 C++ 源文件名如 `FaceLoginProvider.cpp`）是 Windows x64 桌面应用，核心为 C++20，安装器使用 Go/Wails，安装器前端使用 TypeScript/Vue，注册界面使用内嵌 HTML/CSS/JavaScript。
 
 | 目录 | 用途 |
 |---|---|
@@ -43,7 +43,7 @@ FaceLogin 是 Windows x64 桌面应用，核心为 C++20，安装器使用 Go/Wa
 
 ## 架构边界与易踩坑
 
-- 运行期由 LogonUI、`FaceLoginService.exe` 和 `FaceLoginConsole.exe` 协作。Credential Provider 与注册程序通过本地命名管道和服务通信；服务与认证 worker 使用私有继承管道。协议细节见 [`docs/contracts/ipc.md`](docs/contracts/ipc.md) 和 [`docs/contracts/auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md)。项目不使用网络 API，也不监听 TCP 端口。
+- 运行期由 LogonUI、`LockFaceService.exe` 和 `LockFaceConsole.exe` 协作。Credential Provider 与注册程序通过本地命名管道和服务通信；服务与认证 worker 使用私有继承管道。协议细节见 [`docs/contracts/ipc.md`](docs/contracts/ipc.md) 和 [`docs/contracts/auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md)。项目不使用网络 API，也不监听 TCP 端口。
 - 修改认证计时时联查锁屏端、父服务和 worker 的截止时间；一次认证共用 5 秒预算，模型等待、相机准备及曝光调节都计入，阶段切换不重新计时。起点和超时终态以 IPC 契约为准。
 - 服务父进程管理公共管道和凭据存储；认证 worker 持有推理模型。锁屏预载阶段禁止打开摄像头，认证开始后才激活设备。配置了 `DevicePath` 时必须使用指定设备；找不到设备就失败，不得静默切换到其他摄像头。生命周期细节见 [`docs/modules/face-service.md`](docs/modules/face-service.md)。
 - `DataPath` 默认指向安装目录，ProgramData 仅作回退。服务、Credential Provider 和注册程序的路径校验逻辑不同；修改路径处理时要检查三个组件。入口见 [`DEVELOPMENT.md`](DEVELOPMENT.md#sec-paths)。

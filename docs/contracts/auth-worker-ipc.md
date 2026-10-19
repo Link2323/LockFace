@@ -2,7 +2,7 @@
 
 当前协议版本为 **8**：只接受 128 维 SFace 嵌入。
 
-本文是 `FaceLoginService.exe` 父服务与同一 EXE 的 `-auth-worker` 模式之间的线协议事实源。它不替代 Credential Provider 使用的公共命名管道；公共协议见 [`ipc.md`](ipc.md)。实现位于 `face_service/auth_worker_protocol.*`，父端状态机位于 `auth_worker_client.*`。
+本文是 `LockFaceService.exe` 父服务与同一 EXE 的 `-auth-worker` 模式之间的线协议事实源。它不替代 Credential Provider 使用的公共命名管道；公共协议见 [`ipc.md`](ipc.md)。实现位于 `face_service/auth_worker_protocol.*`，父端状态机位于 `auth_worker_client.*`。
 
 ## 通道与安全边界
 

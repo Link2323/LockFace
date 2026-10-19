@@ -74,7 +74,7 @@ func (a *App) PickDirectory() string {
 	return dir
 }
 
-// IsInstalled checks whether FaceLogin is already installed by verifying
+// IsInstalled checks whether LockFace is already installed by verifying
 // the registry InstallPath exists and the install directory itself exists.
 func (a *App) IsInstalled() bool {
 	installDir := internal.ReadRegString(REGVAL_INSTALL_PATH, "")
@@ -110,11 +110,11 @@ func (a *App) Install(installDir string) map[string]interface{} {
 
 	// Step 1.5: Close programs the update is about to overwrite. A console
 	// left running since the previous install (its finish-page auto-launch)
-	// holds the image lock on FaceLoginConsole.exe and would fail extraction.
-	// Any FaceLoginService.exe alive after the SCM stop is a stray standalone
+	// holds the image lock on LockFaceConsole.exe and would fail extraction.
+	// Any LockFaceService.exe alive after the SCM stop is a stray standalone
 	// or an in-flight auth worker — same lock, same treatment.
 	a.emit(12, "关闭运行中的程序", "running", "")
-	for _, image := range []string{"FaceLoginService.exe", "FaceLoginConsole.exe"} {
+	for _, image := range []string{"LockFaceService.exe", "LockFaceConsole.exe"} {
 		killed, kerr := internal.KillProcessesByName(image)
 		if kerr != nil {
 			a.emit(12, "关闭运行中的程序", "warn", kerr.Error())
@@ -223,7 +223,7 @@ func (a *App) Install(installDir string) map[string]interface{} {
 
 	// Step 6: Register COM DLL
 	a.emit(67, "注册登录组件", "running", "")
-	dllPath := filepath.Join(installDir, "FaceLoginCredentialProvider.dll")
+	dllPath := filepath.Join(installDir, "LockFaceCredentialProvider.dll")
 	if err = internal.RegisterCOMDLL(dllPath); err != nil {
 		a.emit(67, "注册登录组件", "fail", err.Error())
 		return result(false, err.Error())
@@ -232,7 +232,7 @@ func (a *App) Install(installDir string) map[string]interface{} {
 
 	// Step 7: Install service (stops old service first)
 	a.emit(75, "安装并启动认证服务", "running", "")
-	svcPath := filepath.Join(installDir, "FaceLoginService.exe")
+	svcPath := filepath.Join(installDir, "LockFaceService.exe")
 	if err = internal.InstallService(svcPath); err != nil {
 		a.emit(75, "安装并启动认证服务", "fail", err.Error())
 		return result(false, err.Error())
@@ -240,7 +240,7 @@ func (a *App) Install(installDir string) map[string]interface{} {
 	a.emit(90, "安装并启动认证服务", "done", "")
 
 	// Step 8: Register in Add/Remove Programs. uninstall.exe and
-	// FaceLoginConsole.exe are part of the payload (ExtractAll deployed them
+	// LockFaceConsole.exe are part of the payload (ExtractAll deployed them
 	// per the manifest); the entry only points at the uninstaller. Failure
 	// here leaves the install fully functional — warn, don't fail.
 	if entryErr := internal.WriteUninstallEntry(installDir, appVersion); entryErr != nil {
@@ -256,13 +256,13 @@ func (a *App) Install(installDir string) map[string]interface{} {
 // go-webview2 blanks in this process are stripped by StartProgram. Called
 // from the frontend finish page when its "open enrollment wizard" checkbox
 // stays checked. A startup failure is returned, not fatal — the user can
-// still run FaceLoginConsole.exe manually from the install directory.
+// still run LockFaceConsole.exe manually from the install directory.
 func (a *App) LaunchConsole() map[string]interface{} {
 	installDir := internal.ReadRegString(REGVAL_INSTALL_PATH, "")
 	if installDir == "" {
 		installDir = internal.GetDefaultInstallDir()
 	}
-	consolePath := filepath.Join(installDir, "FaceLoginConsole.exe")
+	consolePath := filepath.Join(installDir, "LockFaceConsole.exe")
 	if !internal.FileExists(consolePath) {
 		return result(false, "未找到注册程序："+consolePath)
 	}
@@ -292,7 +292,7 @@ func (a *App) Uninstall() map[string]interface{} {
 	// removal finishes now instead of deferring to the reboot queue. Best
 	// effort only — the reboot-pending path below already covers survivors.
 	a.emit(30, "关闭运行中的程序", "running", "")
-	for _, image := range []string{"FaceLoginService.exe", "FaceLoginConsole.exe"} {
+	for _, image := range []string{"LockFaceService.exe", "LockFaceConsole.exe"} {
 		internal.KillProcessesByName(image)
 	}
 	a.emit(30, "关闭运行中的程序", "done", "")
@@ -310,7 +310,7 @@ func (a *App) Uninstall() map[string]interface{} {
 		}
 	}
 	if installDir != "" {
-		dllPath := filepath.Join(installDir, "FaceLoginCredentialProvider.dll")
+		dllPath := filepath.Join(installDir, "LockFaceCredentialProvider.dll")
 		if err = internal.UnregisterCOMDLL(dllPath); err != nil {
 			cleanupFailed = true
 			a.emit(30, "注销登录组件", "warn", err.Error())

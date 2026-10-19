@@ -56,8 +56,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
                                         L"Local\\FaceLoginConsoleInstance");
     if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-        MessageBoxW(nullptr, L"FaceLogin 控制台已在运行。",
-                    L"FaceLogin Console", MB_OK | MB_ICONWARNING | MB_TOPMOST);
+        MessageBoxW(nullptr, L"LockFace 控制台已在运行。",
+                    L"LockFace Console", MB_OK | MB_ICONWARNING | MB_TOPMOST);
         CloseHandle(instanceMutex);
         return 0;
     }

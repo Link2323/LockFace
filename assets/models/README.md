@@ -1,7 +1,7 @@
 # Canonical runtime model assets
 
 This directory is the sole source for the ONNX files shipped by FaceLogin.
-`FaceLoginConsole` copies this exact set to
+`LockFaceConsole` copies this exact set to
 `installer/FaceLoginSetup/resources/models/` during its Release build; that
 installer directory is generated output and must not become a second source of
 truth.

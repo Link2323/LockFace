@@ -42,7 +42,7 @@ func TestSetDataDirectoryACLLocksOutUsers(t *testing.T) {
 	}
 
 	base := t.TempDir()
-	installDir := filepath.Join(base, "FaceLogin")
+	installDir := filepath.Join(base, "LockFace")
 	dataDir := filepath.Join(installDir, "data")
 	usersDat := filepath.Join(dataDir, "users.dat")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {

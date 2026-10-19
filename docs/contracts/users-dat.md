@@ -1,11 +1,11 @@
 # `users.dat` 持久化契约
 
-本文定义 FaceLogin 凭据数据库 V6 契约。实现事实源是 [`storage/credential_store.h`](../../storage/credential_store.h) 和 [`storage/credential_store.cpp`](../../storage/credential_store.cpp)。不要根据本文单独重写解析器；修改格式时必须同步所有消费者。
+本文定义 LockFace 凭据数据库 V6 契约。实现事实源是 [`storage/credential_store.h`](../../storage/credential_store.h) 和 [`storage/credential_store.cpp`](../../storage/credential_store.cpp)。不要根据本文单独重写解析器；修改格式时必须同步所有消费者。
 
 ## 位置与安全属性
 
 - 文件位置：`<DataPath>\data\users.dat`
-- 默认生产位置：`C:\Program Files\FaceLogin\data\users.dat`
+- 默认生产位置：`C:\Program Files\LockFace\data\users.dat`
 - 密码：DPAPI `CRYPTPROTECT_LOCAL_MACHINE` 加密，绑定本机
 - `data\` 目录 DACL 仅 SYSTEM+Administrators（安装器 `SetDataDirectoryACL`）：机器作用域 DPAPI 密文任何本地账户都能解密，文件 ACL 是非管理员进程读取的唯一屏障；Users 对安装目录其余部分仍保持只读（DLL 加载所需）
 - 文本：Windows `wchar_t[]`，UTF-16LE，不写结尾 `NUL`
@@ -86,8 +86,8 @@
 
 ## 消费者与兼容风险
 
-- `FaceLoginService`：完整加载、匹配、保存
-- `FaceLoginConsole`：注册、追加、删除、重命名、身份更新
+- `LockFaceService`：完整加载、匹配、保存
+- `LockFaceConsole`：注册、追加、删除、重命名、身份更新
 - Credential Provider：只读 header（仅接受 V6/SFC1）判断是否显示磁贴
 
 ## 修改检查表

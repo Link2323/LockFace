@@ -1,4 +1,4 @@
-add_executable(FaceLoginService
+add_executable(LockFaceService
     main.cpp
     FaceService.cpp
     auth_pipeline.cpp
@@ -13,10 +13,10 @@ add_executable(FaceLoginService
     pipe_server.cpp
 )
 
-facelogin_add_version_rc(FaceLoginService VFT_APP
-    "FaceLogin authentication service" FaceLoginService.exe)
+facelogin_add_version_rc(LockFaceService VFT_APP
+    "LockFace authentication service" LockFaceService.exe)
 
-target_link_libraries(FaceLoginService PRIVATE
+target_link_libraries(LockFaceService PRIVATE
     facelogin_camera
     facelogin_inference
     facelogin_credential_store
@@ -24,4 +24,4 @@ target_link_libraries(FaceLoginService PRIVATE
     ole32
 )
 
-target_include_directories(FaceLoginService PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(LockFaceService PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

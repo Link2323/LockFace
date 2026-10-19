@@ -192,7 +192,7 @@ int WebviewHost::Run() {
     int actualWndW = rc.right - rc.left;
     int actualWndH = rc.bottom - rc.top;
 
-    m_hWnd = CreateWindowExW(0, WND_CLASS, L"FaceLogin Console v" FACELOGIN_APP_VERSION_W,
+    m_hWnd = CreateWindowExW(0, WND_CLASS, L"LockFace Console v" FACELOGIN_APP_VERSION_W,
         style,
         (scrW - actualWndW)/2, (scrH - actualWndH)/2, actualWndW, actualWndH,
         nullptr, nullptr, m_hInstance, this);

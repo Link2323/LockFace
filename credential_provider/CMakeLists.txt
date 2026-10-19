@@ -1,4 +1,4 @@
-add_library(FaceLoginCredentialProvider SHARED
+add_library(LockFaceCredentialProvider SHARED
     dllmain.cpp
     FaceLoginProvider.cpp
     FaceLoginCredential.cpp
@@ -7,8 +7,8 @@ add_library(FaceLoginCredentialProvider SHARED
     credential_provider.def
 )
 
-facelogin_add_version_rc(FaceLoginCredentialProvider VFT_DLL
-    "FaceLogin credential provider" FaceLoginCredentialProvider.dll)
+facelogin_add_version_rc(LockFaceCredentialProvider VFT_DLL
+    "LockFace credential provider" LockFaceCredentialProvider.dll)
 
 # IMPORTANT: This DLL is loaded by LogonUI.exe (lock screen) and is registered
 # by the installer via an in-process DllRegisterServer call (see
@@ -24,14 +24,14 @@ facelogin_add_version_rc(FaceLoginCredentialProvider VFT_DLL
 # OBJECT libraries do not recompile their objects per-consumer either. So we
 # absorb the common sources directly via target_sources, letting them compile
 # under this target's /MT setting.
-target_sources(FaceLoginCredentialProvider PRIVATE
+target_sources(LockFaceCredentialProvider PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/ipc_protocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/dpapi_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/logger.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/config_util.cpp
 )
 
-target_link_libraries(FaceLoginCredentialProvider PRIVATE
+target_link_libraries(LockFaceCredentialProvider PRIVATE
     credui
     advapi32
     ole32
@@ -43,22 +43,22 @@ target_link_libraries(FaceLoginCredentialProvider PRIVATE
     crypt32
 )
 
-target_include_directories(FaceLoginCredentialProvider PRIVATE
+target_include_directories(LockFaceCredentialProvider PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
 
 # Static CRT (/MT) — overrides the tree-wide /MD default set in the root
 # CMakeLists; rationale in the comment block above.
-set_target_properties(FaceLoginCredentialProvider PROPERTIES
+set_target_properties(LockFaceCredentialProvider PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
 
 # UTF-8 source encoding for Chinese strings
-target_compile_options(FaceLoginCredentialProvider PRIVATE /utf-8)
+target_compile_options(LockFaceCredentialProvider PRIVATE /utf-8)
 
 # Security hardening for DLL loaded into LogonUI.exe
-target_link_options(FaceLoginCredentialProvider PRIVATE
+target_link_options(LockFaceCredentialProvider PRIVATE
     /DYNAMICBASE
     /NXCOMPAT
     /GUARD:CF
@@ -66,6 +66,6 @@ target_link_options(FaceLoginCredentialProvider PRIVATE
 )
 
 # No console
-set_target_properties(FaceLoginCredentialProvider PROPERTIES
+set_target_properties(LockFaceCredentialProvider PROPERTIES
     WIN32_EXECUTABLE TRUE
 )

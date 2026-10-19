@@ -6,7 +6,7 @@
 
 目录：`credential_provider/`
 
-`FaceLoginCredentialProvider.dll` 被 `LogonUI.exe` 以 COM Apartment 模型加载，实现 `ICredentialProvider` 和 `ICredentialProviderCredential`。它不是独立进程。
+`LockFaceCredentialProvider.dll` 被 `LogonUI.exe` 以 COM Apartment 模型加载，实现 `ICredentialProvider` 和 `ICredentialProviderCredential`。它不是独立进程。
 
 ### 显示与认证
 
@@ -50,7 +50,7 @@ CLSID：`{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}`。
 
 目录：`enrollment_app/`
 
-`FaceLoginConsole.exe` 是管理员运行的 Win32 + WebView2 应用。`EnrollmentWizard` 负责预览、采样和录入流程，协调采样、配置与账户模块调用；`WebviewHost` 把后端通过 `IDispatch` 暴露给嵌入的 `index.html`。
+`LockFaceConsole.exe` 是管理员运行的 Win32 + WebView2 应用。`EnrollmentWizard` 负责预览、采样和录入流程，协调采样、配置与账户模块调用；`WebviewHost` 把后端通过 `IDispatch` 暴露给嵌入的 `index.html`。
 
 注册端的 Windows 会话查询与密码验证集中在 `session_identity.*`；`service_client.*` 管理数据库重载、配置重载和学习状态查询的管道连接、等待及 ACK；`log_viewer.*` 管理四个固定日志来源的读取、旧 UTF-16 兼容和清空。这三者组成 `facelogin_enrollment_support` 静态库，供 Console 与独立测试使用，不依赖 WebView2、相机或推理模型。
 
@@ -102,7 +102,7 @@ CLSID：`{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}`。
 
 ### WebView2 边界
 
-- `index.html.in`、`styles.css` 与 `enrollment_app/` 下的 JS 模块在 CMake 配置时按 `ENROLLMENT_JS_SOURCES` 列表顺序拼接为单个 `index.html`，编译进 `FaceLoginConsole.exe`；修改任一源文件后必须重建 C++ 目标。
+- `index.html.in`、`styles.css` 与 `enrollment_app/` 下的 JS 模块在 CMake 配置时按 `ENROLLMENT_JS_SOURCES` 列表顺序拼接为单个 `index.html`，编译进 `LockFaceConsole.exe`；修改任一源文件后必须重建 C++ 目标。
 - JS 桥接的 dispId 清单以 `WebviewHost.cpp` 为准，不在文档复制。
 - 日志页四个日志来源直接读文件；"学习状态"视图是唯一走公共管道的查询（`LEARNING_STATUS`，响应为单条 JSON 内存快照，服务重启清零），客户端按 10s 节流——公共管道单实例，不得演变成高频轮询。
 - 禁用右键菜单和开发者工具。
@@ -137,7 +137,7 @@ Credential Provider 改动：
 
 Enrollment 改动：
 
-- 构建 `FaceLoginConsole`；服务控制通信和日志改动还需构建、运行 `EnrollmentSupportTest`（独立测试管道、临时日志目录）及 `IpcProtocolTest`
+- 构建 `LockFaceConsole`；服务控制通信和日志改动还需构建、运行 `EnrollmentSupportTest`（独立测试管道、临时日志目录）及 `IpcProtocolTest`
 - 管理员启动与提权
 - 预览/锁屏摄像头释放
 - 三角度采集与一致性拒绝

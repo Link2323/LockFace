@@ -33,7 +33,7 @@ func TestPayloadManifestMatchesRequiredModels(t *testing.T) {
 	// Every shipped executable must be uninstallable by name via the
 	// fallback manifest — a root entry list that lost the uninstaller or the
 	// binaries would strand files on uninstall.
-	for _, must := range []string{"FaceLoginService.exe", "uninstall.exe"} {
+	for _, must := range []string{"LockFaceService.exe", "uninstall.exe"} {
 		if !slices.Contains(root, must) {
 			t.Errorf("payload manifest root missing %s", must)
 		}

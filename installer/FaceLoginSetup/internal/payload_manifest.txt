@@ -1,4 +1,4 @@
-# FaceLogin installer payload allow-list — the single source shared by:
+# LockFace installer payload allow-list — the single source shared by:
 #   * scripts/build_installer.ps1  (staging + prune of resources/)
 #   * installer/FaceLoginSetup/internal (embedded static uninstall manifest,
 #     including the slim uninstaller build which ships no payload)
@@ -8,9 +8,9 @@
 # line here — nothing else. Model entries must also carry size+SHA-256 in
 # extract.go's requiredModels (security manifest); a test pins the two lists
 # together.
-FaceLoginService.exe
-FaceLoginCredentialProvider.dll
-FaceLoginConsole.exe
+LockFaceService.exe
+LockFaceCredentialProvider.dll
+LockFaceConsole.exe
 uninstall.exe
 onnxruntime.dll
 libprotobuf.dll

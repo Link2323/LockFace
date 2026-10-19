@@ -197,9 +197,9 @@ func ExtractResource(embeddedPath, destPath string) error {
 // ExtractAll extracts all embedded resources to destDir, organized:
 //
 //	destDir/
-//	  FaceLoginService.exe
-//	  FaceLoginCredentialProvider.dll
-//	  FaceLoginConsole.exe
+//	  LockFaceService.exe
+//	  LockFaceCredentialProvider.dll
+//	  LockFaceConsole.exe
 //	  five runtime DLLs
 //	  LICENSE.txt, THIRD_PARTY_NOTICES.txt, MODEL_LICENSES.txt, PRIVACY.txt
 //	  models/
@@ -460,7 +460,7 @@ func RemoveInstalledFiles(destDir string, removeUserData bool) (removed int, reb
 	// console EXE (predates the move to %LOCALAPPDATA%). Removed on every
 	// uninstall/upgrade so the install dir can finalize cleanly; harmless if
 	// absent.
-	if wv2Dir := filepath.Join(destDir, "FaceLoginConsole.exe.WebView2"); DirExists(wv2Dir) {
+	if wv2Dir := filepath.Join(destDir, "LockFaceConsole.exe.WebView2"); DirExists(wv2Dir) {
 		pending, removeErr := removeAllOrScheduleReboot(wv2Dir)
 		if pending {
 			rebootRequired = true
@@ -486,7 +486,7 @@ func isKnownRootFile(name string) bool {
 
 // isOwnedSubdir reports whether a subdirectory of the install dir belongs to
 // the product and may be removed on uninstall. models/data/log are deployed
-// by the installer; FaceLoginConsole.exe.WebView2 is created by the WebView2
+// by the installer; LockFaceConsole.exe.WebView2 is created by the WebView2
 // runtime next to the console EXE (its legacy default user-data-folder
 // location) — without recognizing it, the dir looks unknown and the whole
 // install folder is left behind.
@@ -495,13 +495,13 @@ func isOwnedSubdir(name string) bool {
 	case strings.EqualFold(name, "models"),
 		strings.EqualFold(name, "data"),
 		strings.EqualFold(name, "log"),
-		strings.EqualFold(name, "FaceLoginConsole.exe.WebView2"):
+		strings.EqualFold(name, "LockFaceConsole.exe.WebView2"):
 		return true
 	}
 	return false
 }
 
-// RemoveInstalledDir finalizes the verified FaceLogin install directory. Only
+// RemoveInstalledDir finalizes the verified LockFace install directory. Only
 // known root payload/runtime files and installer-owned subdirectories are touched;
 // unknown entries produce an explicit error. If any child is pending deletion,
 // the root directory is also verified as pending so no empty shell is left

@@ -17,12 +17,12 @@ VS_VERSION_INFO VERSIONINFO
      BEGIN
          BLOCK "040904b0"
          BEGIN
-             VALUE "CompanyName",      "FaceLogin"
+             VALUE "CompanyName",      "LockFace"
              VALUE "FileDescription",  "@RC_FILEDESCRIPTION@"
              VALUE "FileVersion",      "@RC_FILEVERSION_STR@"
              VALUE "InternalName",     "@RC_INTERNALNAME@"
              VALUE "OriginalFilename", "@RC_ORIGINALFILENAME@"
-             VALUE "ProductName",      "FaceLogin"
+             VALUE "ProductName",      "LockFace"
              VALUE "ProductVersion",   "@RC_FILEVERSION_STR@"
          END
      END

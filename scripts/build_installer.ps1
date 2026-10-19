@@ -104,7 +104,7 @@ function Step([string]$Title, [scriptblock]$Body) {
 
 Step "1/5 C++ product build (incremental, serial)" {
     & $cmake --build (Join-Path $root "build") --config Release `
-        --target FaceLoginService FaceLoginCredentialProvider FaceLoginConsole --parallel 1
+        --target LockFaceService LockFaceCredentialProvider LockFaceConsole --parallel 1
     if ($LASTEXITCODE -ne 0) { throw "cmake build failed (exit $LASTEXITCODE)" }
 }
 
@@ -126,8 +126,8 @@ Step "2/5 stage binaries + slim uninstaller" {
     # face_service/Release — do NOT glob *.dll (that dir also holds build-tree
     # noise outside the runtime closure).
     $copyPlan = @(
-        @{ Src = Join-Path $faceRel "FaceLoginService.exe"; Dst = "FaceLoginService.exe" },
-        @{ Src = Join-Path $cpRel "FaceLoginCredentialProvider.dll"; Dst = "FaceLoginCredentialProvider.dll" },
+        @{ Src = Join-Path $faceRel "LockFaceService.exe"; Dst = "LockFaceService.exe" },
+        @{ Src = Join-Path $cpRel "LockFaceCredentialProvider.dll"; Dst = "LockFaceCredentialProvider.dll" },
         @{ Src = Join-Path $faceRel "onnxruntime.dll"; Dst = "onnxruntime.dll" },
         @{ Src = Join-Path $faceRel "libprotobuf.dll"; Dst = "libprotobuf.dll" },
         @{ Src = Join-Path $faceRel "libprotobuf-lite.dll"; Dst = "libprotobuf-lite.dll" },
@@ -138,10 +138,10 @@ Step "2/5 stage binaries + slim uninstaller" {
         if (-not (Test-Path $c.Src)) { throw "missing build output: $($c.Src)" }
         Copy-Item $c.Src (Join-Path $res $c.Dst) -Force
     }
-    # FaceLoginConsole.exe outputs directly into resources/ via its CMake
+    # LockFaceConsole.exe outputs directly into resources/ via its CMake
     # RUNTIME_OUTPUT_DIRECTORY — never copied, only checked.
-    if (-not (Test-Path (Join-Path $res "FaceLoginConsole.exe"))) {
-        throw "FaceLoginConsole.exe missing from resources/ (CMake output dir)"
+    if (-not (Test-Path (Join-Path $res "LockFaceConsole.exe"))) {
+        throw "LockFaceConsole.exe missing from resources/ (CMake output dir)"
     }
     # Model staging must work even when an up-to-date Console does not run
     # its POST_BUILD command. Reuse the canonical files; never download here.
@@ -161,7 +161,7 @@ Step "2/5 stage binaries + slim uninstaller" {
         cmd /c "`"$wails`" build -tags slim -platform windows/amd64 -ldflags `"-s -w`" 2>&1"
         if ($LASTEXITCODE -ne 0) { throw "slim wails build failed (exit $LASTEXITCODE)" }
     } finally { Pop-Location }
-    Copy-Item (Join-Path $inst "build/bin/FaceLoginSetup.exe") (Join-Path $res "uninstall.exe") -Force
+    Copy-Item (Join-Path $inst "build/bin/LockFaceSetup.exe") (Join-Path $res "uninstall.exe") -Force
 }
 
 Step "3/5 prune resources/ to payload allow-list" {
@@ -187,7 +187,7 @@ Step "4/5 pack payload.zip" {
     & (Join-Path $PSScriptRoot "make_payload.ps1") -ResourcesDir $res -Out (Join-Path $inst "payload.zip")
 }
 
-$setupExe = Join-Path $inst "build/bin/FaceLoginSetup.exe"
+$setupExe = Join-Path $inst "build/bin/LockFaceSetup.exe"
 Step "5/5 wails build (full)" {
     Push-Location $inst
     try {
@@ -195,7 +195,7 @@ Step "5/5 wails build (full)" {
         if ($LASTEXITCODE -ne 0) { throw "full wails build failed (exit $LASTEXITCODE)" }
     } finally { Pop-Location }
     if (-not (Test-Path -LiteralPath $setupExe) -or (Get-Item $setupExe).LastWriteTime -lt $scriptStart) {
-        throw "FaceLoginSetup.exe is older than this script's start time - wails produced a stale no-op build"
+        throw "LockFaceSetup.exe is older than this script's start time - wails produced a stale no-op build"
     }
     # Preserve accompanying legal material when publishing the build directory.
     foreach ($name in @("LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "MODEL_LICENSES.txt", "PRIVACY.txt")) {
