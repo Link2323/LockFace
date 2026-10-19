@@ -51,6 +51,8 @@ struct Options {
     int warmupFrames = 10;
     int attemptSize = 5;
     int maxSeconds = 180;
+    int captureWidth = 1280;
+    int captureHeight = 720;
     int cameraRotation = 0;
     bool rotationExplicit = false;
     bool cameraExplicit = false;
@@ -67,6 +69,7 @@ void PrintUsage() {
         << L"      [--data-dir <FaceLogin-data-dir>] [--models <models-dir>]\n"
         << L"      [--pad-models <MiniFASNet-model-dir>]\n"
         << L"      [--output <csv>] [--count 50]\n"
+        << L"      [--width 1280] [--height 720] (requested capture size)\n"
         << L"      [--attempt-size 5] [--warmup 10] [--max-seconds 180]\n"
         << L"      [--camera-device <symbolic-link>] [--rotation <0|90|180|270>]\n\n"
         << L"      [--validate-models-only]\n\n"
@@ -124,6 +127,12 @@ bool ParseArgs(int argc, wchar_t* argv[], Options& options) {
         } else if (arg == L"--camera-device") {
             auto v = read(); if (!v) return false; options.cameraDevice = *v;
             options.cameraExplicit = true;
+        } else if (arg == L"--width") {
+            auto v = read();
+            if (!v || !ParsePositiveInt(*v, options.captureWidth) || options.captureWidth > 8192) return false;
+        } else if (arg == L"--height") {
+            auto v = read();
+            if (!v || !ParsePositiveInt(*v, options.captureHeight) || options.captureHeight > 8192) return false;
         } else if (arg == L"--count") {
             auto v = read(); if (!v || !ParsePositiveInt(*v, options.count)) return false;
         } else if (arg == L"--warmup") {
@@ -626,7 +635,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     WebcamCaptureDS camera;
     const auto initializeCamera = [&]() {
-        return camera.Initialize(1280, 720, options.cameraDevice);
+        return camera.Initialize(options.captureWidth, options.captureHeight, options.cameraDevice);
     };
     const auto grabFrame = [&](FrameImage& output) {
         return camera.GrabFrame(output);

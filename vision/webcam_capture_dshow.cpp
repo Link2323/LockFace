@@ -11,20 +11,6 @@ namespace facelogin {
 
 using Microsoft::WRL::ComPtr;
 
-namespace {
-LONGLONG CaptureTicks() {
-    LARGE_INTEGER ticks{};
-    QueryPerformanceCounter(&ticks);
-    return ticks.QuadPart;
-}
-
-double CaptureMilliseconds(LONGLONG start, LONGLONG end) {
-    LARGE_INTEGER frequency{};
-    QueryPerformanceFrequency(&frequency);
-    return 1000.0 * static_cast<double>(end - start) / frequency.QuadPart;
-}
-} // namespace
-
 // ============================================================================
 // Static COM helpers
 // ============================================================================
@@ -106,9 +92,7 @@ STDMETHODIMP WebcamCaptureDS::GrabberCB::BufferCB(double, BYTE* buffer, long len
     if (!buffer || len <= 0)
         return S_OK;
 
-    const auto callbackAt = CaptureTicks();
     EnterCriticalSection(&m_parent->m_frameCs);
-    const bool firstCallback = m_parent->m_firstCallbackTicks == 0;
 
     if (m_parent->m_frameSize < len) {
         delete[] m_parent->m_frameBuffer;
@@ -123,10 +107,6 @@ STDMETHODIMP WebcamCaptureDS::GrabberCB::BufferCB(double, BYTE* buffer, long len
     memcpy(m_parent->m_frameBuffer, buffer, len);
     m_parent->m_frameReady = true;
     ++m_parent->m_frameSeq;
-    if (firstCallback) {
-        m_parent->m_firstCallbackTicks = callbackAt;
-        m_parent->m_firstBufferReadyTicks = CaptureTicks();
-    }
 
     LeaveCriticalSection(&m_parent->m_frameCs);
     return S_OK;
@@ -398,12 +378,46 @@ bool WebcamCaptureDS::BuildSkeleton() {
         FACELOGIN_DEBUG(L"DS: optional AVI Decompressor unavailable: 0x%08X", hr);
     }
 
+    // Software-only candidates: do not bind or query the camera during preload.
+    hr = CoCreateInstance(CLSID_MjpegDec, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_PPV_ARGS(&m_pMjpegDecoder));
+    if (SUCCEEDED(hr)) {
+        hr = m_pGraph->AddFilter(m_pMjpegDecoder.Get(), L"MJPEG Decompressor");
+        if (FAILED(hr)) m_pMjpegDecoder.Reset();
+    }
+    if (FAILED(hr)) {
+        FACELOGIN_DEBUG(L"DS: optional MJPEG Decompressor unavailable: 0x%08X", hr);
+    }
+
     return true;
 }
 
 bool WebcamCaptureDS::ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn,
-                                      bool preferDecoder) {
+                                      const GUID& captureSubtype) {
     m_directDecoder = false;
+    m_directMjpeg = false;
+    bool preferDecoder = captureSubtype == MEDIASUBTYPE_YUY2;
+    bool useMjpeg = false;
+    if (captureSubtype == MEDIASUBTYPE_MJPG && m_pMjpegDecoder) {
+        if (m_pDecoder) {
+            const HRESULT hr = m_pGraph->RemoveFilter(m_pDecoder.Get());
+            if (FAILED(hr)) {
+                FACELOGIN_ERROR(L"DS unused AVI decoder RemoveFilter failed: 0x%08X", hr);
+                return false;
+            }
+            m_pDecoder.Reset();
+        }
+        m_pDecoder = std::move(m_pMjpegDecoder);
+        preferDecoder = useMjpeg = true;
+    }
+    if (m_pMjpegDecoder) {
+        const HRESULT hr = m_pGraph->RemoveFilter(m_pMjpegDecoder.Get());
+        if (FAILED(hr)) {
+            FACELOGIN_ERROR(L"DS unused MJPEG decoder RemoveFilter failed: 0x%08X", hr);
+            return false;
+        }
+        m_pMjpegDecoder.Reset();
+    }
     if (m_pDecoder) {
         ComPtr<IPin> decoderIn;
         ComPtr<IPin> decoderOut;
@@ -417,6 +431,7 @@ bool WebcamCaptureDS::ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn,
             }
             if (SUCCEEDED(directHr)) {
                 m_directDecoder = true;
+                m_directMjpeg = useMjpeg;
                 return true;
             }
         }
@@ -441,7 +456,7 @@ bool WebcamCaptureDS::ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn,
         m_pDecoder.Reset();
         if (!disconnected) return false;
         if (preferDecoder) {
-            FACELOGIN_DEBUG(L"DS: direct AVI connection unavailable: 0x%08X; "
+            FACELOGIN_DEBUG(L"DS: direct decoder connection unavailable: 0x%08X; "
                             L"using Intelligent Connect", directHr);
         }
     }
@@ -458,7 +473,7 @@ bool WebcamCaptureDS::ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn,
 // manually connect  Capture → SampleGrabber → Null Renderer,  and query
 // IMediaControl. Data only flows once the caller Run()s the graph.
 bool WebcamCaptureDS::AttachCapture(IBaseFilter* pCapture, int width, int height) {
-    bool preferDecoder = false;
+    GUID captureSubtype = GUID_NULL;
     HRESULT hr = m_pGraph->AddFilter(pCapture, L"Video Capture");
     if (FAILED(hr)) {
         FACELOGIN_ERROR(L"DS AddFilter(capture) failed: 0x%08X", hr);
@@ -475,9 +490,8 @@ bool WebcamCaptureDS::AttachCapture(IBaseFilter* pCapture, int width, int height
                 AM_MEDIA_TYPE* pmt = nullptr;
                 hr = config->GetFormat(&pmt);
                 if (SUCCEEDED(hr) && pmt) {
-                    // Limit the shortcut to the native format measured in
-                    // the A/B. RGB/MJPEG and unknown formats keep legacy wiring.
-                    preferDecoder = pmt->subtype == MEDIASUBTYPE_YUY2;
+                    // Use direct software decoders only for native YUY2/MJPG.
+                    captureSubtype = pmt->subtype;
                     if (pmt->formattype == FORMAT_VideoInfo) {
                         auto* pVih = (VIDEOINFOHEADER*)pmt->pbFormat;
                         pVih->bmiHeader.biWidth  = width;
@@ -528,7 +542,7 @@ bool WebcamCaptureDS::AttachCapture(IBaseFilter* pCapture, int width, int height
         }
 
         // Connect capture → grabber
-        if (!ConnectCapture(captureOut.Get(), grabberIn.Get(), preferDecoder)) {
+        if (!ConnectCapture(captureOut.Get(), grabberIn.Get(), captureSubtype)) {
             return false;
         }
 
@@ -586,11 +600,13 @@ void WebcamCaptureDS::DiscardPreload() {
     m_pNullRenderer.Reset();
     m_pCapture.Reset();
     m_pDecoder.Reset();
+    m_pMjpegDecoder.Reset();
     m_pGraph.Reset();
     m_pMoniker.Reset();
     m_preloadDevicePath.clear();
     m_preloadValid = false;
     m_directDecoder = false;
+    m_directMjpeg = false;
 }
 
 bool WebcamCaptureDS::Initialize(int preferredWidth, int preferredHeight,
@@ -646,18 +662,7 @@ bool WebcamCaptureDS::Initialize(int preferredWidth, int preferredHeight,
         return false;
     }
 
-    EnterCriticalSection(&m_frameCs);
-    m_firstCallbackTicks = 0;
-    m_firstBufferReadyTicks = 0;
-    m_runReturnedTicks = 0;
-    m_startupTimingLogged = false;
-    m_runStartedTicks = CaptureTicks();
-    LeaveCriticalSection(&m_frameCs);
     HRESULT hr = m_pControl->Run();
-    const auto runReturnedAt = CaptureTicks();
-    EnterCriticalSection(&m_frameCs);
-    m_runReturnedTicks = runReturnedAt;
-    LeaveCriticalSection(&m_frameCs);
     if (FAILED(hr)) {
         FACELOGIN_ERROR(L"DS IMediaControl::Run failed: 0x%08X", hr);
         Shutdown();
@@ -668,7 +673,7 @@ bool WebcamCaptureDS::Initialize(int preferredWidth, int preferredHeight,
     FACELOGIN_INFO(L"DirectShow webcam initialized: %dx%d RGB24%s%s",
                    m_width, m_height,
                    m_preloadValid ? L" (preloaded skeleton)" : L"",
-                   m_directDecoder ? L" (AVI direct)" : L" (Intelligent Connect)");
+                   m_directDecoder ? (m_directMjpeg ? L" (MJPEG direct)" : L" (AVI direct)") : L" (Intelligent Connect)");
     return true;
 }
 
@@ -686,7 +691,6 @@ void WebcamCaptureDS::Pause() {
 bool WebcamCaptureDS::GrabFrame(FrameImage& outFrame, unsigned long long* frameSequence) {
     if (!m_initialized) return false;
 
-    const auto grabAt = CaptureTicks();
     EnterCriticalSection(&m_frameCs);
 
     if (!m_frameReady || !m_frameBuffer || m_frameSize == 0) {
@@ -694,7 +698,6 @@ bool WebcamCaptureDS::GrabFrame(FrameImage& outFrame, unsigned long long* frameS
         return false;
     }
 
-    const auto copyStartedAt = CaptureTicks();
     long stride = m_width * 3;
     outFrame.set_size(m_height, m_width);
 
@@ -721,25 +724,7 @@ bool WebcamCaptureDS::GrabFrame(FrameImage& outFrame, unsigned long long* frameS
 
     if (frameSequence) *frameSequence = m_frameSeq;
 
-    const bool logStartup = !m_startupTimingLogged && m_firstBufferReadyTicks != 0;
-    const auto copiedAt = logStartup ? CaptureTicks() : 0;
-    const auto runStartedAt = m_runStartedTicks;
-    const auto runReturnedAt = m_runReturnedTicks;
-    const auto callbackAt = m_firstCallbackTicks;
-    const auto readyAt = m_firstBufferReadyTicks;
-    if (logStartup) m_startupTimingLogged = true;
     LeaveCriticalSection(&m_frameCs);
-    if (logStartup) {
-        FACELOGIN_INFO(L"DirectShow first frame timing: run_call=%.2f ms, "
-                       L"run_to_callback=%.2f ms, callback_copy=%.2f ms, "
-                       L"ready_to_grab=%.2f ms, grab_lock_wait=%.2f ms, grab_copy=%.2f ms",
-                       CaptureMilliseconds(runStartedAt, runReturnedAt),
-                       CaptureMilliseconds(runStartedAt, callbackAt),
-                       CaptureMilliseconds(callbackAt, readyAt),
-                       CaptureMilliseconds(readyAt, copyStartedAt),
-                       CaptureMilliseconds(grabAt, copyStartedAt),
-                       CaptureMilliseconds(copyStartedAt, copiedAt));
-    }
     return true;
 }
 
@@ -837,11 +822,13 @@ void WebcamCaptureDS::Shutdown() {
     m_pNullRenderer.Reset();
     m_pCapture.Reset();
     m_pDecoder.Reset();
+    m_pMjpegDecoder.Reset();
     m_pGraph.Reset();
     m_pMoniker.Reset();
     m_preloadDevicePath.clear();
     m_preloadValid = false;
     m_directDecoder = false;
+    m_directMjpeg = false;
 
     ShutdownCOM();
 

@@ -1,9 +1,9 @@
 # PAD threshold calibration
 
 `PadCalibration` records the same production PAD score used by FaceLogin:
-MiniFASNetV2 (2.7x crop) and MiniFASNetV1SE (4.0x crop), evaluated sequentially
-and fused with a 50/50 arithmetic mean. It also records each model's score for
-diagnostics. The tool does not make an authentication decision; it appends raw
+MiniFASNetV2 (2.7x crop) and MiniFASNetV1SE (4.0x crop), fused with a 50/50
+arithmetic mean. The production predictor runs the models concurrently; the
+tool also evaluates them separately to record each model's diagnostic score. The tool does not make an authentication decision; it appends raw
 observations to CSV for offline analysis.
 
 ## Build
@@ -64,8 +64,9 @@ python scripts\analyze_pad_calibration.py $csv --score-column minifas_ensemble_s
 The analyzer rejects a threshold unless both frame-level and complete
 5/5-window results satisfy the APCER target (default 0%) and BPCER ceiling
 (default 5%). Among those operating points it reports the strictest threshold.
-Threshold search covers `[0,1]` by default. The deployed operating point is
-`0.281`, and production requires all 5 of 5 frames to meet it.
+Threshold search covers `[0,1]` by default. The default operating point is
+`0.281`; production requires all 3 of 3 frames in fast mode or 5 of 5 in normal
+mode to meet the configured threshold. Match `--attempt-size` to the mode.
 
 Five-frame groups cut from one continuous capture are correlated decision
 windows, not independent presentations, so their Wilson intervals must not be
@@ -96,3 +97,7 @@ the lock-screen service, so its captures are directly representative.
 
 The CSV contains biometric-derived scores and metadata. Keep it local, restrict
 access, and delete it when calibration is complete.
+
+## Pose rejection diagnosis
+
+Use `--width 640 --height 480 --attempt-size 3` to request the current lock-screen capture size and fast-mode grouping; the default remains 1280x720 and five-frame groups. Verify the actual `frame_width`/`frame_height` columns. Capture separate `--condition front` and `--condition failing_pose` sessions under unchanged lighting, position and camera settings. CSV stores per-model scores, not images. This tool does not run the service exposure replay/tuning, identity checks or full authentication timing; it isolates image-to-PAD behavior and cannot replace lock-screen acceptance. Do not use pose-only live samples to lower the production threshold.

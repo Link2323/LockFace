@@ -71,9 +71,9 @@ SFace 正式运行导出已移除 174 个 initializer graph inputs，保留权�
 
 所有运行期相机路径使用 DirectShow。锁屏预载只枚举设备并准备图骨架，不激活设备；设备仅在认证请求或用户启动预览后激活。worker 在 MTA，Enrollment 预览在 UI STA；DirectShow COM 初始化和释放必须留在同一线程。改动相机生命周期时要覆盖 Session 0 与桌面预览。
 
-图骨架可预载设备无关的软件 AVI Decompressor。激活后，已读取的当前输入类型为 YUY2 时优先直接连接 capture → AVI Decompressor → RGB24 SampleGrabber；转换器不可用、输入为其他类型或直接连接失败时，删除可选滤镜并使用原 Intelligent Connect。直接连接失败须先断开两段连接的双方；清理失败则初始化失败，不在残留连接上重试，也不切换设备。`DirectShow webcam initialized` 日志用 `(AVI direct)` 或 `(Intelligent Connect)` 标识实际路径。预载不绑定设备、不连接相机引脚或启动采集。
+图骨架可预载设备无关的软件 AVI Decompressor 和 MJPEG Decompressor。激活后按已读取的当前输入类型选择：YUY2 优先直接连接 capture → AVI Decompressor → RGB24 SampleGrabber，MJPG 优先使用系统 MJPEG Decompressor 直接连接；未选中的转换器在 Run 前移除。转换器不可用、其他输入类型或直接连接失败时删除可选滤镜并使用原 Intelligent Connect。回退先断开两段连接的双方，清理失败则初始化失败，不切换设备。预载不绑定设备、不连接相机引脚或启动采集。初始化日志以 `(AVI direct)`、`(MJPEG direct)` 或 `(Intelligent Connect)` 标记实际路径。2026-10-19 重新安装后 16 轮锁屏均使用 MJPEG direct 并通过；此前回退、掉线与活体拒绝的相关性尚未完成因果验证，详见 [调查记录](../work/in-progress/camera-startup-investigation.md)。
 
-`Auth pipeline first valid frame ... after camera ready` 的实际计时起点是 `AuthPipeline::Run` 内的 `pipelineStart`，终点是首次成功 `grabFrame` 返回；它包含前置传感器准备、轮询和 RGB 拷贝，不直接测量 `Run()` 返回到流线程首回调。当前 warmup 仍用 10 ms 轮询。桌面首帧复审发现事件取帧候选，用户放弃其约 5–6 ms 收益；MF 桌面首样本成绩不足以推翻其历史完整 Session 0 回归，继续保留 DirectShow，见 [首帧复审](../work/completed/sface-performance.md#first-frame-review)。后续桌面调查发现预载同一软件转换器并直接连接可使初始化约省 21–23 ms；用户同意试用后已实施上述兼容回退，并确认安装后的 4 次 Session 0 锁屏均使用直接连接且成功。其初始化中位数 164.2 ms，完整解锁 648.5 ms；与早先小批次比较不是受控 A/B，长期收益仍待验证，见 [试用实现及锁屏记录](../work/completed/sface-performance.md#camera-direct-trial)。
+`Auth pipeline first valid frame ... after camera ready` 的实际计时起点是 `AuthPipeline::Run` 内的 `pipelineStart`，终点是首次成功 `grabFrame` 返回；它包含前置传感器准备、轮询和 RGB 拷贝，不直接测量 `Run()` 返回到流线程首回调。当前 warmup 仍用 10 ms 轮询。桌面首帧复审发现事件取帧候选，用户放弃其约 5–6 ms 收益；MF 桌面首样本成绩不足以推翻其历史完整 Session 0 回归，继续保留 DirectShow，见 [首帧复审](../work/completed/sface-performance.md#first-frame-review)。此前 YUY2/AVI 路径的桌面调查发现预载同一软件转换器并直接连接可使初始化约省 21–23 ms；用户同意试用后实施兼容回退，并确认安装后的 4 次 Session 0 锁屏均使用直接连接且成功。其初始化中位数 164.2 ms，完整解锁 648.5 ms；与早先小批次比较不是受控 A/B，长期收益仍待验证，见 [试用实现及锁屏记录](../work/completed/sface-performance.md#camera-direct-trial)。该历史验收不能替代本次 MJPG 扩展的安装后锁屏验收。
 
 | 模型 | 输入/输出 | 用途 |
 |---|---|---|
@@ -85,7 +85,7 @@ worker 在创建 Session 前校验四个模型的 SHA-256；C++ 哈希见 `commo
 
 worker 的模型状态为 `Unloaded → Loading → Ready/Failed`。加载、释放由生命周期线程串行处理；配置重载会替换锁屏 worker，并在新 worker 就绪后确认。服务与 worker 分别写 `service.log`、`auth_worker.log`；排障步骤见 [`运维手册`](../operations/operations.md)。
 
-`DirectShow first frame timing` 单独记录采集启动边界：`run_call` 为 `IMediaControl::Run` 调用耗时；`run_to_callback` 从调用 Run 前到首个有效 BufferCB 入口；`callback_copy` 包含该回调锁等待、缓冲分配和拷贝；`ready_to_grab` 从首缓冲写好到应用首次成功取帧取得锁并准备拷贝；`grab_lock_wait` 为该次取帧的锁等待；`grab_copy` 为 RGB 转换拷贝。回调只记录 QPC 时间戳，日志在首次成功取帧释放锁后输出，每次 Run 最多一条。`run_call`、`grab_lock_wait` 与其他分项有重叠，不能全部相加；这些是采集链路边界，不直接指认固件内部成本。诊断只记录时间，不保存画面或改变采集调度。
+相机启动调查所用的首帧计时、分段日志和离线观察/故障注入探针已移除；历史测量结果见 [相机启动调查](../work/in-progress/camera-startup-investigation.md)。运行日志保留实际建图路径标记。
 
 ## 当前关键值
 

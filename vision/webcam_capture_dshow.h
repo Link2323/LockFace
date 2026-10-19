@@ -97,7 +97,7 @@ public:
     // Preload the device-independent halves of a later Initialize():
     // registry-level device enumeration (resolving the target moniker) and
     // the graph skeleton (FilterGraph + SampleGrabber + Null Renderer, with
-    // an optional software AVI Decompressor for YUY2 capture).
+    // optional software AVI/MJPEG decompressors for YUY2/MJPG capture).
     // Nothing here ACTIVATES the capture device — BindToObject, pin
     // connection and Run stay in Initialize(), so the camera LED stays off
     // while the desktop is locked. Initialize() consumes the preload when
@@ -167,7 +167,7 @@ private:
     // format, connects the pins and queries IMediaControl.
     bool BuildSkeleton();
     bool AttachCapture(IBaseFilter* pCapture, int width, int height);
-    bool ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn, bool preferDecoder);
+    bool ConnectCapture(IPin* pCaptureOut, IPin* pGrabberIn, const GUID& captureSubtype);
     // Release every COM interface and the held moniker. Keeps the thread's
     // COM reference; callers that own their COM init pair it separately.
     void DiscardPreload();
@@ -182,10 +182,12 @@ private:
     Microsoft::WRL::ComPtr<ISampleGrabber>  m_pGrabber;
     Microsoft::WRL::ComPtr<IBaseFilter>     m_pNullRenderer;
     Microsoft::WRL::ComPtr<IBaseFilter>     m_pDecoder;
+    Microsoft::WRL::ComPtr<IBaseFilter>     m_pMjpegDecoder;
     Microsoft::WRL::ComPtr<IMoniker>        m_pMoniker;
     std::wstring     m_preloadDevicePath;
     bool             m_preloadValid  = false;
     bool             m_directDecoder = false;
+    bool             m_directMjpeg = false;
 
     GrabberCB m_callback;
 
@@ -194,13 +196,6 @@ private:
     long   m_frameSize   = 0;
     bool   m_frameReady  = false;
     unsigned long long m_frameSeq = 0;   // bumped per delivered frame; monotonic
-    // Startup diagnostics only, protected by m_frameCs. Reset before each Run;
-    // callbacks record timestamps without writing logs on the streaming thread.
-    LONGLONG m_runStartedTicks = 0;
-    LONGLONG m_runReturnedTicks = 0;
-    LONGLONG m_firstCallbackTicks = 0;
-    LONGLONG m_firstBufferReadyTicks = 0;
-    bool m_startupTimingLogged = false;
     int    m_width       = 1280;
     int    m_height      = 720;
     bool   m_initialized = false;

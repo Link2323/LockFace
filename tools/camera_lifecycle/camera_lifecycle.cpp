@@ -30,6 +30,7 @@ struct Options {
     int settleMs = 500;
     int singleCycleNumber = 0;
     std::wstring devicePath;
+    bool listDevices = false;
 };
 
 struct ProcessMetrics {
@@ -51,7 +52,9 @@ bool ParseInt(const wchar_t* text, int minimum, int maximum, int& value) {
 bool ParseOptions(int argc, wchar_t** argv, Options& options) {
     for (int i = 1; i < argc; ++i) {
         const std::wstring arg = argv[i];
-        if (arg == L"--device" && i + 1 < argc) {
+        if (arg == L"--list-devices") {
+            options.listDevices = true;
+        } else if (arg == L"--device" && i + 1 < argc) {
             options.devicePath = argv[++i];
         } else if (arg == L"--mode" && i + 1 < argc) {
             const std::wstring value = argv[++i];
@@ -165,23 +168,13 @@ bool RunOneCameraCycle(const Options& options, int cycle) {
     camera->Shutdown();
     camera.reset();
     const auto shutdownDone = Clock::now();
-    for (const auto& line : facelogin::Logger::Instance().GetRecentLogs()) {
-        const auto position = line.find(L"DirectShow first frame timing:");
-        if (position != std::wstring::npos) {
-            // All fields are ASCII numbers; keep narrow stdout consistent
-            // with the existing cycle metrics, including redirected output.
-            const auto timing = line.substr(position);
-            std::string ascii;
-            for (wchar_t ch : timing) ascii.push_back(static_cast<char>(ch));
-            std::cout << ascii << '\n';
-        }
-    }
     facelogin::Logger::Instance().ClearLogs();
 
     ProcessMetrics metrics;
     if (!ReadProcessMetrics(metrics)) return false;
     std::cout << "camera_cycle cycle=" << cycle
               << " backend=dshow"
+              << " preloaded=" << (usePreload ? 1 : 0)
               << " enum_ms=" << std::fixed << std::setprecision(1)
               << Milliseconds(enumStart, enumDone)
               << " activate_ms=" << Milliseconds(activateStart, activateDone)
@@ -265,7 +258,8 @@ bool RunChildCycle(const Options& options, int cycle) {
 }
 
 void Usage() {
-    std::cerr << "usage: CameraLifecycleTest --mode inproc|child --cycles N --settle-ms N [--device PATH]\n";
+    std::cerr << "usage: CameraLifecycleTest --mode inproc|child --cycles N --settle-ms N [--device PATH]\n"
+                 "       CameraLifecycleTest --list-devices (enumeration only)\n";
 }
 
 } // namespace
@@ -275,6 +269,18 @@ int wmain(int argc, wchar_t** argv) {
     if (!ParseOptions(argc, argv, options)) {
         Usage();
         return 2;
+    }
+    // Match the worker host's COM lifetime: keep the MTA alive across device
+    // enumeration and graph destruction, including ListCameras' local COM refs.
+    if (!facelogin::WebcamCaptureDS::InitializeCOM()) return 1;
+    struct ComScope {
+        ~ComScope() { facelogin::WebcamCaptureDS::ShutdownCOM(); }
+    } comScope;
+    if (options.listDevices) {
+        for (const auto& device : Enumerate()) {
+            std::wcout << device.friendlyName << L'\n' << device.devicePath << L'\n';
+        }
+        return 0;
     }
 
     ProcessMetrics initial;
