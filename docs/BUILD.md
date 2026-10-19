@@ -89,11 +89,11 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 
 开发验证与打包分开：安装器 Go 代码变更后在 `installer/FaceLoginSetup/` 单独运行 `go test ./...`，C++ 测试按目标显式构建和运行。
 
-注册页面源文件为 `enrollment_app/index.html.in`、`styles.css` 和 `enrollment_app/CMakeLists.txt` 中 `ENROLLMENT_JS_SOURCES` 列出的 11 个 JS 模块（位于 `enrollment_app/js/`，`capture_flow.js` 到 `app_main.js`，列表顺序即拼接与依赖顺序）；CMake 合成为 `build/enrollment_app/index.html`，由生成的 `resource.rc` 嵌入 EXE，不增加运行期资源文件。修改任一源文件后须重建 C++；改动安装器 Go、Vue 或载荷提取逻辑时须重建安装器。单独运行 Wails 不会检测 C++ 资源是否过期。
+注册页面源文件为 `enrollment_app/index.html.in`、`styles.css` 和 `enrollment_app/CMakeLists.txt` 中 `ENROLLMENT_JS_SOURCES` 列出的 12 个 JS 模块（位于 `enrollment_app/js/`，`capture_flow.js` 到 `app_main.js`，列表顺序即拼接与依赖顺序）；CMake 合成为 `build/enrollment_app/index.html`，由生成的 `resource.rc` 嵌入 EXE，不增加运行期资源文件。修改任一源文件后须重建 C++；改动安装器 Go、Vue 或载荷提取逻辑时须重建安装器。单独运行 Wails 不会检测 C++ 资源是否过期。
 
 ### 资源白名单
 
-载荷白名单的单一事实源是 [`installer/FaceLoginSetup/internal/payload_manifest.txt`](../installer/FaceLoginSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个运行时 DLL、三份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
+载荷白名单的单一事实源是 [`installer/FaceLoginSetup/internal/payload_manifest.txt`](../installer/FaceLoginSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个运行时 DLL、四份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
 
 新增载荷文件只需在 manifest 加一行。新增模型还需在 `internal/extract.go` 的 `requiredModels` 补大小与 SHA-256（安装期安全校验需要哈希，故为独立清单，测试保证两表不漂移）。离线工具、旧 DLL、临时文件和其他残留都不得打包。
 
@@ -101,7 +101,7 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 
 ### 许可文件
 
-根目录 `LICENSE`、`THIRD_PARTY_NOTICES.txt` 和 [`third_party/MODEL_LICENSES.txt`](../third_party/MODEL_LICENSES.txt) 是随包许可说明的事实源。详细模型来源核查记录保留在 [`model-licenses.md`](model-licenses.md)。依赖升级后重新生成第三方声明；`scripts/stage_licenses.ps1` 将许可文件复制到安装载荷和前端。注册 Console 页脚的“许可声明”入口从 Console 同目录读取这三份文件。
+根目录 `LICENSE`、`THIRD_PARTY_NOTICES.txt`、[`third_party/MODEL_LICENSES.txt`](../third_party/MODEL_LICENSES.txt) 和 [`docs/legal/privacy-notice.txt`](legal/privacy-notice.txt) 是随包许可与隐私说明的事实源。详细模型来源核查记录保留在 [`model-licenses.md`](model-licenses.md)。依赖升级后重新生成第三方声明；`scripts/stage_licenses.ps1` 将许可文件和隐私说明复制到安装载荷和前端。注册 Console 页脚的“许可声明”入口从 Console 同目录读取这四份文件。
 
 ### 载荷压缩
 

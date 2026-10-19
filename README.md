@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="DEVELOPMENT.md"><img src="https://img.shields.io/badge/platform-Windows%2010%2B%20x64-blue" alt="Platform"></a>
   <a href="DEVELOPMENT.md"><img src="https://img.shields.io/badge/language-C%2B%2B20%20%7C%20Go-orange" alt="Language"></a>
-  <a href="https://github.com/Link2323/FaceLogin/releases"><img src="https://img.shields.io/badge/version-1.8.0--multi--angle%20(Link2323%20fork)-green" alt="Version"></a>
+  <a href="https://github.com/Link2323/FaceLogin/releases"><img src="https://img.shields.io/badge/version-1.9.0%20(Link2323%20fork)-green" alt="Version"></a>
 </p>
 
 ---
@@ -116,6 +116,14 @@ flowchart TB
 | 模型完整性 | 4 个 ONNX 模型启动时 SHA-256 校验，篡改/损坏即 fail-closed（拒绝认证） |
 | 日志脱敏 | AUTH_SUCCESS 凭据载荷不再写入日志 |
 | 编译加固 | ASLR、DEP、CFG、64位高熵地址随机化 |
+
+---
+
+## 隐私说明
+
+人脸信息仅在本机处理：不保存人脸照片或视频，不上传，不向第三方提供。本机只保存人脸特征向量和 DPAPI 加密后的 Windows 密码；安装和录入人脸前会展示隐私说明并取得同意，卸载会删除全部人脸数据。人脸识别无法保证绝对安全，识别失败时请使用密码登录。
+
+完整文本见 [docs/legal/privacy-notice.txt](docs/legal/privacy-notice.txt)。
 
 ---
 

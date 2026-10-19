@@ -8,6 +8,7 @@ set(ENROLLMENT_JS_SOURCES
     js/preview.js
     js/capture_ui.js
     js/navigation.js
+    js/consent.js
     js/settings.js
     js/faces.js
     js/account_refresh.js

@@ -201,7 +201,7 @@ func ExtractResource(embeddedPath, destPath string) error {
 //	  FaceLoginCredentialProvider.dll
 //	  FaceLoginConsole.exe
 //	  five runtime DLLs
-//	  LICENSE.txt, THIRD_PARTY_NOTICES.txt, MODEL_LICENSES.txt
+//	  LICENSE.txt, THIRD_PARTY_NOTICES.txt, MODEL_LICENSES.txt, PRIVACY.txt
 //	  models/
 //	    four production *.onnx models
 func ExtractAll(destDir string, progressFn func(step, total int, name string)) error {

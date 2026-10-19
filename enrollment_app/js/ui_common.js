@@ -5,23 +5,139 @@
 function createUiCommon(deps) {
   var H = deps.host;
 
+  var PRIVACY_ITEM_START = /^(?:\d+\.\d+|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/;
+
+  function splitNumberedItems(text) {
+    var lines = text.split('\n').map(function(line) { return line.trim(); }).filter(Boolean);
+    if (lines.length <= 1) return null;
+    var hasItems = lines.some(function(line) { return PRIVACY_ITEM_START.test(line); });
+    if (!hasItems) return null;
+    var items = [];
+    lines.forEach(function(line) {
+      if (PRIVACY_ITEM_START.test(line) || items.length === 0) items.push(line);
+      else items[items.length - 1] += ' ' + line;
+    });
+    return items;
+  }
+
+  function normalizeParagraph(text) {
+    return text.split('\n').map(function(line) { return line.trim(); }).filter(Boolean).join(' ');
+  }
+
+  function privacyAddParagraph(blocks, text) {
+    var items = splitNumberedItems(text);
+    if (items) blocks.push({ kind: 'items', items: items });
+    else blocks.push({ kind: 'paragraph', text: normalizeParagraph(text) });
+  }
+
+  function privacyBlocks(text) {
+    var raw = text.replace(/\r\n/g, '\n').trim();
+    var blocks = [];
+    var beforeNotice = true;
+    raw.split(/\n\s*\n/).forEach(function(paragraph) {
+      var value = paragraph.trim();
+      if (!value) return;
+      var firstLine = value.split('\n')[0].trim();
+      if (beforeNotice) {
+        if (firstLine.indexOf('特别提示：') === 0) {
+          blocks.push({ kind: 'callout', text: value.replace(/\n+/g, ' ') });
+          beforeNotice = false;
+          return;
+        }
+        if (firstLine.indexOf('隐私说明与知情同意书') >= 0) {
+          blocks.push({ kind: 'title', text: firstLine });
+          return;
+        }
+        var meta = '';
+        value.split('\n').forEach(function(line) {
+          var item = line.trim();
+          if (!item) return;
+          if (!meta) meta = item;
+          else if (/[、，；：]$/.test(meta)) meta += item;
+          else meta += ' · ' + item;
+        });
+        if (meta) blocks.push({ kind: 'meta', text: meta });
+        return;
+      }
+      if (/^第[一二三四五六七八九十百]+条\s/.test(firstLine)) {
+        blocks.push({ kind: 'heading', text: firstLine });
+        var rest = value.split('\n').slice(1).join('\n').trim();
+        if (rest) privacyAddParagraph(blocks, rest);
+      } else {
+        privacyAddParagraph(blocks, value);
+      }
+    });
+    return blocks;
+  }
+
+  function makeDocumentBlock(block) {
+    var el;
+    if (block.kind === 'items') {
+      el = document.createElement('div');
+      el.className = 'license-items';
+      block.items.forEach(function(item) {
+        var p = document.createElement('p');
+        p.textContent = item;
+        el.appendChild(p);
+      });
+      return el;
+    }
+    if (block.kind === 'title') el = document.createElement('h2');
+    else if (block.kind === 'heading') el = document.createElement('h3');
+    else if (block.kind === 'callout') {
+      el = document.createElement('div');
+      el.className = 'license-callout';
+    } else if (block.kind === 'meta') {
+      el = document.createElement('p');
+      el.className = 'license-meta';
+    } else {
+      el = document.createElement('p');
+    }
+    el.textContent = block.text;
+    return el;
+  }
+
+  function renderLicenseDocument(content, text, isPrivacy) {
+    if (!isPrivacy) {
+      // Upstream license texts must display verbatim; PRIVACY.txt is the only
+      // document written for structured rendering.
+      content.classList.remove('license-document');
+      content.textContent = text;
+      return;
+    }
+    content.classList.add('license-document');
+    content.textContent = '';
+    var blocks = privacyBlocks(text);
+    var fragment = document.createDocumentFragment();
+    blocks.forEach(function(block) {
+      fragment.appendChild(makeDocumentBlock(block));
+    });
+    content.appendChild(fragment);
+  }
+
   function showLicenseDocument(button) {
     document.querySelectorAll('.license-docs button').forEach(function(item) {
       item.classList.toggle('active', item === button);
     });
     var content = document.getElementById('license-content');
+    content.classList.remove('license-document');
     content.textContent = '正在读取许可文件…';
     try {
       var text = H.GetLicenseDocument(button.dataset.license);
-      content.textContent = text;
+      renderLicenseDocument(content, text, button.dataset.license === 'PRIVACY.txt');
     } catch (e) {
       content.textContent = '无法读取许可文件：' + (e && e.message ? e.message : String(e));
     }
   }
 
-  function openLicenseViewer() {
+  function openLicenseViewer(path) {
+    var button = path
+      ? document.querySelector('.license-docs button[data-license="' + path + '"]')
+      : null;
+    if (!button) button = document.querySelector('.license-docs button.active');
+    if (!button) return;
     document.getElementById('license-overlay').classList.add('active');
-    showLicenseDocument(document.querySelector('.license-docs button.active'));
+    showLicenseDocument(button);
   }
 
   function closeLicenseViewer() {

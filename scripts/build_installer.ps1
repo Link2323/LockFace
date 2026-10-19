@@ -198,7 +198,7 @@ Step "5/5 wails build (full)" {
         throw "FaceLoginSetup.exe is older than this script's start time - wails produced a stale no-op build"
     }
     # Preserve accompanying legal material when publishing the build directory.
-    foreach ($name in @("LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "MODEL_LICENSES.txt")) {
+    foreach ($name in @("LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "MODEL_LICENSES.txt", "PRIVACY.txt")) {
         Copy-Item -LiteralPath (Join-Path $res $name) -Destination (Join-Path $inst "build/bin/$name") -Force
     }
 }

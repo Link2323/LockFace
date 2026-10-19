@@ -213,6 +213,21 @@ body{
 .cam-picker .btn{margin-top:0}
 .cam-picker .btn-secondary{margin-top:8px}
 
+/* ========== Privacy Consent Gate ========== */
+#consent-overlay{z-index:150}
+.consent-modal{max-width:560px;max-height:85vh;overflow-y:auto}
+.consent-modal .dim{margin-bottom:10px}
+.consent-list{margin:0 0 14px 18px;font-size:12px;line-height:1.7;color:#4b5563;
+  text-align:justify;text-justify:inter-ideograph}
+.consent-list li{margin-bottom:2px}
+.consent-check{align-items:flex-start;margin:12px 0 6px;line-height:1.5}
+.consent-check input{margin-top:2px;flex-shrink:0}
+.consent-modal .btn{margin-top:8px}
+.consent-link{display:block;width:100%;margin-top:12px;border:0;background:none;
+  color:#6b7280;font-size:12px;cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px;padding:0;text-align:center}
+.consent-link:hover{color:#111827}
+
 /* ========== In-app modal (confirm/prompt replacement) ========== */
 /* Reuses the .cam-picker card; OK stays the dark primary — no red variant. */
 .app-modal .modal-actions{display:flex;gap:8px;margin-top:16px}
@@ -232,7 +247,7 @@ body{
 .license-modal{width:calc(100% - 2rem);max-width:48rem;height:85vh;display:flex;flex-direction:column;
   background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.1);
   overflow:hidden}
-#license-overlay{background:rgba(0,0,0,.3)}
+#license-overlay{background:rgba(0,0,0,.3);z-index:200}
 .license-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;
   border-bottom:1px solid #f3f4f6;flex-shrink:0}
 .license-head h2{font-size:14px;font-weight:500;color:#111827}
@@ -245,3 +260,16 @@ body{
 .license-content{flex:1;min-height:0;overflow:auto;padding:16px 20px;background:#fff;
   white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text;
   font:12px/1.625 "Cascadia Code","Consolas",monospace;color:#374151}
+/* PRIVACY.txt uses the installer consent document typography: natural wrapping,
+   justified prose, document title/section headings. The other three documents
+   render verbatim in the base .license-content monospace style. */
+.license-content.license-document{white-space:normal;text-align:justify;
+  text-justify:inter-ideograph;font:13px/1.9 "Segoe UI","Microsoft YaHei",sans-serif}
+.license-document h2{font-size:18px;font-weight:600;color:#111827;margin:0 0 8px}
+.license-document h3{font-size:13px;font-weight:600;color:#111827;margin:18px 0 6px}
+.license-document p{margin:0 0 10px;color:#4b5563;overflow-wrap:anywhere}
+.license-document .license-meta{font-size:11px;line-height:1.7;color:#9ca3af;margin:0 0 10px}
+.license-document .license-callout{border:1px solid #fde68a;background:#fffbeb;color:#92400e;
+  padding:10px 14px;border-radius:6px;margin:0 0 16px;line-height:1.7}
+.license-document .license-items{margin:0 0 10px}
+.license-document .license-items p{margin:0 0 6px}

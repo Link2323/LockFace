@@ -546,10 +546,12 @@ static VARIANT MakeBool(bool v) { VARIANT var; VariantInit(&var); var.vt = VT_BO
 static VARIANT MakeInt(int v)  { VARIANT var; VariantInit(&var); var.vt = VT_I4; var.lVal = v; return var; }
 
 static std::string ReadLicenseDocument(const std::wstring& name) {
-    // Expose only the three canonical documents shipped beside the console.
+    // Expose only the four canonical documents shipped beside the console.
     // The allow-list also prevents path traversal through the WebView bridge.
     if (name != L"LICENSE.txt" && name != L"THIRD_PARTY_NOTICES.txt" &&
-        name != L"MODEL_LICENSES.txt") return "Unsupported license document.";
+        name != L"MODEL_LICENSES.txt" && name != L"PRIVACY.txt") {
+        return "Unsupported license document.";
+    }
 
     wchar_t exePath[MAX_PATH] = {};
     DWORD length = GetModuleFileNameW(nullptr, exePath, MAX_PATH);

@@ -166,6 +166,15 @@ func (a *App) Install(installDir string) map[string]interface{} {
 	}
 	a.emit(36, "保护注册表", "done", "")
 
+	// The privacy notice was accepted in the UI before Install() was called.
+	// Record it now that the registry key cannot be rewritten by non-admins.
+	a.emit(36, "记录隐私同意", "running", "")
+	if err = internal.RecordConsent(); err != nil {
+		a.emit(36, "记录隐私同意", "fail", err.Error())
+		return result(false, fmt.Sprintf("记录隐私同意失败: %v", err))
+	}
+	a.emit(36, "记录隐私同意", "done", "")
+
 	// Step 4: Extract all embedded resources
 	a.emit(36, "复制文件", "running", "")
 	if err = internal.ExtractAll(installDir, func(step, total int, name string) {

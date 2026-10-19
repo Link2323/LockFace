@@ -5,8 +5,9 @@ function createPreview(deps) {
   var H = deps.host;
   var showBanner = deps.showBanner;
 
-  var viewing = true, lastB64 = '', lastFacesJson = '', timer = 0, faceImg = new Image();
+  var viewing = false, lastB64 = '', lastFacesJson = '', timer = 0, faceImg = new Image();
   var camReady = false;
+  var consentGranted = false;
 
   faceImg.onload = function() {
     drawBackgroundAndOverlay();
@@ -212,6 +213,7 @@ function createPreview(deps) {
   // on success — all callers run while the cam screen is active, which is
   // exactly when the 33ms loop should run.
   function restartPreview() {
+    if (!consentGranted) return false;
     try {
       if (H.StartPreview()) { viewing = true; renderFrame(); return true; }
       showBanner('cam', '预览启动失败：请检查摄像头占用、权限、驱动和模型文件。', 'error', 10000);
@@ -227,6 +229,7 @@ function createPreview(deps) {
     clearTimeout(timer);
   }
   function startLoop() {
+    if (!consentGranted) return;
     viewing = true;
     renderFrame();
   }
@@ -235,6 +238,8 @@ function createPreview(deps) {
     restartPreview: restartPreview,
     isViewing: function() { return viewing; },
     stopLoop: stopLoop,
-    startLoop: startLoop
+    startLoop: startLoop,
+    setConsentGranted: function(value) { consentGranted = !!value; },
+    consentGranted: function() { return consentGranted; }
   };
 }

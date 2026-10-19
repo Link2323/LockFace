@@ -83,6 +83,7 @@ func TestPayloadZipExtractionChain(t *testing.T) {
 		"LICENSE.txt":             "../../LICENSE",
 		"THIRD_PARTY_NOTICES.txt": "../../THIRD_PARTY_NOTICES.txt",
 		"MODEL_LICENSES.txt":      "../../third_party/MODEL_LICENSES.txt",
+		"PRIVACY.txt":             "../../docs/legal/privacy-notice.txt",
 	} {
 		want, err := os.ReadFile(source)
 		if err != nil {

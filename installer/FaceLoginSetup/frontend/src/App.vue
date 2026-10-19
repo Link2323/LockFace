@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import { GetDefaultPaths, Install, Uninstall, PickDirectory, IsInstalled, LaunchConsole, GetMode } from '../wailsjs/go/main/App'
 import { EventsOn, EventsOff, Quit } from '../wailsjs/runtime'
 
@@ -26,22 +26,121 @@ const licenseDocuments = [
   { path: 'LICENSE.txt', label: '项目许可' },
   { path: 'THIRD_PARTY_NOTICES.txt', label: '第三方声明' },
   { path: 'MODEL_LICENSES.txt', label: '模型许可' },
+  { path: 'PRIVACY.txt', label: '隐私说明' },
 ]
 const licenseDocument = ref('LICENSE.txt')
 const licenseText = ref('')
 const licenseCache = new Map<string, string>()
 
+const CONSENT_DOCUMENT = 'PRIVACY.txt'
+const consentDialog = ref<HTMLDialogElement | null>(null)
+const consentScroller = ref<HTMLElement | null>(null)
+const consentText = ref('')
+const consentLoading = ref(false)
+const consentError = ref('')
+const consentScrolled = ref(false)
+const consentChecked = ref(false)
+const consentAccepted = ref(false)
+
+type ConsentBlock = {
+  kind: 'title' | 'meta' | 'callout' | 'heading' | 'paragraph' | 'items'
+  text: string
+  items?: string[]
+}
+
+const ITEM_START = /^(?:\d+\.\d+|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/
+
+// The canonical notice keeps each clause on one line (structure lines carry
+// the parsing: article headings, x.y clause numbers, （一） items); clause
+// text is not hard-wrapped. The continuation-join stays as a safety net for
+// hand-edited or older wrapped copies, so a stray hard wrap cannot leave a
+// visible gap at the right edge of every first line.
+function splitNumberedItems(text: string): string[] | null {
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+  if (lines.length <= 1) return null
+  const hasItems = lines.some(line => ITEM_START.test(line))
+  if (!hasItems) return null
+  const items: string[] = []
+  for (const line of lines) {
+    if (ITEM_START.test(line) || items.length === 0) {
+      items.push(line)
+    } else {
+      items[items.length - 1] += ' ' + line
+    }
+  }
+  return items
+}
+
+function normalizeParagraph(text: string): string {
+  return text.split('\n').map(line => line.trim()).filter(Boolean).join(' ')
+}
+
+function pushParagraph(blocks: ConsentBlock[], text: string) {
+  const items = splitNumberedItems(text)
+  if (items) blocks.push({ kind: 'items', text: '', items })
+  else blocks.push({ kind: 'paragraph', text: normalizeParagraph(text) })
+}
+
+// The canonical notice is plain text (also shipped as PRIVACY.txt). Split it
+// into readable blocks here instead of rendering a 9 KB <pre> wall: headings
+// and the amber callout are presentation only, the text itself is untouched.
+const consentBlocks = computed<ConsentBlock[]>(() => {
+  const raw = consentText.value.replace(/\r\n/g, '\n').trim()
+  if (!raw) return []
+  const blocks: ConsentBlock[] = []
+  let beforeNotice = true
+  for (const paragraph of raw.split(/\n\s*\n/)) {
+    const text = paragraph.trim()
+    if (!text) continue
+    const firstLine = text.split('\n')[0].trim()
+    if (beforeNotice) {
+      if (firstLine.startsWith('特别提示：')) {
+        blocks.push({ kind: 'callout', text: text.replace(/\n+/g, ' ') })
+        beforeNotice = false
+        continue
+      }
+      if (firstLine.includes('隐私说明与知情同意书')) {
+        blocks.push({ kind: 'title', text: firstLine })
+        continue
+      }
+      let meta = ''
+      for (const line of text.split('\n')) {
+        const value = line.trim()
+        if (!value) continue
+        if (!meta) meta = value
+        else if (/[、，；：]$/.test(meta)) meta += value
+        else meta += ' · ' + value
+      }
+      if (meta) blocks.push({ kind: 'meta', text: meta })
+      continue
+    }
+    if (/^第[一二三四五六七八九十百]+条\s/.test(firstLine)) {
+      blocks.push({ kind: 'heading', text: firstLine })
+      const rest = text.split('\n').slice(1).join('\n').trim()
+      if (rest) pushParagraph(blocks, rest)
+    } else {
+      pushParagraph(blocks, text)
+    }
+  }
+  return blocks
+})
+
+async function fetchDocument(path: string): Promise<string> {
+  let text = licenseCache.get(path)
+  if (text === undefined) {
+    const response = await fetch(new URL(path, document.baseURI))
+    if (!response.ok) throw new Error(`读取失败 (${response.status})`)
+    text = await response.text()
+    licenseCache.set(path, text)
+  }
+  return text
+}
+
 async function showLicenseDocument(path: string) {
   licenseDocument.value = path
   licenseText.value = '正在读取…'
   try {
-    let text = licenseCache.get(path)
-    if (text === undefined) {
-      const response = await fetch(new URL(path, document.baseURI))
-      if (!response.ok) throw new Error(`读取失败 (${response.status})`)
-      text = await response.text()
-      licenseCache.set(path, text)
-    }
+    const text = await fetchDocument(path)
     if (licenseDocument.value === path) licenseText.value = text
   } catch (err: unknown) {
     if (licenseDocument.value === path) {
@@ -50,15 +149,96 @@ async function showLicenseDocument(path: string) {
   }
 }
 
+function refreshConsentGate() {
+  if (consentAccepted.value) {
+    consentScrolled.value = true
+    return
+  }
+  // Never measure the loading placeholder: it is short enough to look like
+  // "already at the end" and would latch the controls open before the notice
+  // has rendered.
+  if (consentLoading.value || !consentText.value || consentError.value) return
+  // Latch once the end has been reached: scrolling back up to re-read a
+  // clause must not hide the consent controls again.
+  if (consentScrolled.value) return
+  const el = consentScroller.value
+  if (!el) return
+  if (el.scrollHeight <= el.clientHeight + 4 ||
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+    consentScrolled.value = true
+    // The footer grows when the controls appear, shrinking the scroll
+    // viewport. Re-anchor to the real bottom so the last clause stays visible.
+    void nextTick(() => {
+      const scroller = consentScroller.value
+      if (scroller) scroller.scrollTop = scroller.scrollHeight
+    })
+  }
+}
+
+function onConsentScroll() {
+  refreshConsentGate()
+}
+
+async function loadConsentText() {
+  if (consentText.value || consentLoading.value) return
+  consentLoading.value = true
+  consentError.value = ''
+  try {
+    consentText.value = await fetchDocument(CONSENT_DOCUMENT)
+  } catch (err: unknown) {
+    consentError.value = err instanceof Error ? err.message : '无法读取隐私说明'
+  } finally {
+    consentLoading.value = false
+    await nextTick()
+    refreshConsentGate()
+  }
+}
+
+function openConsent() {
+  const dialog = consentDialog.value
+  if (!dialog) return
+  if (consentAccepted.value) {
+    consentChecked.value = true
+    consentScrolled.value = true
+  } else {
+    consentChecked.value = false
+    consentScrolled.value = false
+    if (consentScroller.value) consentScroller.value.scrollTop = 0
+  }
+  if (!dialog.open) dialog.showModal()
+  void loadConsentText()
+  void nextTick(() => {
+    // Do not let showModal() leave the initial focus on the decline button;
+    // start on the document surface instead so no button gets a focus ring.
+    consentScroller.value?.focus()
+    refreshConsentGate()
+  })
+}
+
+function acceptConsent() {
+  if (!consentText.value || consentError.value ||
+      !consentScrolled.value || !consentChecked.value) return
+  consentAccepted.value = true
+  consentChecked.value = true
+  consentDialog.value?.close()
+}
+
+async function declineConsent() {
+  consentDialog.value?.close()
+  await doExit()
+}
+
 function openLicenses() {
   licenseDialog.value?.showModal()
   void showLicenseDocument(licenseDocument.value)
 }
 
 onMounted(async () => {
+  let uninstallMode = false
   try {
     const mode = await GetMode()
-    if (mode.uninstall) {
+    uninstallMode = !!mode.uninstall
+    if (uninstallMode) {
       showInstall.value = false
     }
     if (mode.locked) {
@@ -79,6 +259,7 @@ onMounted(async () => {
     resultSuccess.value = false
     showResult.value = true
   }
+  if (!uninstallMode) openConsent()
 })
 
 async function doPickDirectory() {
@@ -103,6 +284,10 @@ function toggleMode(mode: string) {
 }
 
 async function doInstall() {
+  if (!consentAccepted.value) {
+    openConsent()
+    return
+  }
   running.value = true
   showResult.value = false
   installDone.value = false
@@ -251,11 +436,28 @@ async function doUninstall() {
         </div>
         <p class="mt-1 text-xs text-gray-400">建议保留默认目录：<code class="text-gray-500">C:\Program Files\</code> 受系统保护，可防止程序文件被篡改。</p>
 
+        <div class="mt-5 border-t border-gray-100 pt-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-gray-800">人脸识别隐私说明</p>
+              <p class="mt-1 text-xs leading-relaxed text-gray-500">
+                人脸仅在本机用于登录比对，不保存照片或视频，不上传；只保存人脸特征和加密后的 Windows 密码。
+              </p>
+            </div>
+            <button class="flex-shrink-0 text-xs text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-gray-900" @click="openConsent">
+              {{ consentAccepted ? '重新阅读' : '阅读全文' }}
+            </button>
+          </div>
+          <p class="mt-2 text-xs" :class="consentAccepted ? 'text-gray-700' : 'text-gray-500'">
+            {{ consentAccepted ? '已阅读并同意《FaceLogin 人脸识别隐私说明与知情同意书》' : '安装前需完整阅读并同意隐私说明' }}
+          </p>
+        </div>
+
         <button
-          class="mt-6 w-full py-2.5 text-sm font-medium bg-gray-900 text-white
+          class="mt-5 w-full py-2.5 text-sm font-medium bg-gray-900 text-white
                  hover:bg-gray-800 transition-colors disabled:opacity-40"
           @click="doInstall"
-          :disabled="!installDir"
+          :disabled="!installDir || !consentAccepted"
         >{{ alreadyInstalled ? '更新' : '安装' }}</button>
       </div>
 
@@ -348,6 +550,64 @@ async function doUninstall() {
         </div>
         <pre class="min-h-0 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-xs leading-relaxed text-gray-700 select-text"
           aria-live="polite">{{ licenseText }}</pre>
+      </div>
+    </dialog>
+
+    <dialog ref="consentDialog" aria-labelledby="consent-title" @cancel.prevent
+      class="m-auto w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-xl p-0 shadow-2xl backdrop:bg-slate-900/50">
+      <div class="flex max-h-[92vh] flex-col bg-white">
+        <div ref="consentScroller" tabindex="-1" autofocus
+          class="min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none" @scroll="onConsentScroll">
+          <div v-if="consentLoading" class="flex items-center gap-2 py-8 text-xs text-gray-500">
+            <span class="h-3 w-3 animate-spin rounded-full border-2 border-gray-200 border-t-gray-600"></span>
+            正在读取隐私说明…
+          </div>
+          <div v-else-if="consentError" class="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-700">
+            {{ consentError }}<br>隐私说明无法显示，安装已禁用。请重新打开安装程序。
+          </div>
+          <article v-else class="mx-auto max-w-2xl">
+            <template v-for="(block, index) in consentBlocks" :key="index">
+              <h2 v-if="block.kind === 'title'" id="consent-title" class="mb-2 text-lg font-semibold tracking-tight text-gray-900">{{ block.text }}</h2>
+              <p v-else-if="block.kind === 'meta'" class="mb-5 text-[11px] leading-6 text-gray-400">{{ block.text }}</p>
+              <div v-else-if="block.kind === 'callout'" class="mb-5 rounded-lg border border-amber-100 bg-amber-50/80 px-4 py-3 text-[12px] leading-6 text-amber-900">
+                {{ block.text }}
+              </div>
+              <h3 v-else-if="block.kind === 'heading'" class="mb-1.5 mt-5 text-[13px] font-semibold text-gray-900">{{ block.text }}</h3>
+              <div v-else-if="block.kind === 'items'" class="mb-3 space-y-1.5">
+                <p v-for="(item, itemIndex) in block.items" :key="itemIndex"
+                  class="[overflow-wrap:anywhere] text-justify [text-justify:inter-ideograph] text-[13px] leading-7 text-gray-600">{{ item }}</p>
+              </div>
+              <p v-else class="mb-3 [overflow-wrap:anywhere] text-justify [text-justify:inter-ideograph] text-[13px] leading-7 text-gray-600">{{ block.text }}</p>
+            </template>
+            <div class="h-2"></div>
+          </article>
+        </div>
+
+        <div class="border-t border-gray-100 bg-white px-8 py-4">
+          <label v-if="consentScrolled || consentAccepted"
+            class="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 transition-colors">
+            <input type="checkbox" v-model="consentChecked"
+              :disabled="consentAccepted || !!consentError"
+              class="mt-0.5 h-4 w-4 flex-shrink-0 accent-gray-900" />
+            <span class="text-xs leading-relaxed text-gray-700">
+              我已完整阅读并同意
+              <span class="font-medium text-gray-900">《FaceLogin 人脸识别隐私说明与知情同意书》</span>
+            </span>
+          </label>
+          <div class="mt-2.5 flex items-center justify-between gap-4">
+            <span v-if="!consentScrolled && !consentAccepted && !consentError"
+              class="text-[11px] text-gray-400">请滚动阅读至底部后勾选</span>
+            <span v-else-if="consentAccepted" class="text-[11px] font-medium text-emerald-600">✓ 已阅读并同意</span>
+            <button v-if="!consentAccepted"
+              class="rounded-sm text-xs text-gray-500 underline decoration-gray-300 underline-offset-4 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
+              @click="declineConsent">不同意并退出</button>
+            <button v-if="consentScrolled || consentAccepted"
+              class="rounded-md bg-gray-900 px-6 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!consentAccepted && !consentChecked" @click="acceptConsent">
+              {{ consentAccepted ? '关闭' : '同意并继续' }}
+            </button>
+          </div>
+        </div>
       </div>
     </dialog>
   </div>

@@ -44,6 +44,9 @@ function createCaptureUi(deps) {
   var previewCtl = deps.previewCtl;
   var showAppendScreen = deps.showAppendScreen;
   var showRefreshPrompt = deps.showRefreshPrompt;
+  // Optional so the capture-machine tests can build this module standalone;
+  // the real page always passes the consent gate's ensure().
+  var requireConsent = deps.requireConsent || function() { return true; };
 
   // Button modes. Idle = primary「开始采集」; while capturing it becomes an
   // enabled outline「取消采集」— previously a started capture was locked in
@@ -83,9 +86,17 @@ function createCaptureUi(deps) {
     showBanner('cam', '已取消采集。', 'ok');
   }
 
-  function onCapture() {
+  function onCapture(consentOverride) {
     // While a capture runs, the primary button doubles as its cancel control.
     if (captureCtl.isActive()) { onCancelCapture(); return; }
+
+    // The first capture click in a session without consent opens the gate.
+    // Acceptance resumes through restartPreview(), because declining left the
+    // camera off; re-entry skips the gate exactly once.
+    if (!consentOverride &&
+        !requireConsent(function() {
+          if (previewCtl.restartPreview()) onCapture(true);
+        })) return;
 
     var prog = document.getElementById('cap-progress');
 

@@ -349,6 +349,31 @@
   </div>
 </div>
 
+<!-- Per-user consent gate: the camera stays off until this is accepted. -->
+<div class="cam-picker-overlay" id="consent-overlay" role="dialog" aria-modal="true"
+     aria-labelledby="consent-title">
+  <div class="cam-picker consent-modal">
+    <h2 id="consent-title">人脸识别隐私说明与知情同意</h2>
+    <p class="dim">在启动摄像头之前，请确认以下事项：</p>
+    <ul class="consent-list">
+      <li>人脸画面仅在本机内存中处理，不保存照片或视频，不上传。</li>
+      <li>本机仅保存人脸特征向量和 DPAPI 加密后的 Windows 密码。</li>
+      <li>你可以随时删除人脸数据或卸载软件来撤回同意。</li>
+      <li>人脸识别无法保证绝对安全；识别失败时请使用密码登录。</li>
+    </ul>
+    <label class="chk-row consent-check">
+      <input type="checkbox" id="consent-agree">
+      我已阅读并同意《FaceLogin 人脸识别隐私说明与知情同意书》
+    </label>
+    <p class="dim" id="consent-hint">勾选后才能启动摄像头和人脸采集。</p>
+    <button class="btn btn-primary" id="btn-consent-accept" onclick="onConsentAccept()" disabled>
+      同意并开始
+    </button>
+    <button class="btn btn-secondary" onclick="onConsentDecline()">暂不同意</button>
+    <button class="consent-link" onclick="openPrivacyNotice()">查看完整说明（安装目录 PRIVACY.txt）</button>
+  </div>
+</div>
+
 <div class="cam-picker-overlay" id="license-overlay" role="dialog" aria-modal="true" aria-labelledby="license-title">
   <div class="license-modal">
     <div class="license-head">
@@ -359,6 +384,7 @@
       <button class="active" data-license="LICENSE.txt" onclick="showLicenseDocument(this)">项目许可</button>
       <button data-license="THIRD_PARTY_NOTICES.txt" onclick="showLicenseDocument(this)">第三方声明</button>
       <button data-license="MODEL_LICENSES.txt" onclick="showLicenseDocument(this)">模型许可</button>
+      <button data-license="PRIVACY.txt" onclick="showLicenseDocument(this)">隐私说明</button>
     </div>
     <div class="license-content" id="license-content" tabindex="0">正在读取许可文件…</div>
   </div>

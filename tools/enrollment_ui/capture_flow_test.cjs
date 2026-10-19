@@ -85,6 +85,10 @@ function page(overrides) {
   for (const file of PAGE_SOURCES) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../../enrollment_app/js', file), 'utf8'), context);
   }
+  // The real page opens on the consent gate; most tests exercise the
+  // post-consent UI. grant() marks it accepted without running the startup
+  // callback (which would start the preview frame loop in this mock).
+  if (overrides.grantConsent !== false) context.consoleApp.consent.grant();
   return { context, app: context.consoleApp, intervals, timeouts, elements, element, calls, state };
 }
 
@@ -146,6 +150,13 @@ test('failure or completion prevents stale totals and poll callbacks', () => {
   assert.equal(pending.size, 0);
   assert.equal(flow.canShowIdleTotal(), false);
   assert.equal(flow.firstAngle(), 1);
+});
+
+test('capture is blocked until the per-user consent is accepted', () => {
+  const p = page({ grantConsent: false });
+  p.context.onCapture();
+  assert.equal(p.app.captureCtl.isActive(), false);
+  assert.ok(p.element('consent-overlay').classList.contains('active'));
 });
 
 test('page cancellation and retry cannot start an old sequence angle', () => {

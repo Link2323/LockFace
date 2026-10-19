@@ -120,7 +120,7 @@ func TestUninstallCleanupRemovesObservedLegacyResidue(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "log", "credential_provider.log"), []byte("log"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "MODEL_LICENSES.txt"} {
+	for _, name := range []string{"LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "MODEL_LICENSES.txt", "PRIVACY.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("legal document"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestUninstallCleanupRemovesObservedLegacyResidue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveInstalledFiles returned error: %v", err)
 	}
-	if removedFiles != 5 || filesPending {
+	if removedFiles != 6 || filesPending {
 		t.Fatalf("unexpected file-removal state: removed=%d pending=%v", removedFiles, filesPending)
 	}
 

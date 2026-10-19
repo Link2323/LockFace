@@ -18,7 +18,7 @@ var assets embed.FS
 // appVersion is shown in Windows' Add/Remove Programs list. Keep in sync
 // with wails.json Info.productVersion, build/windows/info.json and the
 // README badge.
-const appVersion = "1.8.0"
+const appVersion = "1.9.0"
 
 // Registry value names under the FaceLogin key (the key path itself lives in
 // internal/util.go).
@@ -60,7 +60,9 @@ func main() {
 	err := wails.Run(&options.App{
 		Title:            title,
 		Width:            640,
-		Height:           520,
+		Height:           600,
+		MinWidth:         600,
+		MinHeight:        560,
 		WindowStartState: options.Normal,
 		AssetServer: &assetserver.Options{
 			Assets: assets,

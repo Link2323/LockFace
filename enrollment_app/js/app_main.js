@@ -15,6 +15,7 @@ function buildEnrollmentApp(deps) {
 
   var ui = createUiCommon({host: H});
   var previewCtl = createPreview({host: H, showBanner: ui.showBanner});
+  var consent = createConsentGate({previewCtl: previewCtl, ui: ui});
   var captureCtl = createCaptureCtl({timers: timers});
   var nav = createNavigation({host: H, captureCtl: captureCtl,
                               previewCtl: previewCtl, showBanner: ui.showBanner});
@@ -37,6 +38,7 @@ function buildEnrollmentApp(deps) {
                                    switchTab: nav.switchTab,
                                    showScreen: nav.showScreen,
                                    previewCtl: previewCtl,
+                                   requireConsent: consent.ensure,
                                    showAppendScreen: enrollSave.showAppendScreen,
                                    showRefreshPrompt: accountRefresh.showRefreshPrompt});
   var settings = createSettingsModule({host: H, showBanner: ui.showBanner,
@@ -53,6 +55,7 @@ function buildEnrollmentApp(deps) {
     host: H,
     ui: ui,
     previewCtl: previewCtl,
+    consent: consent,
     captureCtl: captureCtl,
     nav: nav,
     accountRefresh: accountRefresh,
@@ -95,6 +98,9 @@ var switchTab = consoleApp.nav.switchTab,
     openLicenseViewer = consoleApp.ui.openLicenseViewer,
     closeLicenseViewer = consoleApp.ui.closeLicenseViewer,
     showLicenseDocument = consoleApp.ui.showLicenseDocument,
+    onConsentAccept = consoleApp.consent.accept,
+    onConsentDecline = consoleApp.consent.decline,
+    openPrivacyNotice = consoleApp.consent.openPrivacyNotice,
     onModalOk = consoleApp.ui.onModalOk,
     onModalCancel = consoleApp.ui.onModalCancel,
     onModalMid = consoleApp.ui.onModalMid;
@@ -110,23 +116,30 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
   var previewCtl = consoleApp.previewCtl, captureCtl = consoleApp.captureCtl;
   var logs = consoleApp.logs, settings = consoleApp.settings;
   var accountRefresh = consoleApp.accountRefresh;
+  var consent = consoleApp.consent;
 
   try { document.getElementById('fld-user').value = H.GetUsername(); } catch(e) {}
-  setTimeout(previewCtl.restartPreview, 100);
 
-  // If the account was converted from MSA→local with a stale record, surface
-  // the refresh prompt at startup (before the camera preview takes over).
-  setTimeout(function() { accountRefresh.check(); }, 150);
+  // The camera must not start before the per-user consent gate is accepted.
+  // The startup prompts are deferred with it so they cannot cover the consent
+  // dialog or race its overlay.
+  consent.init(function() {
+    previewCtl.restartPreview();
 
-  // First-run camera picker: if config has no camera_device AND multiple
-  // cameras exist, prompt the user to choose one. Fresh installs (or users
-  // who never touched settings) may not know the camera dropdown exists.
-  setTimeout(function() {
-    try {
-      var cfg = JSON.parse(H.GetConfig());
-      if (!cfg.camera_device) settings.showCamPicker();
-    } catch(e) {}
-  }, 300);
+    // If the account was converted from MSA→local with a stale record, surface
+    // the refresh prompt at startup (before the camera preview takes over).
+    setTimeout(function() { accountRefresh.check(); }, 150);
+
+    // First-run camera picker: if config has no camera_device AND multiple
+    // cameras exist, prompt the user to choose one. Fresh installs (or users
+    // who never touched settings) may not know the camera dropdown exists.
+    setTimeout(function() {
+      try {
+        var cfg = JSON.parse(H.GetConfig());
+        if (!cfg.camera_device) settings.showCamPicker();
+      } catch(e) {}
+    }, 300);
+  });
 
   setInterval(function() {
     if (!previewCtl.isViewing()) return;

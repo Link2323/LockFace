@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(FaceLogin VERSION 1.8.0 LANGUAGES CXX)
+project(FaceLogin VERSION 1.9.0 LANGUAGES CXX)
 
 # Stamps a VERSIONINFO resource (project() version) into a Windows target.
 # Usage after add_executable/add_library:
