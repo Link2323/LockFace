@@ -9,7 +9,6 @@ namespace facelogin {
 
 struct EnrollmentSaveOutcome {
     bool persisted = false;
-    std::string hint;
 };
 
 // UI-thread account operations. Owns the enrollment-side database and keeps
@@ -43,7 +42,6 @@ private:
     };
     AccountChange ReadAccountChange();
     bool SaveAndReload(bool* persisted = nullptr);
-    std::string BuildAngleHint() const;
 
     CredentialStore m_store;
     const session_identity::SessionIdentity m_identity;

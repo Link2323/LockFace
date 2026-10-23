@@ -58,10 +58,6 @@ public:
     //  "cancelled":false,"done":false}
     std::string GetCaptureStatus();
     bool ValidatePassword(const std::wstring& password);
-    // Soft quality hint from the LAST save (UTF-8; empty = no hint). Set when
-    // the saved angle templates sit closer than the measured cross-angle
-    // minimum (0.68) — suggests a bigger turn on re-enrollment, never blocks.
-    const std::string& GetEnrollmentHint() const { return m_lastEnrollHint; }
     // Save enrollment with the given password. label names this face (may be
     // empty — the backend falls back to L"脸N").
     bool SaveEnrollment(const std::wstring& password, const std::wstring& label = L"");
@@ -197,9 +193,6 @@ private:
     bool m_previewRunning = false;
 
     EnrollmentCapture m_capture;
-
-    // Soft pair-spacing hint for the UI (see GetEnrollmentHint).
-    std::string m_lastEnrollHint;
 
     session_identity::SessionIdentity m_identity;
     EnrollmentServiceClient m_serviceClient;

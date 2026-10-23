@@ -370,7 +370,6 @@ bool EnrollmentWizard::SaveEnrollmentImpl(const std::wstring& password,
     EnrollmentSaveOutcome outcome;
     const bool acknowledged = m_accounts->SaveTemplates(templates, password, label, append, outcome);
     if (outcome.persisted) {
-        m_lastEnrollHint = std::move(outcome.hint);
         // A failed reload ACK does not undo the save or permit reusing its proof.
         m_capture.ClearSavedSamples();
     }

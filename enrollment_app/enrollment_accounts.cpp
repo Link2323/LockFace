@@ -2,10 +2,8 @@
 #include "../common/dpapi_util.h"
 #include "../common/logger.h"
 #include "../common/json_util.h"
-#include "../common/embedding_math.h"
 
 #include <cmath>
-#include <cstdio>
 #include <sstream>
 #include <utility>
 
@@ -144,55 +142,7 @@ bool EnrollmentAccounts::SaveTemplates(const std::vector<EnrollmentTemplate>& te
                        prepared.targetYaw);
     }
 
-    const bool acknowledged = SaveAndReload(&outcome.persisted);
-    if (!outcome.persisted) return false;
-    if (multiAngle) outcome.hint = BuildAngleHint();
-    return acknowledged;
-}
-
-std::string EnrollmentAccounts::BuildAngleHint() const {
-    // Cross-angle pair-spacing observation (soft hint,
-    // docs/work/in-progress/progressive-learning-v2.md red line 3): the
-    // learned minimum cross-angle same-person pair distance is 0.681.
-    // Angles recorded closer than 0.68
-    // mean the user under-turned — the slots overlap, coverage shrinks, and
-    // the landing-clarity gate will reject many learning frames. Hint, never
-    // block: the enrollment itself is valid.
-    std::string hint;
-    {
-        size_t idx = m_store.FindUserIndex(m_identity.sid, m_identity.upn, m_identity.username);
-        if (idx < m_store.GetUsers().size()) {
-            const auto& faces = m_store.GetUsers()[idx].faces;
-            float minPair = -1.0f;
-            for (size_t i = 0; i < faces.size(); i++) {
-                for (size_t j = i + 1; j < faces.size(); j++) {
-                    if (faces[i].embedding.size() != faces[j].embedding.size() ||
-                        faces[i].embedding.empty()) continue;
-                    const float d = static_cast<float>(
-                        EuclideanDistance(faces[i].embedding.data(),
-                                          faces[j].embedding.data(),
-                                          faces[i].embedding.size()));
-                    if (minPair < 0.0f || d < minPair) minPair = d;
-                }
-            }
-            if (minPair >= 0.0f &&
-                minPair < facelogin::CredentialStore::kCrossAngleSentinelDist) {
-                char buf[192];
-                std::snprintf(buf, ARRAYSIZE(buf),
-                              "角度提示：各角度模板间距 %.2f（<0.68）。"
-                              "下次重录时转角再大一点可提升多角度解锁覆盖"
-                              "（本次录入仍然有效）。",
-                              minPair);
-                hint = buf;
-                FACELOGIN_WARN(L"Enrollment pair spacing %.3f < %.2f — soft hint shown "
-                               L"(learning continues; clarity gate will filter overlap)",
-                               minPair,
-                               facelogin::CredentialStore::kCrossAngleSentinelDist);
-            }
-        }
-    }
-
-    return hint;
+    return SaveAndReload(&outcome.persisted);
 }
 
 int EnrollmentAccounts::GetFaceCount() {

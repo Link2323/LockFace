@@ -53,9 +53,7 @@ function createEnrollSaveModule(deps) {
         showScreen('cam');
         setCaption('准备就绪');
         var okMsg = '新脸已添加成功！可按 Win+L 锁定屏幕测试人脸登录。';
-        var hint = enrollmentHint();
-        if (hint) okMsg += ' ' + hint;
-        showBanner('cam', okMsg, 'ok', hint ? 12000 : undefined);
+        showBanner('cam', okMsg, 'ok');
         previewCtl.restartPreview();
       } else {
         showBanner('append', '追加失败（已达人脸上限或身份校验失败）。', 'error');
@@ -81,13 +79,6 @@ function createEnrollSaveModule(deps) {
     previewCtl.restartPreview();
   }
 
-  // Soft enrollment-quality hint from the backend (empty when nothing to say).
-  // Currently set when the saved angle templates sit closer than the measured
-  // cross-angle minimum — suggests a bigger turn on re-enrollment.
-  function enrollmentHint() {
-    try { return H.GetEnrollmentHint() || ''; } catch(e) { return ''; }
-  }
-
   function onSave() {
     var pass = document.getElementById('fld-pass').value;
     if (!pass) { showBanner('pwd', '请输入密码。', 'error'); return; }
@@ -109,9 +100,7 @@ function createEnrollSaveModule(deps) {
         document.getElementById('fld-pass').value = '';
         setCaption('准备就绪');
         var okMsg = '录入成功！可按 Win+L 锁定屏幕测试人脸登录。';
-        var hint = enrollmentHint();
-        if (hint) okMsg += ' ' + hint;
-        showBanner('cam', okMsg, 'ok', hint ? 12000 : undefined);
+        showBanner('cam', okMsg, 'ok');
         previewCtl.restartPreview();
       } else {
         // MSA password validation only checks the locally cached credential.

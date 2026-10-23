@@ -479,7 +479,6 @@ void WebviewHost::ResizeWebView(HWND hWnd) {
         if (res) *res = MakeBool(m_wizard->ClearFileLog(source)); \
     }) \
     X(CancelCapture, 35, m_wizard->CancelCapture()) \
-    X(GetEnrollmentHint, 36, if (res) *res = MakeStr(m_wizard->GetEnrollmentHint())) \
     X(GetLearningStatus, 37, if (res) *res = MakeStr(m_wizard->GetLearningStatus())) \
     X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0)))) \
     X(GetPrivacyConsent, 39, if (res) *res = MakeStr(GetPrivacyConsentJson())) \
