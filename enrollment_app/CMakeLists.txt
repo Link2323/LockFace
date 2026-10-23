@@ -100,15 +100,15 @@ set_target_properties(LockFaceConsole PROPERTIES
 )
 
 # Embed DPI-aware manifest for sharp text on high-DPI displays
-target_sources(LockFaceConsole PRIVATE FaceLoginEnrollment.manifest)
-set_source_files_properties(FaceLoginEnrollment.manifest PROPERTIES
+target_sources(LockFaceConsole PRIVATE LockFaceEnrollment.manifest)
+set_source_files_properties(LockFaceEnrollment.manifest PROPERTIES
     VS_TOOL_OVERRIDE "manifest"
     HEADER_FILE_ONLY TRUE
 )
 
 # Custom output directory
 set_target_properties(LockFaceConsole PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources"
 )
 
 # assets/models is the sole source for every runtime ONNX model. Generate the
@@ -118,18 +118,18 @@ add_custom_command(TARGET LockFaceConsole POST_BUILD
     COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
             "${CMAKE_SOURCE_DIR}/scripts/stage_licenses.ps1"
     COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources/models"
+            "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources/models"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/assets/models/det_10g_gnkps.onnx"
-            "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources/models/det_10g_gnkps.onnx"
+            "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources/models/det_10g_gnkps.onnx"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/assets/models/face_recognition_sface_2021dec.onnx"
-            "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources/models/face_recognition_sface_2021dec.onnx"
+            "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources/models/face_recognition_sface_2021dec.onnx"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/assets/models/MiniFASNetV2.onnx"
-            "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources/models/MiniFASNetV2.onnx"
+            "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources/models/MiniFASNetV2.onnx"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/assets/models/MiniFASNetV1SE.onnx"
-            "${CMAKE_SOURCE_DIR}/installer/FaceLoginSetup/resources/models/MiniFASNetV1SE.onnx"
+            "${CMAKE_SOURCE_DIR}/installer/LockFaceSetup/resources/models/MiniFASNetV1SE.onnx"
     COMMENT "Staging license documents and canonical runtime models"
 )

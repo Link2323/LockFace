@@ -1,5 +1,5 @@
-#include "FaceLoginProvider.h"
-#include "FaceLoginCredential.h"
+#include "LockFaceProvider.h"
+#include "LockFaceCredential.h"
 #include "../common/logger.h"
 #include "../common/registry_util.h"
 #include "../storage/credential_store.h"
@@ -12,9 +12,9 @@
 #pragma comment(lib, "advapi32.lib")
 
 // External GUID defined in resource.h / initguid
-extern const GUID CLSID_FaceLoginProvider;
+extern const GUID CLSID_LockFaceProvider;
 
-FaceLoginProvider::FaceLoginProvider() {
+LockFaceProvider::LockFaceProvider() {
     // Define fields for our credential tile (no tile image — text only)
 
     m_rgFieldDescriptors[kFieldTitle].dwFieldID = kFieldTitle;
@@ -49,8 +49,8 @@ FaceLoginProvider::FaceLoginProvider() {
     m_rgFieldDescriptors[kFieldRetryHint].guidFieldType = GUID_NULL;
 }
 
-FaceLoginProvider::~FaceLoginProvider() {
-    FACELOGIN_INFO(L"FaceLoginProvider destroyed");
+LockFaceProvider::~LockFaceProvider() {
+    FACELOGIN_INFO(L"LockFaceProvider destroyed");
     if (m_pCredential) {
         m_pCredential->Release();
         m_pCredential = nullptr;
@@ -64,13 +64,13 @@ FaceLoginProvider::~FaceLoginProvider() {
 static DWORD ReadUserCountFromDatabase() {
     // Path precedence: the registry DataPath (written by the installer as the
     // install directory — where users.dat actually lives in production) wins;
-    // %PROGRAMDATA%\FaceLogin is only the fallback when it is unset.
+    // %PROGRAMDATA%\LockFace is only the fallback when it is unset.
     wchar_t programData[MAX_PATH];
     std::wstring dataDir;
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, programData))) {
-        dataDir = std::wstring(programData) + L"\\FaceLogin";
+        dataDir = std::wstring(programData) + L"\\LockFace";
     } else {
-        dataDir = L"C:\\ProgramData\\FaceLogin";
+        dataDir = L"C:\\ProgramData\\LockFace";
     }
     std::wstring regPath = ReadRegString(REGVAL_DATA_PATH, L"");
     if (!regPath.empty()) {
@@ -104,7 +104,7 @@ static DWORD ReadUserCountFromDatabase() {
 // IUnknown
 // ============================================================================
 
-STDMETHODIMP FaceLoginProvider::QueryInterface(REFIID riid, void** ppv) {
+STDMETHODIMP LockFaceProvider::QueryInterface(REFIID riid, void** ppv) {
     *ppv = nullptr;
     HRESULT hr = E_NOINTERFACE;
 
@@ -117,11 +117,11 @@ STDMETHODIMP FaceLoginProvider::QueryInterface(REFIID riid, void** ppv) {
     return hr;
 }
 
-STDMETHODIMP_(ULONG) FaceLoginProvider::AddRef() {
+STDMETHODIMP_(ULONG) LockFaceProvider::AddRef() {
     return InterlockedIncrement(&m_refCount);
 }
 
-STDMETHODIMP_(ULONG) FaceLoginProvider::Release() {
+STDMETHODIMP_(ULONG) LockFaceProvider::Release() {
     LONG count = InterlockedDecrement(&m_refCount);
     if (count == 0) {
         delete this;
@@ -133,7 +133,7 @@ STDMETHODIMP_(ULONG) FaceLoginProvider::Release() {
 // ICredentialProvider
 // ============================================================================
 
-STDMETHODIMP FaceLoginProvider::SetUsageScenario(
+STDMETHODIMP LockFaceProvider::SetUsageScenario(
     CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, DWORD dwFlags) {
     UNREFERENCED_PARAMETER(dwFlags);
     // CPUS_CHANGE_PASSWORD: we don't support changing passwords via face
@@ -156,7 +156,7 @@ STDMETHODIMP FaceLoginProvider::SetUsageScenario(
 
     // ── LOGON / UNLOCK → trigger policy ─────────────────────────────
     // Both scenarios wait for user input (keyboard/mouse) before starting
-    // recognition — FaceLoginCredential::Advise runs the same input-detection
+    // recognition — LockFaceCredential::Advise runs the same input-detection
     // thread everywhere.  Previously the CP distinguished "cold boot" (auto-
     // trigger StartAuth immediately) from unlock (wait for keypress): at boot
     // the camera started recognizing before the user was at the machine, and
@@ -168,7 +168,7 @@ STDMETHODIMP FaceLoginProvider::SetUsageScenario(
     // Check if the Disabled registry flag is set
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}",
+        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\{C728CF60-ACEC-4680-9E93-43FBE403729C}",
         0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         DWORD disabled = 0, size = sizeof(disabled);
         RegQueryValueExW(hKey, L"Disabled", nullptr, nullptr,
@@ -190,7 +190,7 @@ STDMETHODIMP FaceLoginProvider::SetUsageScenario(
     }
 
     // Create our credential
-    m_pCredential = new FaceLoginCredential();
+    m_pCredential = new LockFaceCredential();
     if (!m_pCredential) {
         return E_OUTOFMEMORY;
     }
@@ -199,7 +199,7 @@ STDMETHODIMP FaceLoginProvider::SetUsageScenario(
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::SetSerialization(
+STDMETHODIMP LockFaceProvider::SetSerialization(
     const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs) {
     // We don't handle incoming credential serialization.
     // This is called for things like RDP pre-fill or CredUI callbacks.
@@ -207,7 +207,7 @@ STDMETHODIMP FaceLoginProvider::SetSerialization(
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::Advise(
+STDMETHODIMP LockFaceProvider::Advise(
     ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext) {
     if (m_pEvents) {
         m_pEvents->Release();
@@ -227,7 +227,7 @@ STDMETHODIMP FaceLoginProvider::Advise(
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::UnAdvise() {
+STDMETHODIMP LockFaceProvider::UnAdvise() {
     if (m_pEvents) {
         m_pEvents->Release();
         m_pEvents = nullptr;
@@ -240,12 +240,12 @@ STDMETHODIMP FaceLoginProvider::UnAdvise() {
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::GetFieldDescriptorCount(DWORD* pdwCount) {
+STDMETHODIMP LockFaceProvider::GetFieldDescriptorCount(DWORD* pdwCount) {
     *pdwCount = ARRAYSIZE(m_rgFieldDescriptors);
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::GetFieldDescriptorAt(
+STDMETHODIMP LockFaceProvider::GetFieldDescriptorAt(
     DWORD dwIndex, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd) {
 
     if (dwIndex >= ARRAYSIZE(m_rgFieldDescriptors)) {
@@ -271,7 +271,7 @@ STDMETHODIMP FaceLoginProvider::GetFieldDescriptorAt(
     return hr;
 }
 
-STDMETHODIMP FaceLoginProvider::GetCredentialCount(
+STDMETHODIMP LockFaceProvider::GetCredentialCount(
     DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault) {
 
     // We always provide exactly one credential
@@ -287,7 +287,7 @@ STDMETHODIMP FaceLoginProvider::GetCredentialCount(
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginProvider::GetCredentialAt(
+STDMETHODIMP LockFaceProvider::GetCredentialAt(
     DWORD dwIndex, ICredentialProviderCredential** ppcpc) {
 
     if (dwIndex != 0 || !m_pCredential) {

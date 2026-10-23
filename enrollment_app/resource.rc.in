@@ -4,7 +4,7 @@
 #include "resource.h"
 
 // Face icon resource
-IDI_ENROLLMENT_ICON ICON "@CMAKE_SOURCE_DIR@/assets/facelogin.ico"
+IDI_ENROLLMENT_ICON ICON "@CMAKE_SOURCE_DIR@/assets/lockface.ico"
 
 // ============================================================================
 // Page 1: Face Capture — 560 x 370

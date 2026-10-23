@@ -231,7 +231,7 @@ int main() {
     std::error_code error;
     const auto tempDir = fs::temp_directory_path(error);
     if (error) return 1;
-    const auto dataDir = tempDir / (L"FaceLoginEnrollmentSupportTest-" +
+    const auto dataDir = tempDir / (L"LockFaceEnrollmentSupportTest-" +
         std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     if (!fs::create_directory(dataDir, error) || error) return 1;
     TestLogs(dataDir);

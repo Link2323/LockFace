@@ -15,7 +15,7 @@
 
 ## 项目与目录
 
-LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安装目录、默认路径与服务名已改为 LockFace*。仍保留 FaceLogin 的内部标识：注册表键 `HKLM\SOFTWARE\FaceLogin` 与卸载键、`%ProgramData%\FaceLogin` 回退、`%LOCALAPPDATA%\FaceLogin\WebView2`、管道名 `\\.\pipe\FaceLoginPipe`、Go module 目录 `installer/FaceLoginSetup`、CMake `project(FaceLogin)`、CLSID 与 C++ 源文件名如 `FaceLoginProvider.cpp`）是 Windows x64 桌面应用，核心为 C++20，安装器使用 Go/Wails，安装器前端使用 TypeScript/Vue，注册界面使用内嵌 HTML/CSS/JavaScript。
+LockFace（2026-10 由 FaceLogin 更名并脱离上游独立，同月完成内部标识统一：注册表键 `HKLM/HKCU\SOFTWARE\LockFace`、卸载键、`%ProgramData%\LockFace` 回退、`%LOCALAPPDATA%\LockFace\WebView2`、管道名 `\\.\pipe\LockFacePipe`、Go module `installer/LockFaceSetup`、CMake `project(LockFace)`、CLSID 与 C++ 源文件名均为 LockFace；卸载器与 `scripts/unregister_dev.bat` 负责清理更名前 FaceLogin 旧键/旧目录/旧 CLSID 残留）是 Windows x64 桌面应用，核心为 C++20，安装器使用 Go/Wails，安装器前端使用 TypeScript/Vue，注册界面使用内嵌 HTML/CSS/JavaScript。源码内部前缀（C++ 命名空间 `facelogin::`、日志宏 `FACELOGIN_*`、CMake 函数与静态库目标 `facelogin_*`）是历史命名，不对应任何机器可见标识，保持不动。
 
 | 目录 | 用途 |
 |---|---|
@@ -25,7 +25,7 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安�
 | `common/` | 服务、凭据提供器和注册程序共享库 |
 | `vision/` | 服务与注册程序共用的相机采集、推理、对齐和曝光控制 |
 | `storage/` | 服务与注册程序共用的凭据数据库读写与匹配 |
-| `installer/FaceLoginSetup/` | Go/Wails 安装器；`resources/` 是嵌入载荷镜像 |
+| `installer/LockFaceSetup/` | Go/Wails 安装器；`resources/` 是嵌入载荷镜像 |
 | `assets/`、`scripts/` | 图像与模型资源、模型和开发辅助脚本 |
 | `tools/` | 离线分析与标定工具 |
 | `docs/` | 构建、契约、模块、设计与运维文档 |
@@ -34,10 +34,10 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安�
 ## 构建、资源与模型
 
 - 构建、依赖和打包流程以 [`docs/BUILD.md`](docs/BUILD.md) 为准。优先使用 `scripts/build_installer.ps1`；版本同步使用 `scripts/bump_version.ps1`。
-- `installer/FaceLoginSetup/resources/` 中的二进制和模型按文件类型被 Git 忽略。打包脚本按白名单复制并清理资源；手工打包前按 `docs/BUILD.md` 核对。安装包需要的 5 个运行时 DLL 来自 `build/face_service/Release/`；Credential Provider 使用静态 CRT，不依赖这些 DLL。
+- `installer/LockFaceSetup/resources/` 中的二进制和模型按文件类型被 Git 忽略。打包脚本按白名单复制并清理资源；手工打包前按 `docs/BUILD.md` 核对。安装包需要的 5 个运行时 DLL 来自 `build/face_service/Release/`；Credential Provider 使用静态 CRT，不依赖这些 DLL。
 - 完整安装器嵌入由 `resources/` 生成的 `payload.zip`，打包前按白名单清除意外残留；slim 卸载器不嵌入载荷。`tools/` 中的离线工具不属于安装载荷。
 - 注册页面修改 `enrollment_app/index.html.in`、`styles.css` 和 `enrollment_app/js/` 下的 JS 模块（`enrollment_app/CMakeLists.txt` 的 `ENROLLMENT_JS_SOURCES` 即拼接与依赖顺序，新增模块只需加进该列表，`tools/enrollment_ui/capture_flow_test.cjs` 运行时解析它）；CMake 合成并嵌入页面，不编辑 `build/enrollment_app/index.html`。构建与验证见 [`docs/BUILD.md`](docs/BUILD.md)。
-- 不编辑 `installer/FaceLoginSetup/frontend/wailsjs/` 下的生成绑定；通过 Wails 命令重新生成。
+- 不编辑 `installer/LockFaceSetup/frontend/wailsjs/` 下的生成绑定；通过 Wails 命令重新生成。
 - 普通构建和打包复用现有模型文件，不重复下载或量化。只有新克隆缺模型、哈希校验失败或任务明确要求升级时，才运行模型下载脚本。模型来源、哈希和转换规则见 `third_party/models/` 与 [`DEVELOPMENT.md`](DEVELOPMENT.md#sec-models)。
 - 依赖或模型变更时，同步更新适用的许可、来源记录和随包声明；事实源及更新脚本见 `docs/BUILD.md`、`third_party/sources.json`。
 
@@ -50,7 +50,7 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安�
 - 服务 worker 使用 MTA；Credential Provider 和 WebView2 注册界面使用 Apartment 线程。DirectShow 必须复用当前线程已初始化的 COM 公寓；只有在同一线程初始化 COM 的代码才能调用 `CoUninitialize`。
 - 公共管道、worker 管道和 `users.dat` 格式以 `docs/contracts/` 中的契约文档为准。不要在本文件复制字段表或字节布局。
 - `users.dat` 当前格式和模型标识见 [`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)。格式、识别模型或模型标识变更可能影响现有录入，实施前先核对契约和迁移行为；多角度记录分别保存，不跨角度平均嵌入。
-- Credential Provider CLSID 同时出现在 `credential_provider/resource.h`、`credential_provider/dllmain.cpp`、`credential_provider/FaceLoginProvider.cpp`、`installer/FaceLoginSetup/internal/com.go`、`scripts/unregister_dev.bat` 和 `docs/modules/windows-clients.md`（共 6 处）；前四处由安装器的跨语言一致性测试钉住，改动时全部同步。
+- Credential Provider CLSID 同时出现在 `credential_provider/resource.h`、`credential_provider/dllmain.cpp`、`credential_provider/LockFaceProvider.cpp`、`installer/LockFaceSetup/internal/com.go`、`scripts/unregister_dev.bat` 和 `docs/modules/windows-clients.md`（共 6 处）；前四处由安装器的跨语言一致性测试钉住，改动时全部同步。
 
 ## 编码与安全约束
 
@@ -59,7 +59,7 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立；二进制、安�
 - 函数以 `bool` 返回成功状态，详细错误通过 `FACELOGIN_ERROR` 记录；不用异常做控制流。
 - 密码保存在 `std::wstring` 中，所有退出路径都要清零；日志绝不记录密码。DPAPI 使用 `CRYPTPROTECT_LOCAL_MACHINE`，凭据绑定本机。
 - 处理 MSA 账户时，UPN 解析和当前进程令牌回退行为见 [`docs/modules/windows-clients.md`](docs/modules/windows-clients.md#账号身份)。无密码 MSA 账户必须被检测并阻止。
-- 安装器是 Go 项目，安装与卸载逻辑放在 `installer/FaceLoginSetup/internal/`，参见 [`docs/modules/installer.md`](docs/modules/installer.md)。
+- 安装器是 Go 项目，安装与卸载逻辑放在 `installer/LockFaceSetup/internal/`，参见 [`docs/modules/installer.md`](docs/modules/installer.md)。
 - 一次性验证和下载中间产物在任务结束时清理；正式 `build/` 输出保留。
 
 ## 验证与文档同步

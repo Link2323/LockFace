@@ -7,4 +7,4 @@
 // the two resources will conflict.
 
 // Face icon resource
-IDI_FACELOGIN ICON "..\\assets\\facelogin.ico"
+IDI_LOCKFACE ICON "..\\assets\\lockface.ico"

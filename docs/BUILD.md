@@ -32,7 +32,7 @@ cmake --build build --config Release --parallel
 |---|---|
 | `LockFaceService` | `build/face_service/Release/LockFaceService.exe` |
 | `LockFaceCredentialProvider` | `build/credential_provider/Release/LockFaceCredentialProvider.dll` |
-| `LockFaceConsole` | `installer/FaceLoginSetup/resources/LockFaceConsole.exe` |
+| `LockFaceConsole` | `installer/LockFaceSetup/resources/LockFaceConsole.exe` |
 
 开发测试从根 CMake 单独构建。无硬件自动化回归使用统一入口：
 
@@ -76,24 +76,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_installer.ps1
 
 ### 手动构建与核对
 
-资源目录 `installer/FaceLoginSetup/resources/` 被 gitignore，只有 Console 和正式模型会由 CMake 同步，其余文件必须显式准备。手动打包按此顺序：
+资源目录 `installer/LockFaceSetup/resources/` 被 gitignore，只有 Console 和正式模型会由 CMake 同步，其余文件必须显式准备。手动打包按此顺序：
 
 SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 文件，运行哈希与原始上游不同；文件名和载荷数量不变。普通构建复用 `assets/models/` 已验证文件；确需补模型时，下载器验证上游、规范化并验证衍生哈希后才替换。不得把原始上游文件直接放入载荷。
 
 1. 显式串行构建产品目标：`cmake --build build --config Release --target LockFaceService LockFaceCredentialProvider LockFaceConsole --parallel 1`。
-2. 运行 `npm --prefix installer/FaceLoginSetup/frontend ci`，再运行 `scripts/update_third_party_notices.ps1`。
-3. 在 `installer/FaceLoginSetup/` 构建 slim 卸载器：`wails build -tags slim -platform windows/amd64 -ldflags "-s -w"`；将生成的 EXE 复制到 `resources/uninstall.exe`。
+2. 运行 `npm --prefix installer/LockFaceSetup/frontend ci`，再运行 `scripts/update_third_party_notices.ps1`。
+3. 在 `installer/LockFaceSetup/` 构建 slim 卸载器：`wails build -tags slim -platform windows/amd64 -ldflags "-s -w"`；将生成的 EXE 复制到 `resources/uninstall.exe`。
 4. 将 Service、Credential Provider 和恰好五个运行时 DLL 复制到 `resources/`。Console 与四个模型已由 CMake 放入该目录。
 5. 按下方白名单清理并核对 `resources/`，运行 `scripts/make_payload.ps1`。
 6. 运行 `wails build -platform windows/amd64 -ldflags "-s -w"`。
 
-开发验证与打包分开：安装器 Go 代码变更后在 `installer/FaceLoginSetup/` 单独运行 `go test ./...`，C++ 测试按目标显式构建和运行。
+开发验证与打包分开：安装器 Go 代码变更后在 `installer/LockFaceSetup/` 单独运行 `go test ./...`，C++ 测试按目标显式构建和运行。
 
 注册页面源文件为 `enrollment_app/index.html.in`、`styles.css` 和 `enrollment_app/CMakeLists.txt` 中 `ENROLLMENT_JS_SOURCES` 列出的 12 个 JS 模块（位于 `enrollment_app/js/`，`capture_flow.js` 到 `app_main.js`，列表顺序即拼接与依赖顺序）；CMake 合成为 `build/enrollment_app/index.html`，由生成的 `resource.rc` 嵌入 EXE，不增加运行期资源文件。修改任一源文件后须重建 C++；改动安装器 Go、Vue 或载荷提取逻辑时须重建安装器。单独运行 Wails 不会检测 C++ 资源是否过期。
 
 ### 资源白名单
 
-载荷白名单的单一事实源是 [`installer/FaceLoginSetup/internal/payload_manifest.txt`](../installer/FaceLoginSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个运行时 DLL、四份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
+载荷白名单的单一事实源是 [`installer/LockFaceSetup/internal/payload_manifest.txt`](../installer/LockFaceSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个运行时 DLL、四份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
 
 新增载荷文件只需在 manifest 加一行。新增模型还需在 `internal/extract.go` 的 `requiredModels` 补大小与 SHA-256（安装期安全校验需要哈希，故为独立清单，测试保证两表不漂移）。离线工具、旧 DLL、临时文件和其他残留都不得打包。
 
@@ -112,7 +112,7 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 注册页面采集流程的无硬件回归：`node tools/enrollment_ui/capture_flow_test.cjs`。该测试覆盖角度间取消、立即重试和旧回调隔离；实际 WebView2、摄像头与保存流程仍需 GUI 验收。
 
 ```powershell
-cd installer/FaceLoginSetup/frontend
+cd installer/LockFaceSetup/frontend
 npm run dev
 npm run build
 ```

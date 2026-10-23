@@ -187,7 +187,7 @@ cmake --build build --config Release
 ### Go 安装程序
 
 ```powershell
-cd installer/FaceLoginSetup
+cd installer/LockFaceSetup
 # 将 C++ 产物和模型放入 resources/ 后编译
 wails build -clean -platform windows/amd64
 ```

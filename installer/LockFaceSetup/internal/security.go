@@ -7,13 +7,13 @@ import (
 )
 
 // regKeyObjectName is the SetNamedSecurityInfo object-name form for
-// HKLM\SOFTWARE\FaceLogin. Using the name form (rather than a registry.Key
+// HKLM\SOFTWARE\LockFace. Using the name form (rather than a registry.Key
 // handle opened with WRITE_DAC) sidesteps the fact that
 // golang.org/x/sys/windows/registry exposes no WRITE_DAC access constant.
-const regKeyObjectName = `MACHINE\SOFTWARE\FaceLogin`
+const regKeyObjectName = `MACHINE\SOFTWARE\LockFace`
 
 // SetRegistryKeyACL applies a restrictive, protected DACL to
-// HKLM\SOFTWARE\FaceLogin so that only SYSTEM and Administrators can change
+// HKLM\SOFTWARE\LockFace so that only SYSTEM and Administrators can change
 // the DataPath/InstallPath values (which the service trusts for its data
 // directory). Users retain read access (the lock-screen credential provider,
 // hosted by LogonUI, must read these values to locate users.dat).

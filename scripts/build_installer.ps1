@@ -56,7 +56,7 @@ if ($PSVersionTable.PSEdition -eq "Desktop") {
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $root = Split-Path $PSScriptRoot -Parent
-$inst = Join-Path $root "installer/FaceLoginSetup"
+$inst = Join-Path $root "installer/LockFaceSetup"
 $res = Join-Path $inst "resources"
 $scriptStart = Get-Date
 

@@ -3,7 +3,7 @@
 // SHA-256 file hashing for runtime model integrity verification.
 //
 // The installer validates every bundled ONNX model against a hard-coded SHA-256
-// manifest at install time (see installer/FaceLoginSetup/internal/extract.go).
+// manifest at install time (see installer/LockFaceSetup/internal/extract.go).
 // That check runs once. Afterwards any admin process can replace a model file
 // on disk — and since the whole bug3 fail-closed liveness defense is built on
 // "the PAD model is trustworthy", a swapped model that always returns real≥0.99

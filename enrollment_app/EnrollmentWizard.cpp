@@ -30,9 +30,9 @@ EnrollmentWizard::EnrollmentWizard() {
     } else {
         wchar_t programData[MAX_PATH];
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, programData))) {
-            m_dataDir = std::wstring(programData) + L"\\FaceLogin";
+            m_dataDir = std::wstring(programData) + L"\\LockFace";
         } else {
-            m_dataDir = L"C:\\ProgramData\\FaceLogin";
+            m_dataDir = L"C:\\ProgramData\\LockFace";
         }
     }
     CreateDirectoryW(m_dataDir.c_str(), nullptr);

@@ -12,13 +12,13 @@ namespace facelogin {
 //   Production mode (EXE under C:\Program Files\ or C:\Program Files (x86)\,
 //   which are ACL-protected against non-admin writes):
 //     Only the EXE's own directory is trusted. The registry DataPath value
-//     MUST point there; any other value (including the %ProgramData%\FaceLogin
+//     MUST point there; any other value (including the %ProgramData%\LockFace
 //     fallback) is rejected. This closes the redirection attack surface: an
 //     attacker who can change DataPath gains nothing, because the only
 //     permitted target is already the ACL-protected install directory.
 //
 //   Development mode (EXE elsewhere, e.g. build\):
-//     The EXE directory, %ProgramData%\FaceLogin, and the caller-supplied
+//     The EXE directory, %ProgramData%\LockFace, and the caller-supplied
 //     dataDirHint are all trusted. This keeps development harnesses usable
 //     on developer machines that are single-user and trusted.
 //

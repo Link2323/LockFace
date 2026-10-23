@@ -33,7 +33,7 @@ func repoRead(t *testing.T, rel ...string) string {
 // TestCredentialProviderCLSIDConsistent treats the DEFINE_GUID in
 // credential_provider/resource.h as the source of truth and requires every
 // string form of the CLSID — the resource.h comment, dllmain.cpp's
-// CLSID_STRING, the registry path in FaceLoginProvider.cpp and this
+// CLSID_STRING, the registry path in LockFaceProvider.cpp and this
 // installer's cleanup constant — to encode the same value.
 func TestCredentialProviderCLSIDConsistent(t *testing.T) {
 	resourceH := repoRead(t, "credential_provider", "resource.h")
@@ -42,7 +42,7 @@ func TestCredentialProviderCLSIDConsistent(t *testing.T) {
 		`((?:0x[0-9A-Fa-f]+\s*,\s*){10}0x[0-9A-Fa-f]+)\s*\)`)
 	m := defineRe.FindStringSubmatch(resourceH)
 	if m == nil {
-		t.Fatal("cannot parse DEFINE_GUID(CLSID_FaceLoginProvider, ...) in credential_provider/resource.h")
+		t.Fatal("cannot parse DEFINE_GUID(CLSID_LockFaceProvider, ...) in credential_provider/resource.h")
 	}
 	fields := regexp.MustCompile(`0x[0-9A-Fa-f]+`).FindAllString(m[1], -1)
 	if len(fields) != 11 {
@@ -69,7 +69,7 @@ func TestCredentialProviderCLSIDConsistent(t *testing.T) {
 			regexp.MustCompile(`(\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\})`)},
 		{"dllmain.cpp CLSID_STRING", []string{"credential_provider", "dllmain.cpp"},
 			regexp.MustCompile(`CLSID_STRING[^\n]*?L"(\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\})"`)},
-		{"FaceLoginProvider.cpp registry path", []string{"credential_provider", "FaceLoginProvider.cpp"},
+		{"LockFaceProvider.cpp registry path", []string{"credential_provider", "LockFaceProvider.cpp"},
 			regexp.MustCompile(`Credential Providers\\\\(\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\})`)},
 	}
 	for _, occ := range occurrences {

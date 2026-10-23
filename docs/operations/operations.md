@@ -18,7 +18,7 @@
 
 ### 2.1 日志文件
 
-默认安装下，所有日志位于**安装目录**下 `%ProgramFiles%\FaceLogin\log\`（即注册表 `HKLM\SOFTWARE\FaceLogin\DataPath` 指向的目录，安装器默认把 DataPath 设为安装目录本身）：
+默认安装下，所有日志位于**安装目录**下 `%ProgramFiles%\LockFace\log\`（即注册表 `HKLM\SOFTWARE\LockFace\DataPath` 指向的目录，安装器默认把 DataPath 设为安装目录本身）：
 
 | 日志文件 | 来源 |
 |---|---|
@@ -29,7 +29,7 @@
 
 > 日志文件为 **UTF-8（无 BOM）**，记事本、`grep`、PowerShell 可直接读取。2026-08 之前的版本写 UTF-16LE；升级新版后旧格式文件会在组件启动时自动改名为 `<name>.YYYY-MM-DD.log` 保留，这类历史文件需按 UTF-16 解码查看。
 
-> 若你在 `%ProgramFiles%\FaceLogin\log\` 找不到日志，去 `%ProgramData%\FaceLogin\log\` 看——那是 DataPath 注册表值为空时的回退位置（默认部署不会触发）。查注册表 `HKLM\SOFTWARE\FaceLogin\DataPath` 可确认实际数据目录。
+> 若你在 `%ProgramFiles%\LockFace\log\` 找不到日志，去 `%ProgramData%\LockFace\log\` 看——那是 DataPath 注册表值为空时的回退位置（默认部署不会触发）。查注册表 `HKLM\SOFTWARE\LockFace\DataPath` 可确认实际数据目录。
 
 ### 2.2 常见问题
 

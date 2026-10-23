@@ -5,7 +5,7 @@
 #include <credentialprovider.h>
 #include <string>
 
-#include "FaceLoginProvider.h"
+#include "LockFaceProvider.h"
 #include "resource.h"
 #include "../common/logger.h"
 #include "../common/registry_util.h"
@@ -22,15 +22,15 @@ static LONG g_cLockCount = 0;
 // GUIDs
 // ============================================================================
 
-// CLSID_FaceLoginProvider defined in resource.h/initguid
+// CLSID_LockFaceProvider defined in resource.h/initguid
 
 // ============================================================================
 // Class Factory
 // ============================================================================
 
-class FaceLoginClassFactory : public IClassFactory {
+class LockFaceClassFactory : public IClassFactory {
 public:
-    FaceLoginClassFactory() = default;
+    LockFaceClassFactory() = default;
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) {
@@ -58,7 +58,7 @@ public:
         *ppv = nullptr;
         if (pUnkOuter) return CLASS_E_NOAGGREGATION;
 
-        FaceLoginProvider* pProvider = new (std::nothrow) FaceLoginProvider();
+        LockFaceProvider* pProvider = new (std::nothrow) LockFaceProvider();
         if (!pProvider) return E_OUTOFMEMORY;
 
         HRESULT hr = pProvider->QueryInterface(riid, ppv);
@@ -100,9 +100,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 wchar_t programData[MAX_PATH];
                 if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
                                               nullptr, 0, programData))) {
-                    logDir = std::wstring(programData) + L"\\FaceLogin";
+                    logDir = std::wstring(programData) + L"\\LockFace";
                 } else {
-                    logDir = L"C:\\ProgramData\\FaceLogin";
+                    logDir = L"C:\\ProgramData\\LockFace";
                 }
             }
             std::wstring logPath = logDir + L"\\log\\credential_provider.log";
@@ -127,11 +127,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
     *ppv = nullptr;
 
-    if (rclsid != CLSID_FaceLoginProvider) {
+    if (rclsid != CLSID_LockFaceProvider) {
         return CLASS_E_CLASSNOTAVAILABLE;
     }
 
-    FaceLoginClassFactory* pFactory = new (std::nothrow) FaceLoginClassFactory();
+    LockFaceClassFactory* pFactory = new (std::nothrow) LockFaceClassFactory();
     if (!pFactory) return E_OUTOFMEMORY;
 
     HRESULT hr = pFactory->QueryInterface(riid, ppv);
@@ -147,7 +147,7 @@ STDAPI DllCanUnloadNow() {
 // Registry Registration / Unregistration
 // ============================================================================
 
-static const wchar_t* CLSID_STRING = L"{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}";
+static const wchar_t* CLSID_STRING = L"{C728CF60-ACEC-4680-9E93-43FBE403729C}";
 static const wchar_t* PROVIDER_NAME = L"LockFace Credential Provider";
 
 STDAPI DllRegisterServer() {

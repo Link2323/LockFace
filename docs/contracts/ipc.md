@@ -14,7 +14,7 @@
 
 | 项目 | 当前契约 |
 |---|---|
-| 管道名 | `\\.\pipe\FaceLoginPipe` |
+| 管道名 | `\\.\pipe\LockFacePipe` |
 | 类型 | `PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT` |
 | 实例数 | 1，串行处理客户端 |
 | 编码 | Windows `wchar_t`，即 UTF-16LE |
@@ -98,7 +98,7 @@ CP                    Service
 - `face_service/FaceService.cpp`
 - `face_service/pipe_server.*`
 - `credential_provider/pipe_client.*`
-- `credential_provider/FaceLoginCredential.*`
+- `credential_provider/LockFaceCredential.*`
 - `enrollment_app/EnrollmentWizard.*`
 - 本文及 `DEVELOPMENT.md` 的路由表
 

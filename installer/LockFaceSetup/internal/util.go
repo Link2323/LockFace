@@ -14,10 +14,10 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// ReadRegString reads a REG_SZ from HKLM\SOFTWARE\FaceLogin.
+// ReadRegString reads a REG_SZ from HKLM\SOFTWARE\LockFace.
 // Returns defaultValue if missing.
 func ReadRegString(valueName, defaultValue string) string {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\FaceLogin`, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\LockFace`, registry.QUERY_VALUE)
 	if err != nil {
 		return defaultValue
 	}
@@ -30,9 +30,9 @@ func ReadRegString(valueName, defaultValue string) string {
 	return val
 }
 
-// WriteRegString writes a REG_SZ to HKLM\SOFTWARE\FaceLogin (creates key if needed).
+// WriteRegString writes a REG_SZ to HKLM\SOFTWARE\LockFace (creates key if needed).
 func WriteRegString(valueName, value string) error {
-	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, `SOFTWARE\FaceLogin`, registry.SET_VALUE)
+	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, `SOFTWARE\LockFace`, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("create/open registry key: %w", err)
 	}
@@ -40,9 +40,9 @@ func WriteRegString(valueName, value string) error {
 	return k.SetStringValue(valueName, value)
 }
 
-// DeleteRegValue deletes a value from HKLM\SOFTWARE\FaceLogin.
+// DeleteRegValue deletes a value from HKLM\SOFTWARE\LockFace.
 func DeleteRegValue(valueName string) error {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\FaceLogin`, registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\LockFace`, registry.SET_VALUE)
 	if err != nil {
 		return nil // key already gone
 	}
@@ -52,7 +52,7 @@ func DeleteRegValue(valueName string) error {
 
 // deleteRegKeyTree recursively removes a registry key's subkeys and values.
 // RegDeleteKey cannot remove a key that still has subkeys, and runtime
-// components may create children below the FaceLogin key, so uninstall must
+// components may create children below the LockFace key, so uninstall must
 // delete depth-first.
 func deleteRegKeyTree(parent registry.Key, subpath string) error {
 	k, err := registry.OpenKey(parent, subpath,
@@ -95,13 +95,16 @@ func deleteRegKeyTree(parent registry.Key, subpath string) error {
 	return registry.DeleteKey(parent, subpath)
 }
 
-// DeleteRegKey removes the entire HKLM\SOFTWARE\FaceLogin key tree. Use on
-// uninstall: the service writes runtime values (e.g. UserLoggedIn) that the
-// installer never created, and future versions may write subkeys as well.
+// DeleteRegKey removes the entire HKLM\SOFTWARE\LockFace key tree, plus the
+// pre-rename SOFTWARE\FaceLogin tree as legacy residue. Use on uninstall: the
+// service writes runtime values (e.g. UserLoggedIn) that the installer never
+// created, and future versions may write subkeys as well.
 func DeleteRegKey() error {
-	err := deleteRegKeyTree(registry.LOCAL_MACHINE, `SOFTWARE\FaceLogin`)
-	if err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("delete registry key tree SOFTWARE\\FaceLogin: %w", err)
+	for _, key := range []string{`SOFTWARE\LockFace`, `SOFTWARE\FaceLogin`} {
+		err := deleteRegKeyTree(registry.LOCAL_MACHINE, key)
+		if err != nil && err != registry.ErrNotExist {
+			return fmt.Errorf("delete registry key tree %s: %w", key, err)
+		}
 	}
 	return nil
 }

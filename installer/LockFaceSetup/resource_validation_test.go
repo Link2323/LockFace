@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"FaceLoginSetup/internal"
+	"LockFaceSetup/internal"
 )
 
 func TestEmbeddedModelsMatchReleaseManifest(t *testing.T) {

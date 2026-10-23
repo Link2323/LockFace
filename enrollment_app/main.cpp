@@ -54,7 +54,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     // never leave a stale lock behind. If mutex creation itself fails, run
     // unprotected rather than blocking the app.
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
-                                        L"Local\\FaceLoginConsoleInstance");
+                                        L"Local\\LockFaceConsoleInstance");
     if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
         MessageBoxW(nullptr, L"LockFace 控制台已在运行。",
                     L"LockFace Console", MB_OK | MB_ICONWARNING | MB_TOPMOST);

@@ -4,7 +4,7 @@
 param([string]$VcpkgInstalledDir = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$setup = Join-Path $root 'installer/FaceLoginSetup'
+$setup = Join-Path $root 'installer/LockFaceSetup'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Read-Text([string]$Path) {
@@ -125,10 +125,10 @@ $seen = @{}
 foreach ($row in (Sort-Ordinal @($rows | Where-Object { $_ } | Select-Object -Unique))) {
     $fields = $row -split '\|', 4
     if ($fields[1] -eq 'ERROR') {
-        if ($fields[0] -eq 'FaceLoginSetup' -and $fields[2] -match 'pattern (all:frontend/dist|payload.zip): no matching files found') { continue }
+        if ($fields[0] -eq 'LockFaceSetup' -and $fields[2] -match 'pattern (all:frontend/dist|payload.zip): no matching files found') { continue }
         throw "Dependency resolution failed: $row"
     }
-    if ($fields[0] -eq 'FaceLoginSetup') { continue }
+    if ($fields[0] -eq 'LockFaceSetup') { continue }
     $moduleDir = $fields[2]
     $packageDir = $fields[3]
     $legal = @(Legal-Files $moduleDir)

@@ -6,7 +6,7 @@
 
 // LockFace IPC Protocol Definitions
 //
-// Transport: Named pipe \\.\pipe\FaceLoginPipe
+// Transport: Named pipe \\.\pipe\LockFacePipe
 // Framing: UTF-16LE text, null-terminated
 // Security: DACL restricted to SYSTEM + Administrators, PIPE_REJECT_REMOTE_CLIENTS
 
@@ -14,7 +14,7 @@ namespace facelogin {
 namespace ipc {
 
 // Pipe name
-constexpr wchar_t PIPE_NAME[] = L"\\\\.\\pipe\\FaceLoginPipe";
+constexpr wchar_t PIPE_NAME[] = L"\\\\.\\pipe\\LockFacePipe";
 constexpr DWORD PIPE_BUFFER_SIZE = 4096;
 constexpr DWORD PIPE_TIMEOUT_MS = 30000;
 constexpr DWORD AUTH_TIMEOUT_SECONDS = 5;

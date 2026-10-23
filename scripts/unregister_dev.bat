@@ -11,9 +11,9 @@ REM   2. Unregisters the credential provider DLL (regsvr32 /u)
 REM   3. Removes leftover registry registrations (safety net -- regsvr32 /u
 REM      can't run if the DLL is already gone, and reg delete covers that)
 REM   4. Deletes the credential provider DLL from System32
-REM   5. Cleans up runtime registry keys under HKLM\SOFTWARE\FaceLogin
+REM   5. Cleans up runtime registry keys under HKLM\SOFTWARE\LockFace
 REM
-REM Every step is ALSO appended to %TEMP%\FaceLogin_unregister.log, so if the
+REM Every step is ALSO appended to %TEMP%\LockFace_unregister.log, so if the
 REM window flashes closed again you can read the log to see exactly how far the
 REM script got before dying.
 REM
@@ -24,8 +24,8 @@ REM (NOTE: keep this file pure-ASCII -- cmd.exe on a GBK codepage chokes on
 REM  multi-byte UTF-8 chars like em-dash and the whole script silently mis-parses.)
 REM ============================================================================
 
-set "LOG=%TEMP%\FaceLogin_unregister.log"
-> "%LOG%" echo FaceLogin unregister started: %DATE% %TIME%
+set "LOG=%TEMP%\LockFace_unregister.log"
+> "%LOG%" echo LockFace unregister started: %DATE% %TIME%
 
 REM ---- Admin self-check ----
 net session >nul 2>&1
@@ -44,9 +44,14 @@ echo ============================================
 echo.
 
 set "DLL=%SystemRoot%\System32\LockFaceCredentialProvider.dll"
-set "CLSID={B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}"
+set "CLSID={C728CF60-ACEC-4680-9E93-43FBE403729C}"
+REM Pre-rename CLSID, kept so dev machines registered under the old identity
+REM get their tile cleaned up too.
+set "LEGACY_CLSID={B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}"
 set "CPKEY=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\%CLSID%"
 set "CLSIDKEY=HKLM\SOFTWARE\Classes\CLSID\%CLSID%"
+set "LEGACY_CPKEY=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\%LEGACY_CLSID%"
+set "LEGACY_CLSIDKEY=HKLM\SOFTWARE\Classes\CLSID\%LEGACY_CLSID%"
 
 REM ---- [1/5] Kill all running LockFaceService instances ----
 call :note "[1/5] Killing LockFaceService instances..."
@@ -90,6 +95,8 @@ if !errorlevel! equ 0 (
 ) else (
     call :note "  Credential Providers key already gone (ok)."
 )
+reg delete "%LEGACY_CLSIDKEY%" /f >nul 2>&1
+reg delete "%LEGACY_CPKEY%" /f >nul 2>&1
 
 REM ---- [4/5] Delete credential provider DLL from System32 ----
 call :note "[4/5] Deleting credential provider DLL from System32..."
@@ -107,13 +114,15 @@ if exist "%DLL%" (
 )
 
 REM ---- [5/5] Clean up runtime registry keys (optional) ----
-call :note "[5/5] Cleaning up runtime registry key HKLM\SOFTWARE\FaceLogin..."
-reg delete "HKLM\SOFTWARE\FaceLogin" /f >nul 2>&1
+call :note "[5/5] Cleaning up runtime registry key HKLM\SOFTWARE\LockFace..."
+reg delete "HKLM\SOFTWARE\LockFace" /f >nul 2>&1
 if !errorlevel! equ 0 (
     call :note "  Removed runtime registry key."
 ) else (
     call :note "  No runtime key found (ok)."
 )
+REM Pre-rename leftover key, best effort.
+reg delete "HKLM\SOFTWARE\FaceLogin" /f >nul 2>&1
 
 REM ---- Verify ----
 reg query "%CLSIDKEY%" >nul 2>&1
@@ -126,7 +135,7 @@ if !errorlevel! equ 0 (
 echo.
 echo  Log written to: %LOG%
 echo ============================================
-echo  Done. The "Face Login" tile will no longer
+echo  Done. The "LockFace" tile will no longer
 echo  appear on the lock screen.
 echo ============================================
 echo.

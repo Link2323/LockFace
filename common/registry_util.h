@@ -4,13 +4,13 @@
 #include <string>
 
 // Registry key used for all LockFace configuration
-const wchar_t FACELOGIN_REG_KEY[] = L"SOFTWARE\\FaceLogin";
+const wchar_t FACELOGIN_REG_KEY[] = L"SOFTWARE\\LockFace";
 
 // Value names
 const wchar_t REGVAL_DATA_PATH[]   = L"DataPath";
 const wchar_t REGVAL_USER_LOGGED_IN[] = L"UserLoggedIn";
 
-// Read a REG_SZ value from HKLM\SOFTWARE\FaceLogin.
+// Read a REG_SZ value from HKLM\SOFTWARE\LockFace.
 // Returns defaultValue if the key/value is missing or not a string.
 inline std::wstring ReadRegString(const wchar_t* valueName,
                                   const std::wstring& defaultValue)
@@ -34,7 +34,7 @@ inline std::wstring ReadRegString(const wchar_t* valueName,
     return defaultValue;
 }
 
-// Read a REG_DWORD value from HKLM\SOFTWARE\FaceLogin.
+// Read a REG_DWORD value from HKLM\SOFTWARE\LockFace.
 // Returns defaultVal if the key/value is missing or not a DWORD.
 inline DWORD ReadRegDword(const wchar_t* valueName, DWORD defaultVal)
 {
@@ -55,7 +55,7 @@ inline DWORD ReadRegDword(const wchar_t* valueName, DWORD defaultVal)
     return defaultVal;
 }
 
-// Write a REG_DWORD value to HKLM\SOFTWARE\FaceLogin.
+// Write a REG_DWORD value to HKLM\SOFTWARE\LockFace.
 inline bool WriteRegDword(const wchar_t* valueName, DWORD val)
 {
     HKEY hKey;

@@ -7,9 +7,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// clsidCredentialProvider is the COM CLSID of FaceLoginCredentialProvider,
+// clsidCredentialProvider is the COM CLSID of LockFaceCredentialProvider,
 // used for manual registry cleanup when the DLL is no longer available.
-const clsidCredentialProvider = "{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}"
+const clsidCredentialProvider = "{C728CF60-ACEC-4680-9E93-43FBE403729C}"
 
 // callSelfReg loads dllPath in-process and invokes DllRegisterServer
 // (register == true) or DllUnregisterServer (register == false).

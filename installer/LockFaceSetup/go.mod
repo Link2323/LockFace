@@ -1,4 +1,4 @@
-module FaceLoginSetup
+module LockFaceSetup
 
 go 1.25.0
 

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"FaceLoginSetup/internal"
+	"LockFaceSetup/internal"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -381,7 +381,7 @@ func (a *App) Uninstall() map[string]interface{} {
 		a.emit(70, "删除程序文件", "done", "")
 	}
 
-	// Step 4: Remove shared runtime data under %ProgramData%\FaceLogin
+	// Step 4: Remove shared runtime data under %ProgramData%\LockFace
 	// (config.json, enrolled face database users.dat, logs, model cache). The
 	// installer points DataPath at the install dir, so this directory only
 	// exists when an older release used it as the default or the app ran
@@ -403,7 +403,7 @@ func (a *App) Uninstall() map[string]interface{} {
 		a.emit(80, "删除运行数据", "done", "无运行数据目录。")
 	}
 
-	// Step 5: Clean registry — remove the whole HKLM\SOFTWARE\FaceLogin key.
+	// Step 5: Clean registry — remove the whole HKLM\SOFTWARE\LockFace key.
 	// The service writes runtime values (e.g. UserLoggedIn) that the installer
 	// never created, so deleting only InstallPath/DataPath would leave the key
 	// behind.
@@ -420,6 +420,11 @@ func (a *App) Uninstall() map[string]interface{} {
 		} else if entryErr := internal.DeleteUninstallEntry(); entryErr != nil {
 			cleanupFailed = true
 			a.emit(80, "清理注册表", "warn", entryErr.Error())
+		} else if consentErr := internal.DeletePerUserConsentRecords(); consentErr != nil {
+			// Best-effort per-user cleanup (PRIVACY.txt 12.4): a locked hive
+			// only warns — the machine record is already gone.
+			a.emit(80, "清理注册表", "warn",
+				fmt.Sprintf("部分用户同意记录未删除：%v", consentErr))
 		} else {
 			a.emit(90, "清理注册表", "done", "")
 		}

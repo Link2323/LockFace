@@ -10,7 +10,7 @@ import (
 // uninstallRegKey is where Windows lists apps in Settings → Apps and the
 // classic appwiz.cpl. An entry here is the only standard way users can find
 // the uninstaller after deleting the setup exe.
-const uninstallRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\FaceLogin`
+const uninstallRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LockFace`
 
 // WriteUninstallEntry registers LockFace in Add/Remove Programs.
 // UninstallString points at the slim uninstaller deployed by the installer
@@ -56,11 +56,16 @@ func WriteUninstallEntry(installDir, version string) error {
 	return nil
 }
 
-// DeleteUninstallEntry removes the Add/Remove Programs registration.
+// DeleteUninstallEntry removes the Add/Remove Programs registration, plus the
+// pre-rename FaceLogin entry as legacy residue.
 func DeleteUninstallEntry() error {
-	err := registry.DeleteKey(registry.LOCAL_MACHINE, uninstallRegKey)
-	if err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("delete uninstall entry: %w", err)
+	keys := []string{uninstallRegKey,
+		`SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\FaceLogin`}
+	for _, key := range keys {
+		err := registry.DeleteKey(registry.LOCAL_MACHINE, key)
+		if err != nil && err != registry.ErrNotExist {
+			return fmt.Errorf("delete uninstall entry %s: %w", key, err)
+		}
 	}
 	return nil
 }

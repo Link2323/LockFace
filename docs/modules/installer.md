@@ -1,6 +1,6 @@
 # 安装器模块
 
-目录：`installer/FaceLoginSetup/`
+目录：`installer/LockFaceSetup/`
 
 `LockFaceSetup.exe` 使用 Go、Wails v2 和 Vue 3，负责部署与卸载，不参与运行时认证或命名管道通信。构建命令与资源白名单只在 [`BUILD.md`](../BUILD.md) 维护。
 
@@ -11,7 +11,7 @@
 | `app.go` | 安装/卸载编排、进度事件和目录选择 |
 | `internal/extract.go` | 载荷枚举、文件提取、模型校验及卸载静态清单 |
 | `internal/com.go` | COM 注册/注销和目录 ACL |
-| `internal/security.go` | FaceLogin 注册表键 ACL |
+| `internal/security.go` | LockFace 注册表键 ACL |
 | `internal/scm.go` | Windows 服务控制 |
 | `internal/config.go` | 默认配置创建与选择性迁移 |
 | `frontend/src/App.vue` | 安装与卸载界面 |
@@ -40,7 +40,7 @@
 
 ## 卸载语义
 
-卸载停止并删除服务、注销 COM、清除安装器拥有的程序文件和用户数据，并删除 FaceLogin 注册表键。卸载器会尽力结束残留进程，使文件可立即删除；失败时使用经验证的重启删除队列。
+卸载停止并删除服务、注销 COM、清除安装器拥有的程序文件和用户数据，并删除 FaceLogin/LockFace 注册表键（含更名前旧键残留）。注册表清理同时移除 Console 同意门写入的每用户记录（`HKCU\SOFTWARE\LockFace`，PRIVACY.txt 12.4 的删除承诺）：当前用户与 HKEY_USERS 下已挂载的各配置单元逐一清理，未登录用户的 hive 不挂载、不处理，单个 hive 失败仅告警。卸载器会尽力结束残留进程，使文件可立即删除；失败时使用经验证的重启删除队列。
 
 根目录的 `camera_tune.state` 是运行时曝光缓存，不属于安装载荷。完整卸载通过独立的运行数据清单删除它，完整与 slim 路径一致；升级清理程序文件时保留。即使之前卸载只留下该缓存，后续卸载也能识别并清理目录。
 
@@ -48,4 +48,4 @@
 
 ## 验证
 
-改动 Go 安装器后，在 `installer/FaceLoginSetup/` 运行 `go test ./...`；卸载改动再运行 `go test -tags slim ./...`，载荷解包测试只参与完整构建。`internal` 回归覆盖曝光缓存清理、升级保留及未知文件保护。改动 Vue 前端后，在 `frontend/` 运行 `npm run build`。安装包构建和资源核对见 [`BUILD.md`](../BUILD.md)。
+改动 Go 安装器后，在 `installer/LockFaceSetup/` 运行 `go test ./...`；卸载改动再运行 `go test -tags slim ./...`，载荷解包测试只参与完整构建。`internal` 回归覆盖曝光缓存清理、升级保留及未知文件保护。改动 Vue 前端后，在 `frontend/` 运行 `npm run build`。安装包构建和资源核对见 [`BUILD.md`](../BUILD.md)。

@@ -15,8 +15,8 @@ static std::wstring ResolveDataDir(const std::wstring& dataDir) {
     if (!fromReg.empty()) return fromReg;
     wchar_t programData[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, programData)))
-        return std::wstring(programData) + L"\\FaceLogin";
-    return L"C:\\ProgramData\\FaceLogin";
+        return std::wstring(programData) + L"\\LockFace";
+    return L"C:\\ProgramData\\LockFace";
 }
 
 // Simple JSON writer — flat struct, no nested objects

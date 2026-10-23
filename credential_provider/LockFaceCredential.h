@@ -11,10 +11,10 @@
 #include "input_trigger_policy.h"
 
 // Forward declarations
-class FaceLoginProvider;
+class LockFaceProvider;
 
 // ============================================================================
-// FaceLoginCredential — ICredentialProviderCredential implementation
+// LockFaceCredential — ICredentialProviderCredential implementation
 //
 // The actual credential tile shown on the lock screen. Handles:
 //   1. Connecting to the face recognition service via named pipe
@@ -29,15 +29,15 @@ class FaceLoginProvider;
 //   Failed         — Auth timed out or error
 // ============================================================================
 
-class FaceLoginCredential : public ICredentialProviderCredential {
+class LockFaceCredential : public ICredentialProviderCredential {
 public:
-    FaceLoginCredential();
-    virtual ~FaceLoginCredential();
+    LockFaceCredential();
+    virtual ~LockFaceCredential();
 
-    // Called by FaceLoginProvider after creation
-    void Initialize(FaceLoginProvider* pProvider);
+    // Called by LockFaceProvider after creation
+    void Initialize(LockFaceProvider* pProvider);
 
-    // Provider-level advise/unadvise (called by FaceLoginProvider::Advise/UnAdvise)
+    // Provider-level advise/unadvise (called by LockFaceProvider::Advise/UnAdvise)
     void AdviseProvider(ICredentialProviderEvents* pEvents, UINT_PTR upAdviseContext);
     void UnadviseProvider();
 
@@ -131,7 +131,7 @@ private:
     void StartExplicitRetry();
 
     LONG m_refCount = 1;
-    FaceLoginProvider* m_pProvider = nullptr;
+    LockFaceProvider* m_pProvider = nullptr;
     ICredentialProviderCredentialEvents* m_pCredentialEvents = nullptr;
     ICredentialProviderEvents* m_pProviderEvents = nullptr;
     UINT_PTR m_upAdviseContext = 0;

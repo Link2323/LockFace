@@ -54,14 +54,14 @@ bool IsProductionExePath(const std::wstring& exeDir) {
            StartsWithDir(exeDir, L"C:\\Program Files (x86)\\");
 }
 
-// The default fallback directory (%ProgramData%\FaceLogin). Used only in
+// The default fallback directory (%ProgramData%\LockFace). Used only in
 // development mode; production rejects it.
 std::wstring GetProgramDataFallback() {
     wchar_t programData[MAX_PATH] = {};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, programData))) {
-        return CanonicalizePath(std::wstring(programData) + L"\\FaceLogin");
+        return CanonicalizePath(std::wstring(programData) + L"\\LockFace");
     }
-    return L"C:\\ProgramData\\FaceLogin";
+    return L"C:\\ProgramData\\LockFace";
 }
 
 } // namespace

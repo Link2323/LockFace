@@ -1,5 +1,5 @@
-#include "FaceLoginCredential.h"
-#include "FaceLoginProvider.h"
+#include "LockFaceCredential.h"
+#include "LockFaceProvider.h"
 #include "input_trigger_policy.h"
 #include "resource.h"
 #include "../common/logger.h"
@@ -71,7 +71,7 @@ bool RawInputSink::Register() {
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&RawInputSinkWndProc), &hInst);
-    wsprintfW(className, L"FaceLoginRawSink_%08lx", GetCurrentThreadId());
+    wsprintfW(className, L"LockFaceRawSink_%08lx", GetCurrentThreadId());
 
     WNDCLASSW wc = {};
     wc.lpfnWndProc = RawInputSinkWndProc;
@@ -127,8 +127,8 @@ void RawInputSink::Unregister() noexcept {
     }
 }
 
-unsigned __stdcall FaceLoginCredential::InputDetectionThreadProc(void* pParam) {
-    FaceLoginCredential* pCred = static_cast<FaceLoginCredential*>(pParam);
+unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
+    LockFaceCredential* pCred = static_cast<LockFaceCredential*>(pParam);
     using facelogin::credential_provider::InputTriggerPolicy;
     using facelogin::credential_provider::InputTriggerKind;
 
@@ -267,13 +267,13 @@ static const wchar_t kWaitingPrompt[] = L"按下任意按键以开始人脸识�
 // Construction / Destruction
 // ============================================================================
 
-FaceLoginCredential::FaceLoginCredential() {
+LockFaceCredential::LockFaceCredential() {
     InitializeCriticalSection(&m_cs);
 
-    FACELOGIN_DEBUG(L"FaceLoginCredential created");
+    FACELOGIN_DEBUG(L"LockFaceCredential created");
 }
 
-FaceLoginCredential::~FaceLoginCredential() {
+LockFaceCredential::~LockFaceCredential() {
     // SENSITIVE: Zero the password from memory
     facelogin::SecureClearWString(m_password);
     // ... and the retained packed credential (it carries the same plaintext)
@@ -288,20 +288,20 @@ FaceLoginCredential::~FaceLoginCredential() {
 
     DeleteCriticalSection(&m_cs);
 
-    FACELOGIN_DEBUG(L"FaceLoginCredential destroyed");
+    FACELOGIN_DEBUG(L"LockFaceCredential destroyed");
 }
 
-void FaceLoginCredential::Initialize(FaceLoginProvider* pProvider) {
+void LockFaceCredential::Initialize(LockFaceProvider* pProvider) {
     m_pProvider = pProvider;
-    FACELOGIN_DEBUG(L"FaceLoginCredential initialized with provider");
+    FACELOGIN_DEBUG(L"LockFaceCredential initialized with provider");
 }
 
-void FaceLoginCredential::AdviseProvider(ICredentialProviderEvents* pEvents, UINT_PTR upAdviseContext) {
+void LockFaceCredential::AdviseProvider(ICredentialProviderEvents* pEvents, UINT_PTR upAdviseContext) {
     m_pProviderEvents = pEvents;
     m_upAdviseContext = upAdviseContext;
 }
 
-void FaceLoginCredential::UnadviseProvider() {
+void LockFaceCredential::UnadviseProvider() {
     m_pProviderEvents = nullptr;
     m_upAdviseContext = 0;
 }
@@ -310,7 +310,7 @@ void FaceLoginCredential::UnadviseProvider() {
 // IUnknown
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::QueryInterface(REFIID riid, void** ppv) {
+STDMETHODIMP LockFaceCredential::QueryInterface(REFIID riid, void** ppv) {
     *ppv = nullptr;
 
     if (riid == IID_IUnknown ||
@@ -323,11 +323,11 @@ STDMETHODIMP FaceLoginCredential::QueryInterface(REFIID riid, void** ppv) {
     return E_NOINTERFACE;
 }
 
-STDMETHODIMP_(ULONG) FaceLoginCredential::AddRef() {
+STDMETHODIMP_(ULONG) LockFaceCredential::AddRef() {
     return InterlockedIncrement(&m_refCount);
 }
 
-STDMETHODIMP_(ULONG) FaceLoginCredential::Release() {
+STDMETHODIMP_(ULONG) LockFaceCredential::Release() {
     LONG count = InterlockedDecrement(&m_refCount);
     if (count == 0) {
         delete this;
@@ -339,7 +339,7 @@ STDMETHODIMP_(ULONG) FaceLoginCredential::Release() {
 // ICredentialProviderCredential — Advise/UnAdvise
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::Advise(ICredentialProviderCredentialEvents* pcpce) {
+STDMETHODIMP LockFaceCredential::Advise(ICredentialProviderCredentialEvents* pcpce) {
     if (m_pCredentialEvents) {
         m_pCredentialEvents->Release();
     }
@@ -398,7 +398,7 @@ STDMETHODIMP FaceLoginCredential::Advise(ICredentialProviderCredentialEvents* pc
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginCredential::UnAdvise() {
+STDMETHODIMP LockFaceCredential::UnAdvise() {
     // Stop the input-detection thread if running
     StopInputDetectionThread();
 
@@ -415,7 +415,7 @@ STDMETHODIMP FaceLoginCredential::UnAdvise() {
 // ICredentialProviderCredential — SetSelected/SetDeselected
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::SetSelected(BOOL* pbAutoLogon) {
+STDMETHODIMP LockFaceCredential::SetSelected(BOOL* pbAutoLogon) {
     if (m_state == State::Ready) {
         // Credentials ready (bg thread finished auth):
         // enable auto-logon so LogonUI calls GetSerialization to pack creds.
@@ -447,7 +447,7 @@ STDMETHODIMP FaceLoginCredential::SetSelected(BOOL* pbAutoLogon) {
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginCredential::SetDeselected() {
+STDMETHODIMP LockFaceCredential::SetDeselected() {
     // The user moved to another sign-in option: stop watching global input,
     // and if a recognition is in flight, tear the pipe down — the service
     // observes the client disconnect, aborts the loop and releases the
@@ -475,7 +475,7 @@ STDMETHODIMP FaceLoginCredential::SetDeselected() {
 // ICredentialProviderCredential — Field State / Values
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::GetFieldState(
+STDMETHODIMP LockFaceCredential::GetFieldState(
     DWORD dwFieldID,
     CREDENTIAL_PROVIDER_FIELD_STATE* pcpfs,
     CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* pcpfis) {
@@ -525,7 +525,7 @@ STDMETHODIMP FaceLoginCredential::GetFieldState(
     return S_OK;
 }
 
-STDMETHODIMP FaceLoginCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
+STDMETHODIMP LockFaceCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
     *ppwsz = nullptr;
 
     switch (dwFieldID) {
@@ -575,13 +575,13 @@ STDMETHODIMP FaceLoginCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) 
     }
 }
 
-STDMETHODIMP FaceLoginCredential::GetBitmapValue(DWORD dwFieldID, HBITMAP* phbmp) {
+STDMETHODIMP LockFaceCredential::GetBitmapValue(DWORD dwFieldID, HBITMAP* phbmp) {
     UNREFERENCED_PARAMETER(dwFieldID);
     *phbmp = nullptr;
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::GetSubmitButtonValue(DWORD dwFieldID, DWORD* pdwAdjacentTo) {
+STDMETHODIMP LockFaceCredential::GetSubmitButtonValue(DWORD dwFieldID, DWORD* pdwAdjacentTo) {
     if (dwFieldID == kFieldSubmit) {
         *pdwAdjacentTo = kFieldStatus; // Next to the status text field
         return S_OK;
@@ -589,46 +589,46 @@ STDMETHODIMP FaceLoginCredential::GetSubmitButtonValue(DWORD dwFieldID, DWORD* p
     return E_INVALIDARG;
 }
 
-STDMETHODIMP FaceLoginCredential::GetCheckboxValue(DWORD dwFieldID, BOOL* pbChecked, PWSTR* ppwszLabel) {
+STDMETHODIMP LockFaceCredential::GetCheckboxValue(DWORD dwFieldID, BOOL* pbChecked, PWSTR* ppwszLabel) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(pbChecked);
     UNREFERENCED_PARAMETER(ppwszLabel);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::GetComboBoxValueCount(DWORD dwFieldID, DWORD* pcItems, DWORD* pdwSelectedItem) {
+STDMETHODIMP LockFaceCredential::GetComboBoxValueCount(DWORD dwFieldID, DWORD* pcItems, DWORD* pdwSelectedItem) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(pcItems);
     UNREFERENCED_PARAMETER(pdwSelectedItem);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::GetComboBoxValueAt(DWORD dwFieldID, DWORD dwItem, PWSTR* ppwszItem) {
+STDMETHODIMP LockFaceCredential::GetComboBoxValueAt(DWORD dwFieldID, DWORD dwItem, PWSTR* ppwszItem) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(dwItem);
     UNREFERENCED_PARAMETER(ppwszItem);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::SetStringValue(DWORD dwFieldID, LPCWSTR pwz) {
+STDMETHODIMP LockFaceCredential::SetStringValue(DWORD dwFieldID, LPCWSTR pwz) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(pwz);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::SetCheckboxValue(DWORD dwFieldID, BOOL bChecked) {
+STDMETHODIMP LockFaceCredential::SetCheckboxValue(DWORD dwFieldID, BOOL bChecked) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(bChecked);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::SetComboBoxSelectedValue(DWORD dwFieldID, DWORD dwSelectedItem) {
+STDMETHODIMP LockFaceCredential::SetComboBoxSelectedValue(DWORD dwFieldID, DWORD dwSelectedItem) {
     UNREFERENCED_PARAMETER(dwFieldID);
     UNREFERENCED_PARAMETER(dwSelectedItem);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP FaceLoginCredential::CommandLinkClicked(DWORD dwFieldID) {
+STDMETHODIMP LockFaceCredential::CommandLinkClicked(DWORD dwFieldID) {
     if (dwFieldID == kFieldSwitchLink) {
         if (facelogin::credential_provider::IsRetryableFailure(m_state)) {
             // UI-unreachable since the failure tile hides the switch link —
@@ -649,7 +649,7 @@ STDMETHODIMP FaceLoginCredential::CommandLinkClicked(DWORD dwFieldID) {
 // ICredentialProviderCredential — GetSerialization (THE KEY METHOD)
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::GetSerialization(
+STDMETHODIMP LockFaceCredential::GetSerialization(
     CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* pcpgsr,
     CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs,
     PWSTR* ppwszOptionalStatusText,
@@ -710,7 +710,7 @@ STDMETHODIMP FaceLoginCredential::GetSerialization(
         pcpcs->rgbSerialization = copy;
         pcpcs->cbSerialization = m_cbPackedCreds;
         pcpcs->ulAuthenticationPackage = m_ulAuthPackage;
-        pcpcs->clsidCredentialProvider = CLSID_FaceLoginProvider;
+        pcpcs->clsidCredentialProvider = CLSID_LockFaceProvider;
         *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
         return S_OK;
     }
@@ -743,7 +743,7 @@ STDMETHODIMP FaceLoginCredential::GetSerialization(
 // ICredentialProviderCredential — ReportResult
 // ============================================================================
 
-STDMETHODIMP FaceLoginCredential::ReportResult(
+STDMETHODIMP LockFaceCredential::ReportResult(
     NTSTATUS ntsStatus, NTSTATUS ntsSubstatus,
     PWSTR* ppwszOptionalStatusText,
     CREDENTIAL_PROVIDER_STATUS_ICON* pcpsiOptionalStatusIcon) {
@@ -782,7 +782,7 @@ STDMETHODIMP FaceLoginCredential::ReportResult(
 // Private: StartAuth — begin the authentication pipeline
 // ============================================================================
 
-void FaceLoginCredential::StartAuth() {
+void LockFaceCredential::StartAuth() {
     // StartAuth runs on the input-detection thread (auto-trigger / explicit
     // retry) or the LogonUI thread (command link). It does NOT take m_cs:
     // the pipe callbacks (OnPipeResponse/OnPipeStatus) run on the pipe read
@@ -849,7 +849,7 @@ void FaceLoginCredential::StartAuth() {
 // Private: StartInputDetectionThread / StopInputDetectionThread
 // ============================================================================
 
-void FaceLoginCredential::StartInputDetectionThread() {
+void LockFaceCredential::StartInputDetectionThread() {
     if (m_inputThreadRunning) {
         FACELOGIN_WARN(L"StartInputDetectionThread: thread already running");
         return;
@@ -879,7 +879,7 @@ void FaceLoginCredential::StartInputDetectionThread() {
     }
 }
 
-void FaceLoginCredential::StopInputDetectionThread() {
+void LockFaceCredential::StopInputDetectionThread() {
     if (!m_inputThreadRunning && !m_hInputThread && !m_hInputStop) {
         return;
     }
@@ -917,7 +917,7 @@ void FaceLoginCredential::StopInputDetectionThread() {
     }
 }
 
-void FaceLoginCredential::ArmFailureRetryDetection() {
+void LockFaceCredential::ArmFailureRetryDetection() {
     if (m_inputThreadRunning) {
         return;
     }
@@ -934,7 +934,7 @@ void FaceLoginCredential::ArmFailureRetryDetection() {
 // Private: Credential Packing
 // ============================================================================
 
-HRESULT FaceLoginCredential::PackCredentials(
+HRESULT LockFaceCredential::PackCredentials(
     CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs) {
 
     // RAII: guarantee m_password is zeroed on EVERY return path, including
@@ -1031,7 +1031,7 @@ HRESULT FaceLoginCredential::PackCredentials(
     pcpcs->rgbSerialization = pPackedCreds;
     pcpcs->cbSerialization = cbPackedCreds;
     pcpcs->ulAuthenticationPackage = ulAuthPackage;
-    pcpcs->clsidCredentialProvider = CLSID_FaceLoginProvider;
+    pcpcs->clsidCredentialProvider = CLSID_LockFaceProvider;
 
     FACELOGIN_INFO(L"PackCred SUCCESS: user=%s\\%s (UPN=%s), cbSerialization=%lu, ulAuthPackage=%lu",
                   m_domain.c_str(), m_username.c_str(),
@@ -1040,7 +1040,7 @@ HRESULT FaceLoginCredential::PackCredentials(
     return S_OK;
 }
 
-void FaceLoginCredential::ClearPackedCredentials() {
+void LockFaceCredential::ClearPackedCredentials() {
     if (m_packedCreds) {
         SecureZeroMemory(m_packedCreds, m_cbPackedCreds);
         delete[] m_packedCreds;
@@ -1054,7 +1054,7 @@ void FaceLoginCredential::ClearPackedCredentials() {
 // Private: Switch to Password Provider
 // ============================================================================
 
-HRESULT FaceLoginCredential::SwitchToPasswordProvider() {
+HRESULT LockFaceCredential::SwitchToPasswordProvider() {
     // A click on the password command link is also visible to the global
     // mouse watcher. Cancel that watcher (or its mouse-settle window) before
     // re-enumerating providers, and tear down a round that may already have
@@ -1081,20 +1081,20 @@ HRESULT FaceLoginCredential::SwitchToPasswordProvider() {
     return S_OK;
 }
 
-void FaceLoginCredential::SetStatusText(const std::wstring& text) {
+void LockFaceCredential::SetStatusText(const std::wstring& text) {
     EnterCriticalSection(&m_cs);
     m_statusText = text;
     LeaveCriticalSection(&m_cs);
 }
 
-std::wstring FaceLoginCredential::SnapshotStatusText() {
+std::wstring LockFaceCredential::SnapshotStatusText() {
     EnterCriticalSection(&m_cs);
     std::wstring snapshot = m_statusText;
     LeaveCriticalSection(&m_cs);
     return snapshot;
 }
 
-void FaceLoginCredential::OnPipeStatus(const std::wstring& message) {
+void LockFaceCredential::OnPipeStatus(const std::wstring& message) {
     // A deselection may have torn the pipe down mid-flight; a late status
     // from that round must not overwrite the reset idle prompt.
     if (!facelogin::credential_provider::ShouldProcessPipeResponse(m_state)) {
@@ -1110,7 +1110,7 @@ void FaceLoginCredential::OnPipeStatus(const std::wstring& message) {
     }
 }
 
-void FaceLoginCredential::OnPipeResponse(bool success, const std::wstring& message) {
+void LockFaceCredential::OnPipeResponse(bool success, const std::wstring& message) {
     // Same late-result guard as OnPipeStatus: a response delivered after the
     // tile was deselected (auth aborted, state reset to Waiting) is stale
     // and must not overwrite state, credentials or tile text.
@@ -1166,7 +1166,7 @@ void FaceLoginCredential::OnPipeResponse(bool success, const std::wstring& messa
     }
 }
 
-void FaceLoginCredential::PresentRetryableFailure(
+void LockFaceCredential::PresentRetryableFailure(
     State failureState,
     const std::wstring& statusText) {
     if (!facelogin::credential_provider::IsRetryableFailure(failureState)) {
@@ -1230,7 +1230,7 @@ void FaceLoginCredential::PresentRetryableFailure(
                    m_inputThreadRunning ? L"re-armed" : L"not armed (service down)");
 }
 
-void FaceLoginCredential::StartExplicitRetry() {
+void LockFaceCredential::StartExplicitRetry() {
     if (!facelogin::credential_provider::IsRetryableFailure(m_state)) {
         return;
     }
@@ -1261,7 +1261,7 @@ void FaceLoginCredential::StartExplicitRetry() {
 // Private: Trigger Re-enumeration
 // ============================================================================
 
-void FaceLoginCredential::TriggerReEnumeration() {
+void LockFaceCredential::TriggerReEnumeration() {
     if (m_pProviderEvents) {
         FACELOGIN_DEBUG(L"Triggering CredentialsChanged");
         m_pProviderEvents->CredentialsChanged(m_upAdviseContext);

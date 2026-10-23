@@ -1,7 +1,7 @@
 add_library(LockFaceCredentialProvider SHARED
     dllmain.cpp
-    FaceLoginProvider.cpp
-    FaceLoginCredential.cpp
+    LockFaceProvider.cpp
+    LockFaceCredential.cpp
     pipe_client.cpp
     resource.rc
     credential_provider.def
@@ -12,7 +12,7 @@ facelogin_add_version_rc(LockFaceCredentialProvider VFT_DLL
 
 # IMPORTANT: This DLL is loaded by LogonUI.exe (lock screen) and is registered
 # by the installer via an in-process DllRegisterServer call (see
-# installer/FaceLoginSetup/internal/com.go). Both contexts run with a restricted
+# installer/LockFaceSetup/internal/com.go). Both contexts run with a restricted
 # or stripped environment block where api-ms-win-crt-* API-set resolution can
 # fail (Win32 error 203), which previously broke DLL loading entirely. To
 # eliminate ALL external DLL resolution beyond Windows system DLLs, this target

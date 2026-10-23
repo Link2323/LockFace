@@ -12,7 +12,7 @@ import (
 	"sort"
 	"testing"
 
-	"FaceLoginSetup/internal"
+	"LockFaceSetup/internal"
 )
 
 // Locks the payload.zip contract: the embedded zip must expose the same

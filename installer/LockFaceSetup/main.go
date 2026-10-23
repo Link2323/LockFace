@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"FaceLoginSetup/internal"
+	"LockFaceSetup/internal"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,7 +20,7 @@ var assets embed.FS
 // README badge.
 const appVersion = "1.9.0"
 
-// Registry value names under the FaceLogin key (the key path itself lives in
+// Registry value names under the LockFace key (the key path itself lives in
 // internal/util.go).
 const REGVAL_DATA_PATH = "DataPath"
 const REGVAL_INSTALL_PATH = "InstallPath"

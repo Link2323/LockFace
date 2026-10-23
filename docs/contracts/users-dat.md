@@ -95,7 +95,7 @@
 格式或语义变化时至少同步检查：
 
 - `storage/credential_store.h/cpp`
-- `credential_provider/FaceLoginProvider.cpp` 的 header 读取
+- `credential_provider/LockFaceProvider.cpp` 的 header 读取
 - `enrollment_app/EnrollmentWizard.*`
 - 安装/升级/卸载是否保留或清除用户数据
 - 本文和 `DEVELOPMENT.md`

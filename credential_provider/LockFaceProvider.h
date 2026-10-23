@@ -4,19 +4,19 @@
 #include <credentialprovider.h>
 
 // Forward declarations
-class FaceLoginCredential;
+class LockFaceCredential;
 
 // ============================================================================
-// FaceLoginProvider — ICredentialProvider implementation
+// LockFaceProvider — ICredentialProvider implementation
 //
 // Enumerates credential tiles. For face login, we always provide exactly
 // one credential tile that supports auto-logon once credentials are ready.
 // Recognition is always triggered by user input (keyboard/mouse), for both
-// LOGON (boot / switch user) and UNLOCK — see FaceLoginCredential::Advise.
+// LOGON (boot / switch user) and UNLOCK — see LockFaceCredential::Advise.
 // ============================================================================
 
 // Credential tile field indices, shared by the descriptor table below and
-// every GetFieldState/GetStringValue/SetField* call in FaceLoginCredential.
+// every GetFieldState/GetStringValue/SetField* call in LockFaceCredential.
 // Field 0 is pinned by the failure-tile design (keep first, CPFT_LARGE_TEXT);
 // field 3 doubles as the password-switch command link and carries retry-tile
 // visibility state. Indices are the wire contract with LogonUI — inserting
@@ -29,10 +29,10 @@ enum CredentialField {
     kFieldRetryHint  = 4,  // CPFT_SMALL_TEXT — "请按任意键重试" hint line
 };
 
-class FaceLoginProvider : public ICredentialProvider {
+class LockFaceProvider : public ICredentialProvider {
 public:
-    FaceLoginProvider();
-    virtual ~FaceLoginProvider();
+    LockFaceProvider();
+    virtual ~LockFaceProvider();
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -76,5 +76,5 @@ private:
     UINT_PTR m_upAdviseContext = 0;
 
     // Our credential object (one instance)
-    FaceLoginCredential* m_pCredential = nullptr;
+    LockFaceCredential* m_pCredential = nullptr;
 };

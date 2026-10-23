@@ -557,37 +557,45 @@ func RemoveInstalledDir(destDir string) (removed, rebootRequired bool, err error
 }
 
 // RemoveProgramData deletes the shared runtime-data directory
-// (%ProgramData%\FaceLogin: config.json, the enrolled face database users.dat,
+// (%ProgramData%\LockFace: config.json, the enrolled face database users.dat,
 // logs, and the models cache). The installer points DataPath at the install
 // directory, so this directory is only populated when an older release used it
 // as the default or when the app was run standalone — but on such machines it
-// accumulates real data that should not survive a full uninstall.
+// accumulates real data that should not survive a full uninstall. The
+// pre-rename directory name (FaceLogin) is cleaned as legacy residue.
 //
 // The path is resolved from %ProgramData% rather than the registry because the
 // uninstall flow deletes the registry key shortly after this call. A safety
-// guard mirrors IsSafeInstallDir: the resolved directory's base name must be
-// exactly "FaceLogin" (case-insensitive) before anything is removed, so a
-// maliciously empty or corrupted %ProgramData% can never turn this into a
-// recursive wipe of an arbitrary folder. Returns removed=true when the
-// directory was removed immediately; rebootRequired is true only when every
-// remaining entry was successfully scheduled for deletion.
+// guard mirrors IsSafeInstallDir: the resolved directory's base name must
+// match the expected product name (case-insensitive) before anything is
+// removed, so a maliciously empty or corrupted %ProgramData% can never turn
+// this into a recursive wipe of an arbitrary folder. Returns removed=true
+// when a directory was removed immediately; rebootRequired is true when
+// remaining entries were scheduled for reboot deletion.
 func RemoveProgramData() (removed, rebootRequired bool, err error) {
 	root := os.Getenv("ProgramData")
 	if root == "" {
 		return false, false, nil
 	}
-	dir := filepath.Join(root, "FaceLogin")
-	if !DirExists(dir) {
-		return false, false, nil
+	for _, name := range []string{"LockFace", "FaceLogin"} {
+		dir := filepath.Join(root, name)
+		if !DirExists(dir) {
+			continue
+		}
+		// Guard: base name must match the product name exactly.
+		// Belt-and-suspenders against a tampered %ProgramData%.
+		if !strings.EqualFold(filepath.Base(filepath.Clean(dir)), name) {
+			return false, false, fmt.Errorf("unsafe ProgramData cleanup path: %s", dir)
+		}
+		pending, removeErr := removeAllOrScheduleReboot(dir)
+		if removeErr != nil {
+			return false, pending, removeErr
+		}
+		if !pending {
+			removed = true
+		} else {
+			rebootRequired = true
+		}
 	}
-	// Guard: base name must be exactly "FaceLogin". Belt-and-suspenders against
-	// a tampered %ProgramData% pointing somewhere unexpected.
-	if !strings.EqualFold(filepath.Base(filepath.Clean(dir)), "FaceLogin") {
-		return false, false, fmt.Errorf("unsafe ProgramData cleanup path: %s", dir)
-	}
-	pending, removeErr := removeAllOrScheduleReboot(dir)
-	if removeErr != nil {
-		return false, pending, removeErr
-	}
-	return !pending, pending, nil
+	return removed, rebootRequired, nil
 }

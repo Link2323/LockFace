@@ -1,31 +1,31 @@
-# FaceLogin 模型来源与许可
+# LockFace 模型来源与许可
 
 许可核对日期：2026-10-01；SFace 导出规范化记录更新：2026-10-04。本文件是源码树中的详细模型来源与许可核查记录；安装器展示的简明说明见 [`third_party/MODEL_LICENSES.txt`](../third_party/MODEL_LICENSES.txt)。
 
-项目根目录的 MIT 许可适用于 FaceLogin 自有代码；第三方代码和预训练权重遵守各自的许可。模型下载、哈希验证、ONNX 转换或 INT8 量化均不构成新的用途授权。本文件记录来源及目前可见的许可依据，不替权利方作出授权。
+项目根目录的 MIT 许可适用于 LockFace 自有代码；第三方代码和预训练权重遵守各自的许可。模型下载、哈希验证、ONNX 转换或 INT8 量化均不构成新的用途授权。本文件记录来源及目前可见的许可依据，不替权利方作出授权。
 
 ## 当前授权状态
 
 - **`face_recognition_sface_2021dec.onnx`：OpenCV 模型目录声明全部文件为 Apache-2.0。** 当前试用构建使用固定版本 FP32，128 维；FaceLogin 从 `graph.input` 移除 174 个重复列出的权重输入，权重数值、节点及其他字段保持原样。许可全文、模型目录说明和上游/衍生文件来源位于 `third_party/models/sface/`；按发布方条款保留声明，无需另行申请个别授权。训练数据权利未独立核验。
-- **`det_10g_gnkps.onnx`：已补齐发布者及 Apache-2.0 许可来源。** 发布者为 Kun-Hsiang Lin（`kunkunlin1221`），其 PyFace 代码明确引用当前模型仓库，同作者的 DOCSAID FaceDetection 提供匹配的训练及导出实现。模型仓库对这份具体权重声明 Apache-2.0，相关训练源码也采用 Apache-2.0；发布版本、原始权重 SHA-256、许可原文及关联证据已固定。按发布者声明保留 Apache-2.0 全文、作者来源及 FaceLogin 修改说明。下面区分直接证据与训练归属推断；不能把架构同名当成 InsightFace 官方权重的证明。本次未独立核验训练数据的全部权利。
+- **`det_10g_gnkps.onnx`：已补齐发布者及 Apache-2.0 许可来源。** 发布者为 Kun-Hsiang Lin（`kunkunlin1221`），其 PyFace 代码明确引用当前模型仓库，同作者的 DOCSAID FaceDetection 提供匹配的训练及导出实现。模型仓库对这份具体权重声明 Apache-2.0，相关训练源码也采用 Apache-2.0；发布版本、原始权重 SHA-256、许可原文及关联证据已固定。按发布者声明保留 Apache-2.0 全文、作者来源及 LockFace 修改说明。下面区分直接证据与训练归属推断；不能把架构同名当成 InsightFace 官方权重的证明。本次未独立核验训练数据的全部权利。
 - **双 MiniFAS：按来源仓库的 Apache-2.0 声明保留许可。** yakhyo 的发布仓库及其引用的 MiniVision 上游仓库均提供 Apache-2.0；本次核对未见对这两份公开权重另列的用途限制。完整上游许可快照和来源链接收录在 `THIRD_PARTY_NOTICES.txt`。这不等于对训练数据权利作出独立保证。
 
 当前四个交付模型按各发布方 Apache-2.0 声明分发，仍须遵守许可条款；本次不替训练数据权利作独立保证。
 
 ## 来源与处理
 
-| 交付文件 | 基础模型来源 | FaceLogin 处理 | 可见许可依据 |
+| 交付文件 | 基础模型来源 | LockFace 处理 | 可见许可依据 |
 |---|---|---|---|
-| `det_10g_gnkps.onnx` | [Kun-Hsiang Lin 发布的具体版本](https://huggingface.co/kunkunlin1221/face-detection_scrfd-10g-gnkps/tree/eb0e349519cd951b2a9423dac45b39e8ce5a71b8)，文件 `scrfd_10g_gnkps_fp32.onnx`；下载脚本使用同版本 hf-mirror.com 镜像 | FaceLogin 修改：移除输出 stride 缩放节点、调整输出顺序、静态 QDQ INT8 量化；保留上游元数据 | 发布者对该权重的 Apache-2.0 声明；相关 DOCSAID 训练源码及 Apache-2.0 全文见下文 |
+| `det_10g_gnkps.onnx` | [Kun-Hsiang Lin 发布的具体版本](https://huggingface.co/kunkunlin1221/face-detection_scrfd-10g-gnkps/tree/eb0e349519cd951b2a9423dac45b39e8ce5a71b8)，文件 `scrfd_10g_gnkps_fp32.onnx`；下载脚本使用同版本 hf-mirror.com 镜像 | LockFace 修改：移除输出 stride 缩放节点、调整输出顺序、静态 QDQ INT8 量化；保留上游元数据 | 发布者对该权重的 Apache-2.0 声明；相关 DOCSAID 训练源码及 Apache-2.0 全文见下文 |
 | `face_recognition_sface_2021dec.onnx` | [OpenCV Zoo 固定版本](https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_recognition_sface) | FP32；移除 174 个 initializer graph inputs，权重/节点不变；输入 RGB 0..255，输出后 L2 归一化 | 模型目录所有文件 Apache-2.0；离线快照及转换记录见 `third_party/models/sface/` |
 | `MiniFASNetV2.onnx` | [yakhyo 的 weights 发布](https://github.com/yakhyo/face-anti-spoofing/releases/tag/weights)，同名 ONNX | 直接下载及哈希核验，无本地权重转换 | [yakhyo LICENSE](https://github.com/yakhyo/face-anti-spoofing/blob/main/LICENSE)、[MiniVision 上游 LICENSE](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing/blob/master/LICENSE) |
 | `MiniFASNetV1SE.onnx` | 同上，同名 ONNX | 直接下载及哈希核验，无本地权重转换 | 同上 |
 
-上述文件分别提供人脸检测/五关键点、128 维 SFace 人脸识别、2.7× 裁剪活体检测和 4.0× 裁剪活体检测。FaceLogin 的原始下载与处理事实源为 `scripts/download_models.ps1`、`scripts/normalize_scrfd_export.py`、`scripts/normalize_sface_export.py`、`scripts/download_minifas_models.ps1` 及 `tools/threshold_calibration/quantize_scrfd.py`。
+上述文件分别提供人脸检测/五关键点、128 维 SFace 人脸识别、2.7× 裁剪活体检测和 4.0× 裁剪活体检测。LockFace 的原始下载与处理事实源为 `scripts/download_models.ps1`、`scripts/normalize_scrfd_export.py`、`scripts/normalize_sface_export.py`、`scripts/download_minifas_models.ps1` 及 `tools/threshold_calibration/quantize_scrfd.py`。
 
 ## 检测模型的来源核对
 
-署名：Kun-Hsiang Lin（`kunkunlin1221`），DOCSAID / DocsaidLab。SCRFD 是采用的架构名称；FaceLogin 对发布文件进行了上述图规范化及量化修改。
+署名：Kun-Hsiang Lin（`kunkunlin1221`），DOCSAID / DocsaidLab。SCRFD 是采用的架构名称；LockFace 对发布文件进行了上述图规范化及量化修改。
 
 **直接可核对的证据：**
 

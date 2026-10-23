@@ -2,7 +2,7 @@
 
 This directory is the sole source for the ONNX files shipped by LockFace.
 `LockFaceConsole` copies this exact set to
-`installer/FaceLoginSetup/resources/models/` during its Release build; that
+`installer/LockFaceSetup/resources/models/` during its Release build; that
 installer directory is generated output and must not become a second source of
 truth.
 

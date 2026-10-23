@@ -4,7 +4,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$setup = Join-Path $root 'installer/FaceLoginSetup'
+$setup = Join-Path $root 'installer/LockFaceSetup'
 $copies = @(
     @{ source = 'LICENSE'; name = 'LICENSE.txt' },
     @{ source = 'THIRD_PARTY_NOTICES.txt'; name = 'THIRD_PARTY_NOTICES.txt' },

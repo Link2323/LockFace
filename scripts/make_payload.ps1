@@ -1,4 +1,4 @@
-# Packs installer/FaceLoginSetup/resources into payload.zip for
+# Packs installer/LockFaceSetup/resources into payload.zip for
 # //go:embed payload.zip.
 #
 # Entries are created MANUALLY (not via ZipFile.CreateFromDirectory): the .NET
@@ -8,8 +8,8 @@
 # are also required: fs.FS can only enumerate directories that exist as
 # entries. Run from the repository root before every full wails build.
 param(
-    [string]$ResourcesDir = "installer/FaceLoginSetup/resources",
-    [string]$Out = "installer/FaceLoginSetup/payload.zip"
+    [string]$ResourcesDir = "installer/LockFaceSetup/resources",
+    [string]$Out = "installer/LockFaceSetup/payload.zip"
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
