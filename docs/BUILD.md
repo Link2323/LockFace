@@ -1,4 +1,4 @@
-> 当前识别模型、数据兼容要求和真实环境验收状态见 [SFace 试用记录](work/in-progress/sface-trial.md)。
+> 当前识别模型、数据兼容要求和真实环境验收状态见 [SFace 试用记录](work/completed/sface-trial.md)。
 
 # Build Guide
 

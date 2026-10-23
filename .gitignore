@@ -79,10 +79,5 @@ Thumbs.db
 # Star history data (workflow-generated, lives on star-history branch)
 .star-history-data/
 
-# 内部文档不发布：待办/安全清单（避免公开攻击面备忘）、进行中实验方案、已交付的历史设计稿
-# 其余 docs/（构建/契约/模块/设计/运维/标定/性能与迁移记录）随仓库公开
-docs/todo.md
-docs/unlock-flow-security-todo.md
-docs/progressive-learning.md
-docs/progressive-learning-v2.md
-docs/side-face-plan-v2.md
+# 内部工作记录不发布：待办、安全审计与清单（攻击面备忘）、进行中实验与历史归档，仅本地保留
+docs/work/

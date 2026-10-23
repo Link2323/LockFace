@@ -20,7 +20,7 @@ worker 的纯诊断快照通过一次 `GetExposure` 同时读取曝光值和模�
 
 预热循环先判断当前样本是否打开稳定门，再决定是否启动当前帧检测。在无控制重放写入的稳定窗口内，自动曝光策略已确认 AE 活跃，或在预热前通过当前传感器回调确认手动曝光时，若已有来自紧邻上一预热样本的已完成人脸检测，年龄不超过 400 ms，且旧帧与当前帧在旧人脸框内的亮度均处于 50–120、差不超过 10，则复用已有 seed；模式未知、查询失败或其他条件不满足时保留原来的最新或待完成检测流程。手动模式查询在相机原 COM 线程上执行，不使用诊断快照作控制判断。亮度检查先按配置旋转当前帧，后续过期丢弃、控制写入后失效、身份绑定、PAD 和 60 ms pacing 仍执行。异步检测 future 在输入帧释放之前收敛，包括取消退出路径。
 
-`Exposure phase timing` 的 `preparation` 记录预热前的传感器准备（策略判断、缓存重放和手动模式确认），与首帧等待窗口存在重叠，不能额外加到 pipeline 首帧时间上。`seed_reused` 标识上述已完成结果复用分支，`seed_seq` 和 `seed_age` 记录预热门后、过期丢弃和曝光调节之前的 seed 选择；不代表该帧最终已计入认证。自动曝光试用包记录见 [种子调度试用](../work/completed/sface-performance.md#ready-seed-trial)，手动曝光扩展与首帧诊断见 [当前优化记录](../work/in-progress/unlock-performance.md)。
+`Exposure phase timing` 的 `preparation` 记录预热前的传感器准备（策略判断、缓存重放和手动模式确认），与首帧等待窗口存在重叠，不能额外加到 pipeline 首帧时间上。`seed_reused` 标识上述已完成结果复用分支，`seed_seq` 和 `seed_age` 记录预热门后、过期丢弃和曝光调节之前的 seed 选择；不代表该帧最终已计入认证。自动曝光试用包记录见 [种子调度试用](../work/completed/sface-performance.md#ready-seed-trial)，手动曝光扩展与首帧诊断见 [当前优化记录](../work/completed/unlock-performance.md)。
 
 种子调度试用包安装后的 7 次已 ready 的 Session 0 请求全部由 Windows 确认成功，6 次走新增复用分支，全部选择第一帧且 seed 剩余等待为 0 ms；pipeline 中位数 430.3 ms，CP 请求到 Windows ReportResult 为 619 ms。与前批 7 次比较不是受控 A/B，完整差值不能全部归因于调度，首轮相机初始化慢尾仍在。逐轮和限制见 [安装后记录](../work/completed/sface-performance.md#ready-seed-installed)。
 
@@ -61,7 +61,7 @@ AUTH_REQUEST → worker 打开相机并认证 → 父进程匹配 SID、构造�
 
 预热与传感器控制实现见 `exposure_warmup.h`、`face_gain_tune.h` 和 `auth_pipeline.cpp`。状态类型与文件读写集中在 `vision/tune_state.*`；`face_gain_tune.h` 保留设备重放与调节策略。认证的传感器诊断快照由 `auth_pipeline_diagnostics.h` 封装，在原相机线程读取且不参与调节判断。曝光探针的使用方法见 [`BUILD.md`](../BUILD.md)。
 
-当前落带参数和已确认调节进度的保存发生在最终身份/PAD 判断前；参数的有效性以曝光测量和稳定依据为准，认证失败本身不否定参数有效，认证成功也不保证参数适合下一轮的新光照。失败轮进度规则在 `AuthPipeline::Run` 的全部非成功终态（含取消、预环中止）统一结算：判定逻辑集中在 `EvaluateFailedRoundTuneProgress`（`vision/face_gain_tune.h`），写入记录由 `TuneWriteTracker` 承载（核心调节、无脸恢复与迟到纠正路径在写入成功后登记寄存器组合，稳定测量登记亮度）；日志行为 `Failed-round tune progress saved/not saved`。环境切换记录、重复恢复的待验证机制及后续提速候选见 [曝光问题与解锁提速方向](../work/in-progress/exposure-issues-and-speedups.md)。
+当前落带参数和已确认调节进度的保存发生在最终身份/PAD 判断前；参数的有效性以曝光测量和稳定依据为准，认证失败本身不否定参数有效，认证成功也不保证参数适合下一轮的新光照。失败轮进度规则在 `AuthPipeline::Run` 的全部非成功终态（含取消、预环中止）统一结算：判定逻辑集中在 `EvaluateFailedRoundTuneProgress`（`vision/face_gain_tune.h`），写入记录由 `TuneWriteTracker` 承载（核心调节、无脸恢复与迟到纠正路径在写入成功后登记寄存器组合，稳定测量登记亮度）；日志行为 `Failed-round tune progress saved/not saved`。环境切换记录、重复恢复的待验证机制及后续提速候选见 [曝光问题与解锁提速方向](../work/completed/exposure-issues-and-speedups.md)。
 
 调节写入因丢脸或样本预算耗尽而未确认时，共享调节器保留本次写入的亮度背景、方向和参数快照。认证在首个计帧前遇到落带人脸时最多接续复核一次：独立稳定门只采纳严格递增的新帧，使用原认证截止时间，复核前后参数及可查询的手动模式须与快照一致；通过后才更新缓存。复核不写硬件、不计身份/PAD 帧，不依赖认证结果，失败不得通过单帧落带分支补存。无脸恢复的场景亮度不能证明人脸响应，须按无响应回退条件重新确认人脸。正常稳定轮次不进入接续复核。
 
@@ -71,7 +71,7 @@ SFace 正式运行导出已移除 174 个 initializer graph inputs，保留权�
 
 所有运行期相机路径使用 DirectShow。锁屏预载只枚举设备并准备图骨架，不激活设备；设备仅在认证请求或用户启动预览后激活。worker 在 MTA，Enrollment 预览在 UI STA；DirectShow COM 初始化和释放必须留在同一线程。改动相机生命周期时要覆盖 Session 0 与桌面预览。
 
-图骨架可预载设备无关的软件 AVI Decompressor 和 MJPEG Decompressor。激活后按已读取的当前输入类型选择：YUY2 优先直接连接 capture → AVI Decompressor → RGB24 SampleGrabber，MJPG 优先使用系统 MJPEG Decompressor 直接连接；未选中的转换器在 Run 前移除。转换器不可用、其他输入类型或直接连接失败时删除可选滤镜并使用原 Intelligent Connect。回退先断开两段连接的双方，清理失败则初始化失败，不切换设备。预载不绑定设备、不连接相机引脚或启动采集。初始化日志以 `(AVI direct)`、`(MJPEG direct)` 或 `(Intelligent Connect)` 标记实际路径。2026-10-19 重新安装后 16 轮锁屏均使用 MJPEG direct 并通过；此前回退、掉线与活体拒绝的相关性尚未完成因果验证，详见 [调查记录](../work/in-progress/camera-startup-investigation.md)。
+图骨架可预载设备无关的软件 AVI Decompressor 和 MJPEG Decompressor。激活后按已读取的当前输入类型选择：YUY2 优先直接连接 capture → AVI Decompressor → RGB24 SampleGrabber，MJPG 优先使用系统 MJPEG Decompressor 直接连接；未选中的转换器在 Run 前移除。转换器不可用、其他输入类型或直接连接失败时删除可选滤镜并使用原 Intelligent Connect。回退先断开两段连接的双方，清理失败则初始化失败，不切换设备。预载不绑定设备、不连接相机引脚或启动采集。初始化日志以 `(AVI direct)`、`(MJPEG direct)` 或 `(Intelligent Connect)` 标记实际路径。2026-10-19 重新安装后 16 轮锁屏均使用 MJPEG direct 并通过；此前回退、掉线与活体拒绝的相关性尚未完成因果验证，详见 [调查记录](../work/completed/camera-startup-investigation.md)。
 
 `Auth pipeline first valid frame ... after camera ready` 的实际计时起点是 `AuthPipeline::Run` 内的 `pipelineStart`，终点是首次成功 `grabFrame` 返回；它包含前置传感器准备、轮询和 RGB 拷贝，不直接测量 `Run()` 返回到流线程首回调。当前 warmup 仍用 10 ms 轮询。桌面首帧复审发现事件取帧候选，用户放弃其约 5–6 ms 收益；MF 桌面首样本成绩不足以推翻其历史完整 Session 0 回归，继续保留 DirectShow，见 [首帧复审](../work/completed/sface-performance.md#first-frame-review)。此前 YUY2/AVI 路径的桌面调查发现预载同一软件转换器并直接连接可使初始化约省 21–23 ms；用户同意试用后实施兼容回退，并确认安装后的 4 次 Session 0 锁屏均使用直接连接且成功。其初始化中位数 164.2 ms，完整解锁 648.5 ms；与早先小批次比较不是受控 A/B，长期收益仍待验证，见 [试用实现及锁屏记录](../work/completed/sface-performance.md#camera-direct-trial)。该历史验收不能替代本次 MJPG 扩展的安装后锁屏验收。
 
@@ -85,7 +85,7 @@ worker 在创建 Session 前校验四个模型的 SHA-256；C++ 哈希见 `commo
 
 worker 的模型状态为 `Unloaded → Loading → Ready/Failed`。加载、释放由生命周期线程串行处理；配置重载会替换锁屏 worker，并在新 worker 就绪后确认。服务与 worker 分别写 `service.log`、`auth_worker.log`；排障步骤见 [`运维手册`](../operations/operations.md)。
 
-相机启动调查所用的首帧计时、分段日志和离线观察/故障注入探针已移除；历史测量结果见 [相机启动调查](../work/in-progress/camera-startup-investigation.md)。运行日志保留实际建图路径标记。
+相机启动调查所用的首帧计时、分段日志和离线观察/故障注入探针已移除；历史测量结果见 [相机启动调查](../work/completed/camera-startup-investigation.md)。运行日志保留实际建图路径标记。
 
 ## 当前关键值
 
@@ -99,7 +99,7 @@ worker 的模型状态为 `Unloaded → Loading → Ready/Failed`。加载、释
 | 无脸 / 持续 PAD 拒绝快速失败 | 2.5 秒 / 2 秒 |
 | 连续身份匹配重试预算 | 2 秒；身份接受时重置，与 PAD 通过次数无关 |
 
-阈值的标定证据见 [`threshold-calibration.md`](../work/completed/threshold-calibration.md)；SFace 试用限制见 [`sface-trial.md`](../work/in-progress/sface-trial.md)。
+阈值的标定证据见 [`threshold-calibration.md`](../work/completed/threshold-calibration.md)；SFace 试用限制见 [`sface-trial.md`](../work/completed/sface-trial.md)。
 
 ## 故障处理与修改检查
 
