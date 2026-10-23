@@ -64,6 +64,23 @@ body{
 .btn-primary:disabled{opacity:.4;cursor:default;transform:none}
 .btn-secondary{background:#fff;color:#111827;border:1px solid #e5e7eb;flex-shrink:0}
 .btn-secondary:hover{background:#f9fafb}
+/* Consent status pill shares the multi-angle option row, above the capture button */
+.capture-aux{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.capture-aux .chk-row{flex:1;width:auto;margin:6px 0}
+.capture-row{display:flex;gap:8px;align-items:center;margin-top:8px;width:100%}
+.capture-row .btn{flex:1;margin-top:0}
+.consent-pill{
+  border:1px solid #e5e7eb;background:#fff;color:#6b7280;font-size:11px;
+  padding:4px 12px;border-radius:999px;cursor:pointer;white-space:nowrap;
+  flex-shrink:0;transition:all .15s;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.consent-pill::before{content:'';width:6px;height:6px;border-radius:50%;
+  background:#9ca3af;flex-shrink:0;transition:background .15s}
+.consent-pill:hover{background:#f9fafb}
+.consent-pill.state-ok::before{background:#10b981}
+.consent-pill.state-warn{color:#b45309;border-color:#fcd34d}
+.consent-pill.state-warn::before{background:#f59e0b}
 
 /* ========== Pwd Screen ========== */
 #screen-pwd{justify-content:flex-start;padding-bottom:12px}

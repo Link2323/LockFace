@@ -15,7 +15,7 @@ function buildEnrollmentApp(deps) {
 
   var ui = createUiCommon({host: H});
   var previewCtl = createPreview({host: H, showBanner: ui.showBanner});
-  var consent = createConsentGate({previewCtl: previewCtl, ui: ui});
+  var consent = createConsentGate({host: H, previewCtl: previewCtl, ui: ui});
   var captureCtl = createCaptureCtl({timers: timers});
   var nav = createNavigation({host: H, captureCtl: captureCtl,
                               previewCtl: previewCtl, showBanner: ui.showBanner});
@@ -100,6 +100,7 @@ var switchTab = consoleApp.nav.switchTab,
     showLicenseDocument = consoleApp.ui.showLicenseDocument,
     onConsentAccept = consoleApp.consent.accept,
     onConsentDecline = consoleApp.consent.decline,
+    onConsentStatus = consoleApp.consent.statusMenu,
     openPrivacyNotice = consoleApp.consent.openPrivacyNotice,
     onModalOk = consoleApp.ui.onModalOk,
     onModalCancel = consoleApp.ui.onModalCancel,

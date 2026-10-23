@@ -11,7 +11,7 @@
 ### 显示与认证
 
 - 支持 `CPUS_LOGON` 和 `CPUS_UNLOCK_WORKSTATION`。
-- `FaceLoginProvider::ReadUserCountFromDatabase` 只读 `users.dat` header；无注册账号时隐藏磁贴。
+- `LockFaceProvider::ReadUserCountFromDatabase` 只读 `users.dat` header；无注册账号时隐藏磁贴。
 - 登录与解锁行为一致：输入检测线程只在 `SetSelected()`（用户真正落到本磁贴）启动；`Advise()` 不监听全局输入，避免从未选中本磁贴的 MSA PIN 重置等流程中打字误开摄像头。`SetDeselected()` 先停止监听，再断开进行中的认证管道并释放摄像头；迟到响应由 `ShouldProcessPipeResponse` 丢弃。
 - 输入触发采用 `input_trigger_policy.h` 的**边沿状态机**，不再读取 `GetLastInputInfo`，也没有静默窗、沉降窗或键盘重复速度假设。Raw Input 键盘 MAKE/BREAK 进入纯策略类；鼠标只轮询物理按钮状态，移动事件没有进入策略的入口，因此永不触发。输入线程以 10ms 粒度采样按钮并通过 `MsgWaitForMultipleObjectsEx` 泵送 `WM_INPUT`。
 - 保留 Windows 原生锁屏壁纸时的产品语义：普通键盘键按一次即触发（壁纸阶段 MAKE 可能被吞，普通孤立 BREAK 仍算一次完整按压）；鼠标第一次点击只推走壁纸、第二次在凭据视图完成 DOWN→UP 后形成触发候选。鼠标候选有 100ms 可取消窗口：若该点击切换到密码/PIN 磁贴，`SetDeselected()` 会先停止监听，摄像头不启动；只有仍停留在本磁贴时才开始认证。单纯移动鼠标只推走壁纸，不启动摄像头。Raw Input 注册失败时降级为凭据视图阶段的 `GetAsyncKeyState` 键盘边沿轮询。
@@ -34,14 +34,14 @@
 
 ### COM 与注册
 
-CLSID：`{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}`。
+CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 
 字面量同时存在于：
 
 - `credential_provider/resource.h`
 - `credential_provider/dllmain.cpp`
-- `credential_provider/FaceLoginProvider.cpp`
-- `installer/FaceLoginSetup/internal/com.go`
+- `credential_provider/LockFaceProvider.cpp`
+- `installer/LockFaceSetup/internal/com.go`
 - `scripts/unregister_dev.bat`（开发环境卸载脚本）
 
 修改必须全部同步（前四处由安装器的 `internal/cross_language_consistency_test.go` 校验）。DLL 使用静态 CRT `/MT`，不依赖安装包的五个 ONNX Runtime DLL。
@@ -61,6 +61,10 @@ CLSID：`{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}`。
 `preview_exposure.*` 的 `PreviewExposure` 管理预览曝光会话：启动回放、初次调节、后台 watch、冷却计时及待确认恢复状态。`EnrollmentWizard` 保留相机、模型和预览线程所有权，在线程启动前准备曝光会话，帧线程逐帧调用观察入口，停止并 join 后释放会话。回放策略与认证共用 `ReplayExposureState`，模型加载与认证预热各自吸收回放等待时间。预览启动调节和后台曝光 watch 共用一份会话内待确认恢复状态。调节写入的稳定测量中断后，watch 每 3 秒遇到落带人脸时可用共享稳定门接续复核，不受写参数的 10 秒冷却限制；仅参数与手动模式在测量前后一致、严格递增的新帧已稳定且仍落带时保存 `camera_tune.state`。复核不写硬件，采集时跳过，停止或采集中止确认，重新建图清除旧状态；帧缓存仍由原 mutex 保护。身份/PAD 结果不能代替曝光稳定证据。
 
 `preview_frame_encoder.*` 独立管理 WIC 工厂与逐帧 JPEG/Base64 编码，质量维持 0.70。工厂在 UI 的既有 COM 公寓中创建，预览线程串行编码，join 后销毁；模块不初始化或反初始化 COM。编码各阶段失败时返回空输出，临时 COM 对象自动释放。
+
+### 隐私同意门
+
+摄像头启动前每个 Windows 用户需通过 `js/consent.js` 的同意门（首次仍是明示勾选）。接受记录按用户保存在 `HKCU\SOFTWARE\LockFace`（`ConsentVersion` + `ConsentTime`，与安装器的 HKLM 机器级记录同名但相互独立，不含个人数据）。版本号由 `WebviewHost.cpp` 运行时从 exe 旁 `PRIVACY.txt` 的 `版本：x.y` 行解析：记录版本与当前文书一致时启动静默放行；文书改版、无记录或撤回后重新弹门。录入页采集按钮上方选项行（多角度录入同一行）右侧的同意状态胶囊实时反映记录状态，点击弹出"查看隐私说明 / 撤回同意"；撤回同时吊销本次会话的同意并停相机。卸载时安装器清理各用户 hive 下的该键（见 [installer.md](installer.md) 卸载语义）。
 
 ### 账号身份
 
@@ -108,14 +112,14 @@ CLSID：`{B8F4C7A1-3D5E-4F2B-A9C6-1D8E7F3A5B2C}`。
 - 禁用右键菜单和开发者工具。
 - `WM_WTSSESSION_CHANGE` 在锁屏时释放摄像头，解锁后仅当锁屏瞬间预览在跑（录入页可见）才恢复——JS 层切到人脸/设置/日志页即关相机，无条件恢复会让相机亮在无预览的页面背后。
 - 帧缓存由 `EnrollmentWizard::m_frameCacheMutex` 保护。
-- 用户数据目录固定为 `%LOCALAPPDATA%\FaceLogin\WebView2`（`WebviewHost.cpp` WM_CREATE 显式传入并递归创建；实际值与创建失败 HRESULT 均写 console.log(原名 enrollment.log)）。创建环境前会删除本进程的 `WEBVIEW2_USER_DATA_FOLDER` 环境变量：官方 loader 对该变量只检查存在性、不检查空值，宿主（如 Wails 安装器经 go-webview2 `preventEnvAndRegistryOverrides` 置空）遗留的空值会静默覆盖代码传参、回退到 exe 旁默认路径——在 Program Files 的 ACL 下 browser 子进程写不进去，controller 创建 19 秒后 E_ABORT。
+- 用户数据目录固定为 `%LOCALAPPDATA%\LockFace\WebView2`（`WebviewHost.cpp` WM_CREATE 显式传入并递归创建；实际值与创建失败 HRESULT 均写 console.log(原名 enrollment.log)）。创建环境前会删除本进程的 `WEBVIEW2_USER_DATA_FOLDER` 环境变量：官方 loader 对该变量只检查存在性、不检查空值，宿主（如 Wails 安装器经 go-webview2 `preventEnvAndRegistryOverrides` 置空）遗留的空值会静默覆盖代码传参、回退到 exe 旁默认路径——在 Program Files 的 ACL 下 browser 子进程写不进去，controller 创建 19 秒后 E_ABORT。
 
 ## DataPath 差异
 
 Credential Provider 和 Enrollment 直接信任注册表 DataPath，读取不到时回退 ProgramData；只有服务使用 `ResolveSecureDataDir` 白名单。因此修改路径逻辑必须同时检查：
 
 - `credential_provider/dllmain.cpp`
-- `credential_provider/FaceLoginProvider.cpp`
+- `credential_provider/LockFaceProvider.cpp`
 - `enrollment_app/main.cpp`
 - `enrollment_app/EnrollmentWizard.cpp`
 - `common/data_path.*`

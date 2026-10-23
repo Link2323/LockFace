@@ -33,16 +33,22 @@
       <canvas id="face-canvas"></canvas>
       <div class="cam-caption" id="cam-caption">请将面部置于取景框内，确保光线充足。</div>
     </div>
-    <label class="chk-row" title="正面、左转 30°、右转 30° 各录 5 帧，侧脸角度也能解锁">
-      <input type="checkbox" id="chk-multi-angle" checked> 多角度录入（推荐，侧脸可解锁）
-    </label>
+    <div class="capture-aux">
+      <label class="chk-row" title="正面、左转 30°、右转 30° 各录 5 帧，侧脸角度也能解锁">
+        <input type="checkbox" id="chk-multi-angle" checked> 多角度录入（推荐，侧脸可解锁）
+      </label>
+      <button class="consent-pill" id="btn-consent-status" onclick="onConsentStatus()"
+              title="隐私同意状态，点击查看或撤回">隐私说明</button>
+    </div>
     <div id="cap-progress">
       <div class="progress-bar"><div class="fill" id="cap-fill" style="width:0%"></div></div>
     </div>
-    <button class="btn btn-primary" id="btn-capture" onclick="onCapture()">
-      <span class="spinner" id="cap-spinner"></span>
-      <span id="cap-btn-text">开始采集</span>
-    </button>
+    <div class="capture-row">
+      <button class="btn btn-primary" id="btn-capture" onclick="onCapture()">
+        <span class="spinner" id="cap-spinner"></span>
+        <span id="cap-btn-text">开始采集</span>
+      </button>
+    </div>
   </div>
   <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
@@ -358,7 +364,7 @@
     <ul class="consent-list">
       <li>人脸画面仅在本机内存中处理，不保存照片或视频，不上传。</li>
       <li>本机仅保存人脸特征向量和 DPAPI 加密后的 Windows 密码。</li>
-      <li>你可以随时删除人脸数据或卸载软件来撤回同意。</li>
+      <li>你可以随时在「录入」页点击同意状态撤回同意，或删除人脸数据、卸载软件。</li>
       <li>人脸识别无法保证绝对安全；识别失败时请使用密码登录。</li>
     </ul>
     <label class="chk-row consent-check">

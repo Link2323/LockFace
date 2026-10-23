@@ -14,8 +14,9 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "wtsapi32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
-static const wchar_t* WND_CLASS = L"FaceloginWv2Wnd";
+static const wchar_t* WND_CLASS = L"LockFaceWv2Wnd";
 
 // ==========================================================================
 // EnvCallback
@@ -245,7 +246,7 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         std::wstring wv2DataDir;
         wchar_t localAppData[MAX_PATH] = {};
         if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData)) && localAppData[0]) {
-            wv2DataDir = std::wstring(localAppData) + L"\\FaceLogin\\WebView2";
+            wv2DataDir = std::wstring(localAppData) + L"\\LockFace\\WebView2";
             int mkErr = SHCreateDirectoryExW(nullptr, wv2DataDir.c_str(), nullptr);
             if (mkErr != ERROR_SUCCESS && mkErr != ERROR_ALREADY_EXISTS && mkErr != ERROR_FILE_EXISTS) {
                 FACELOGIN_WARN(L"WebView2: create UDF dir failed err=%d: %s", mkErr, wv2DataDir.c_str());
@@ -255,7 +256,7 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wv2DataDir.empty()) {
             wchar_t tempPath[MAX_PATH] = {};
             if (GetTempPathW(MAX_PATH, tempPath) && tempPath[0]) {
-                wv2DataDir = std::wstring(tempPath) + L"FaceLoginConsole.WebView2";
+                wv2DataDir = std::wstring(tempPath) + L"LockFaceConsole.WebView2";
                 CreateDirectoryW(wv2DataDir.c_str(), nullptr);
             }
         }
@@ -480,7 +481,10 @@ void WebviewHost::ResizeWebView(HWND hWnd) {
     X(CancelCapture, 35, m_wizard->CancelCapture()) \
     X(GetEnrollmentHint, 36, if (res) *res = MakeStr(m_wizard->GetEnrollmentHint())) \
     X(GetLearningStatus, 37, if (res) *res = MakeStr(m_wizard->GetLearningStatus())) \
-    X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0))))
+    X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0)))) \
+    X(GetPrivacyConsent, 39, if (res) *res = MakeStr(GetPrivacyConsentJson())) \
+    X(AcceptPrivacyConsent, 40, if (res) *res = MakeBool(RecordPrivacyConsent())) \
+    X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(ClearPrivacyConsent()))
 
 struct HostMethodEntry { const wchar_t* name; DISPID id; };
 static constexpr HostMethodEntry kHostMethods[] = {
@@ -560,6 +564,152 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return "License document is unavailable. Reinstall LockFace or restore the license files beside LockFaceConsole.exe.";
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+// ==========================================================================
+// Per-user privacy consent record
+// ==========================================================================
+// The console's camera gate remembers each Windows user's acceptance under
+// HKCU\SOFTWARE\LockFace — the per-user mirror of the installer's ACL-locked
+// machine-wide record, with the same value names. ConsentVersion pins which
+// notice text was accepted, ConsentTime when; nothing else is stored. The
+// gate silently resumes while the recorded version still matches the
+// 版本：x.y line of the shipped PRIVACY.txt, and reopens on a notice revision,
+// a missing record, or an explicit withdrawal from the settings screen.
+
+static const wchar_t* kConsentKeyPath = L"SOFTWARE\\LockFace";
+static const wchar_t* kConsentVersionName = L"ConsentVersion";
+static const wchar_t* kConsentTimeName    = L"ConsentTime";
+
+// Recorded values are constrained to these charsets before they are embedded
+// in the host JSON, so a hand-edited registry value cannot inject structure
+// into the page.
+static bool IsVersionChar(wchar_t c) {
+    return (c >= L'0' && c <= L'9') || c == L'.';
+}
+static bool IsTimeChar(wchar_t c) {
+    return (c >= L'0' && c <= L'9') || c == L'+' || c == L'-' ||
+           c == L':' || c == L'T' || c == L'Z';
+}
+static bool ValidChars(const std::wstring& s, bool (*pred)(wchar_t)) {
+    if (s.empty() || s.size() >= 64) return false;
+    for (wchar_t c : s) if (!pred(c)) return false;
+    return true;
+}
+
+// Extract the 版本：x.y line from the UTF-8 PRIVACY.txt beside the exe. An
+// empty result means "cannot determine" — callers then never auto-resume.
+static std::wstring ReadNoticeVersion() {
+    const std::string text = ReadLicenseDocument(L"PRIVACY.txt");
+    // UTF-8 bytes of "版本：" (版 U+7248, 本 U+672C, ： U+FF1A).
+    static const char kNeedle[] = "\xE7\x89\x88\xE6\x9C\xAC\xEF\xBC\x9A";
+    size_t pos = text.find(kNeedle, 0, sizeof(kNeedle) - 1);
+    if (pos == std::string::npos) return L"";
+    pos += sizeof(kNeedle) - 1;
+    std::string ver;
+    while (pos < text.size() &&
+           ((text[pos] >= '0' && text[pos] <= '9') || text[pos] == '.')) {
+        ver += text[pos++];
+    }
+    if (ver.empty() || ver.front() == '.' || ver.back() == '.') return L"";
+    return facelogin::Utf8ToWstr(ver);
+}
+
+static std::wstring NowRfc3339Local() {
+    SYSTEMTIME lt;
+    GetLocalTime(&lt);
+    TIME_ZONE_INFORMATION tzi = {};
+    GetTimeZoneInformation(&tzi);
+    // Windows bias is the minutes added to local time to get UTC, so the
+    // RFC 3339 offset sign is flipped: UTC+8 has bias -480 → "+08:00".
+    LONG bias = tzi.Bias;
+    wchar_t sign = (bias <= 0) ? L'+' : L'-';
+    LONG absBias = (bias < 0) ? -bias : bias;
+    wchar_t buf[40] = {};
+    swprintf_s(buf, L"%04u-%02u-%02uT%02u:%02u:%02u%c%02ld:%02ld",
+               lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond,
+               sign, absBias / 60, absBias % 60);
+    return buf;
+}
+
+static bool ReadConsentRecord(std::wstring* version, std::wstring* time) {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, KEY_READ, &key)
+            != ERROR_SUCCESS) {
+        return false;
+    }
+    wchar_t vbuf[64] = {}, tbuf[64] = {};
+    DWORD vsize = sizeof(vbuf), tsize = sizeof(tbuf), vtype = 0, ttype = 0;
+    bool ok =
+        RegQueryValueExW(key, kConsentVersionName, nullptr, &vtype,
+                         reinterpret_cast<LPBYTE>(vbuf), &vsize) == ERROR_SUCCESS &&
+        vtype == REG_SZ &&
+        RegQueryValueExW(key, kConsentTimeName, nullptr, &ttype,
+                         reinterpret_cast<LPBYTE>(tbuf), &tsize) == ERROR_SUCCESS &&
+        ttype == REG_SZ;
+    RegCloseKey(key);
+    if (!ok) return false;
+    std::wstring v(vbuf), t(tbuf);
+    if (!ValidChars(v, IsVersionChar) || !ValidChars(t, IsTimeChar)) return false;
+    *version = v;
+    *time = t;
+    return true;
+}
+
+static bool RecordPrivacyConsent() {
+    const std::wstring ver = ReadNoticeVersion();
+    if (ver.empty()) {
+        FACELOGIN_WARN(L"Privacy consent not recorded: PRIVACY.txt version line unreadable");
+        return false;
+    }
+    const std::wstring now = NowRfc3339Local();
+    HKEY key = nullptr;
+    LSTATUS st = RegCreateKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, nullptr,
+                                 0, KEY_WRITE, nullptr, &key, nullptr);
+    if (st != ERROR_SUCCESS) {
+        FACELOGIN_WARN(L"Privacy consent not recorded: HKCU key create failed err=%ld", st);
+        return false;
+    }
+    bool ok =
+        RegSetValueExW(key, kConsentVersionName, 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(ver.c_str()),
+                       static_cast<DWORD>((ver.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS &&
+        RegSetValueExW(key, kConsentTimeName, 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(now.c_str()),
+                       static_cast<DWORD>((now.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;
+    RegCloseKey(key);
+    if (ok) FACELOGIN_INFO(L"Privacy consent recorded for notice version %s", ver.c_str());
+    else    FACELOGIN_WARN(L"Privacy consent record write failed");
+    return ok;
+}
+
+static bool ClearPrivacyConsent() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, KEY_SET_VALUE, &key)
+            != ERROR_SUCCESS) {
+        return true;  // nothing recorded — already withdrawn
+    }
+    RegDeleteValueW(key, kConsentVersionName);
+    RegDeleteValueW(key, kConsentTimeName);
+    RegCloseKey(key);
+    FACELOGIN_INFO(L"Privacy consent withdrawn for this user");
+    return true;
+}
+
+static std::string GetPrivacyConsentJson() {
+    std::wstring ver, time;
+    const bool has = ReadConsentRecord(&ver, &time);
+    const std::wstring notice = ReadNoticeVersion();
+    std::string json = "{\"noticeVersion\":\"" + facelogin::WstrToUtf8(notice) +
+                       "\",\"record\":";
+    if (has) {
+        json += "{\"version\":\"" + facelogin::WstrToUtf8(ver) +
+                "\",\"time\":\"" + facelogin::WstrToUtf8(time) + "\"}";
+    } else {
+        json += "null";
+    }
+    json += "}";
+    return json;
 }
 
 STDMETHODIMP HostObject::Invoke(DISPID id, REFIID, LCID, WORD wFlags, DISPPARAMS* p, VARIANT* res, EXCEPINFO*, UINT*) {

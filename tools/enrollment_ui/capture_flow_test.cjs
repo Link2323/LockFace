@@ -57,7 +57,7 @@ function page(overrides) {
           contains(c) { return set.has(c); }
         };
       })(),
-      addEventListener() {}
+      addEventListener() {}, querySelector: () => null
     });
     return elements.get(key);
   }
@@ -157,6 +157,78 @@ test('capture is blocked until the per-user consent is accepted', () => {
   p.context.onCapture();
   assert.equal(p.app.captureCtl.isActive(), false);
   assert.ok(p.element('consent-overlay').classList.contains('active'));
+});
+
+test('a remembered record for the current notice version skips the gate', () => {
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify(
+      { noticeVersion: '1.0', record: { version: '1.0', time: '2026-01-01T10:00:00+08:00' } })
+  } });
+  assert.equal(p.app.consent.granted(), true);   // silently resumed
+  assert.ok(!p.element('consent-overlay').classList.contains('active'));
+  p.context.onCapture();                          // camera path is open
+  assert.equal(p.app.captureCtl.isActive(), true);
+});
+
+test('an outdated consent record keeps the gate up', () => {
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify(
+      { noticeVersion: '1.1', record: { version: '1.0', time: '2026-01-01T10:00:00+08:00' } })
+  } });
+  assert.ok(p.element('consent-overlay').classList.contains('active'));
+  assert.equal(p.app.consent.granted(), false);
+});
+
+test('accepting the gate persists the record through the host', () => {
+  const wrote = [];
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.0', record: null }),
+    AcceptPrivacyConsent() { wrote.push(1); return true; }
+  } });
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  assert.deepEqual(wrote, [1]);
+  assert.equal(p.app.consent.granted(), true);
+  assert.ok(!p.element('consent-overlay').classList.contains('active'));
+});
+
+test('withdraw revokes the session consent and clears the host record', () => {
+  const cleared = [];
+  const rec = { noticeVersion: '1.0', record: { version: '1.0', time: '2026-01-02T03:04:05+08:00' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; cleared.push(1); return true; }
+  } });
+  assert.equal(p.element('btn-consent-status').textContent, '已同意隐私说明');  // pill reflects record
+  p.app.consent.withdraw();
+  assert.deepEqual(cleared, [1]);
+  assert.equal(p.app.consent.granted(), false);
+  assert.equal(p.app.previewCtl.consentGranted(), false);
+  assert.equal(p.element('btn-consent-status').textContent, '未同意隐私说明');
+});
+
+test('the consent pill opens a status dialog with view and withdraw actions', () => {
+  const rec = { noticeVersion: '1.0', record: { version: '1.0', time: '2026-01-02T03:04:05+08:00' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec)
+  } });
+  p.context.onConsentStatus();
+  assert.ok(p.element('modal-overlay').classList.contains('active'));
+  assert.equal(p.element('modal-ok').textContent, '查看隐私说明');
+  assert.equal(p.element('modal-mid').textContent, '撤回同意');
+  assert.ok(p.element('modal-message').textContent.indexOf('你已同意') === 0);
+  p.context.onModalCancel();
+  assert.ok(!p.element('modal-overlay').classList.contains('active'));
+});
+
+test('the status dialog hides the withdraw action without a current record', () => {
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.0', record: null })
+  } });
+  p.app.consent.statusMenu();
+  assert.equal(p.element('modal-message').textContent,
+               '尚未同意隐私说明；摄像头和采集启动前会先征求同意。');
+  assert.equal(p.element('modal-mid').style.display, 'none');
 });
 
 test('page cancellation and retry cannot start an old sequence angle', () => {
