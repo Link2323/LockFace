@@ -11,6 +11,7 @@
 - USB 摄像头（或内置摄像头），支持 1280×720 分辨率
 - 管理员权限（用于安装、注册COM组件、服务管理）
 - WebView2 运行时（Windows 11 内置，Windows 10 自动安装）
+- **Smart App Control（智能应用控制）需关闭**——Windows 11 新装机可能默认开启，它会拦截本产品未签名的运行时 DLL（如 `libprotobuf.dll`），服务进程启动即被终止、无法写任何日志。关闭入口：Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭（注意关闭后不可重新开启）。安装器在服务启动失败时会查询代码完整性事件，检测到拦截会直接报出被拦文件名
 
 ---
 
@@ -37,6 +38,8 @@
 |---|---|---|
 | 锁屏后短暂显示“正在加载模型” | 锁屏预加载尚未完成或锁屏事件延迟 | 认证请求会兜底等待；检查 `Model load requested: session lock` 与 `Authentication worker ready` 日志间隔 |
 | 服务启动失败 | 缺少运行时 DLL | 安装时确保 DLL 与 EXE 同目录 |
+| 安装时报 `start service: 1053` 且 `service.log` 一行未写 | 进程在 `main()` 前被终止或文件被删：Smart App Control/代码完整性拦截未签名 DLL（`Microsoft-Windows-CodeIntegrity/Operational` 事件 3076/3077），或杀毒软件隔离载荷文件（Windows Defender 事件 1116/1117，第三方杀软查其隔离区），或系统缺少 Visual C++ 运行库 | 新版安装器会先检测 CodeIntegrity 与 Defender 事件并在报错中直接指明被拦文件；确认原因后关闭智能应用控制/恢复并允许被隔离文件（或加排除项）/安装 VC++ 运行库，再重新运行安装程序 |
+| 服务进程崩溃后磁贴显示"人脸登录服务不可用"且不自愈 | 旧版安装器安装的服务未配置恢复动作 | 新版安装器已配置失败自动重启（崩溃后 5 秒内由 SCM 拉起）；用新版安装器覆盖安装一次即生效，或重启机器 |
 | 锁屏不显示磁贴 | 未注册或已禁用 / 无注册用户 | 检查注册表 Disabled 键值，确认已录入人脸 |
 | 识别率低 | 光照、距离或注册样本质量不匹配 | 在与注册相近的光线和距离下重试。查看 `service.log` 的 `closest identity distance` 与阈值；查看 `auth_worker.log` 的 `face luma`，持续低于 50 时检查相机朝向和遮挡。当前 SFace 阈值仍处于试用阶段，见 [`SFace 试用说明`](../work/completed/sface-trial.md)。 |
 | 摄像头不工作 | Session 0 权限、相机占用或驱动错误 | 检查 `auth_worker.log` 的 DirectShow 相机初始化错误，并关闭占用相机的程序 |

@@ -143,6 +143,28 @@ func createService(m *mgr.Mgr, exePath string) (*mgr.Service, error) {
 	)
 }
 
+// configureServiceRecovery arms SCM failure recovery: a crashed or externally
+// killed LockFaceService is restarted by the SCM (upstream FaceLogin #10 —
+// without this the lock screen tile stays on "人脸登录服务不可用" until the
+// machine reboots; the CP already reports the outage, it cannot heal it).
+// The non-crash flag additionally counts clean exits with a nonzero code as
+// failures; Windows applies that flag only after the SCM itself restarts,
+// i.e. on the next boot — until then recovery covers crash-only failures.
+func configureServiceRecovery(s *mgr.Service) error {
+	actions := []mgr.RecoveryAction{
+		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: time.Minute},
+	}
+	if err := s.SetRecoveryActions(actions, 86400); err != nil {
+		return fmt.Errorf("set service recovery actions: %w", err)
+	}
+	if err := s.SetRecoveryActionsOnNonCrashFailures(true); err != nil {
+		return fmt.Errorf("set recovery on non-crash failures: %w", err)
+	}
+	return nil
+}
+
 // InstallService creates (or updates) and starts the service.
 func InstallService(exePath string) error {
 	m, err := mgr.Connect()
@@ -203,9 +225,36 @@ func InstallService(exePath string) error {
 	}
 	defer s.Close()
 
+	// Fresh create and upgrade-over-existing both land here — arm recovery
+	// on either path so an updated install heals a crashing service too.
+	if err := configureServiceRecovery(s); err != nil {
+		return fmt.Errorf("configure service recovery: %w", err)
+	}
+
 	// Start the service
 	err = s.Start()
 	if err != nil && err != windows.ERROR_SERVICE_ALREADY_RUNNING {
+		// SAC / code integrity kills the process during DLL load before it
+		// can log anything; surface the blocked file instead of bare 1053.
+		if blocked := DetectCodeIntegrityBlock(); blocked != "" {
+			return fmt.Errorf("start service: %w（%s 被 Smart App Control/代码完整性拦截，"+
+				"服务进程启动即被终止。请在 Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 "+
+				"中选择\"关闭\"后重新运行安装程序）", err, blocked)
+		}
+		// Antivirus quarantine of a payload file fails the start the same
+		// way; Windows Defender at least leaves a detectable trail.
+		if blocked := DetectDefenderBlock(); blocked != "" {
+			return fmt.Errorf("start service: %w（%s 已被 Windows Defender 检测并隔离/拦截。"+
+				"请在 Windows 安全中心 → 病毒和威胁防护 → 保护历史记录 中恢复该文件并允许，"+
+				"或将安装目录加入排除项后重新运行安装程序）", err, blocked)
+		}
+		// 1053 with zero service log lines means the process died before
+		// main(); without an event trail the honest answer is the checklist.
+		if err == windows.ERROR_SERVICE_REQUEST_TIMEOUT {
+			return fmt.Errorf("start service: %w（服务进程启动后很快退出且未写任何日志。"+
+				"常见原因：Smart App Control 或杀毒软件拦截未签名程序、系统缺少 Visual C++ 运行库；"+
+				"处理办法见运维手册\"系统要求\"与\"常见问题\"）", err)
+		}
 		return fmt.Errorf("start service: %w", err)
 	}
 	return nil
