@@ -1,6 +1,6 @@
 ﻿# Sync the version string across ALL 5 locations (docs/BUILD.md "版本号与版本资源"):
 #   in git    : CMakeLists.txt project(VERSION), wails.json Info, main.go appVersion, README badge
-#   disk-only : installer/FaceLoginSetup/build/windows/info.json (gitignored)
+#   disk-only : installer/LockFaceSetup/build/windows/info.json (gitignored)
 #
 #   powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 1.8.1-multi-angle
 #   add -Dry to preview every replacement without writing.
@@ -24,8 +24,8 @@ $num = $Matches['num']
 $display = if ($Matches['suf']) { "$num-$($Matches['suf'])" } else { $num }
 $root = Split-Path $PSScriptRoot -Parent
 
-# README badge text: shields.io escaping ('-' -> '--', ' ' -> '%20'), trailing fork note kept.
-$badge = ($display + " (Link2323 fork)").Replace('-', '--').Replace(' ', '%20')
+# README badge text: shields.io escaping ('-' -> '--', ' ' -> '%20'), trailing product note kept.
+$badge = ($display + " (LockFace)").Replace('-', '--').Replace(' ', '%20')
 
 function Update-File {
     param([string]$Path, [object[]]$Rules)
@@ -54,15 +54,15 @@ function Update-File {
 Write-Host "version: $Version  (numeric=$num, display=$display)$(if ($Dry) { '  [DRY RUN]' })"
 
 Update-File "CMakeLists.txt" @(
-    @{ Pattern = 'project\(FaceLogin VERSION \d+\.\d+\.\d+'; Replacement = "project(FaceLogin VERSION $num"; Expect = 1 }
+    @{ Pattern = 'project\(LockFace VERSION \d+\.\d+\.\d+'; Replacement = "project(LockFace VERSION $num"; Expect = 1 }
 )
 
-Update-File "installer/FaceLoginSetup/wails.json" @(
+Update-File "installer/LockFaceSetup/wails.json" @(
     @{ Pattern = '"productVersion":\s*"[\d.]+"'; Replacement = "`"productVersion`": `"$num`""; Expect = 1 },
     @{ Pattern = '"fileVersion":\s*"[\d.]+"'; Replacement = "`"fileVersion`": `"$num`""; Expect = 1 }
 )
 
-Update-File "installer/FaceLoginSetup/main.go" @(
+Update-File "installer/LockFaceSetup/main.go" @(
     @{ Pattern = 'const appVersion = "[^"]+"'; Replacement = "const appVersion = `"$num`""; Expect = 1 }
 )
 
@@ -70,7 +70,7 @@ Update-File "README.md" @(
     @{ Pattern = 'version-[^" ]*?-green'; Replacement = "version-$badge-green"; Expect = 1 }
 )
 
-Update-File "installer/FaceLoginSetup/build/windows/info.json" @(
+Update-File "installer/LockFaceSetup/build/windows/info.json" @(
     @{ Pattern = '"file_version":\s*"[\d.]+"'; Replacement = "`"file_version`": `"$num`""; Expect = 1 },
     @{ Pattern = '"ProductVersion":\s*"[\d.]+"'; Replacement = "`"ProductVersion`": `"$num`""; Expect = 1 },
     @{ Pattern = '"FileVersion":\s*"[\d.]+"'; Replacement = "`"FileVersion`": `"$num`""; Expect = 1 }
@@ -80,4 +80,4 @@ Write-Host ""
 Write-Host "notes:"
 Write-Host "  - info.json is gitignored (disk-only); the other 4 changes are committable."
 Write-Host "  - run scripts/build_installer.ps1 to bake the new version into the binaries/installer."
-Write-Host "  - release tag: v$display"
+Write-Host "  - release tag: $display (no v prefix; push tags to the fork only)."
