@@ -799,12 +799,25 @@ void LockFaceCredential::StartAuth() {
     m_state = State::Authenticating;
     m_pipeClient = std::make_unique<facelogin::PipeClient>();
 
-    if (m_pipeClient->Connect(facelogin::ipc::RemainingAuthTimeMs(authDeadline))) {
+    // m_hInputStop stays valid for this whole call: on the input thread the
+    // owner closes it only after joining that thread, and on the LogonUI
+    // thread the same thread owns creation, signaling and teardown.
+    if (m_pipeClient->Connect(facelogin::ipc::RemainingAuthTimeMs(authDeadline),
+                              nullptr, m_hInputStop)) {
         if (facelogin::ipc::RemainingAuthTimeMs(authDeadline) == 0 ||
-            !m_pipeClient->SendMessage(facelogin::ipc::MSG_AUTH_REQUEST,
-                                      facelogin::ipc::RemainingAuthTimeMs(authDeadline))) {
+            !m_pipeClient->SendMessage(
+                facelogin::ipc::MSG_AUTH_REQUEST,
+                facelogin::ipc::RemainingAuthTimeMs(authDeadline),
+                m_hInputStop)) {
             FACELOGIN_WARN(L"Failed to send authentication request");
             m_pipeClient->Disconnect();
+            // A cancel-driven failure must not present anything: the owner
+            // signaled stop and is joining this very thread to tear the tile
+            // down (deselect / UnAdvise / destruction / password switch).
+            if (InputStopSignaled()) {
+                FACELOGIN_INFO(L"StartAuth: stop signaled — failure presentation skipped");
+                return;
+            }
             if (facelogin::ipc::RemainingAuthTimeMs(authDeadline) == 0) {
                 PresentRetryableFailure(State::Failed, L"识别超时，请重试");
             } else {
@@ -831,12 +844,20 @@ void LockFaceCredential::StartAuth() {
             }, authDeadline)) {
             FACELOGIN_WARN(L"Failed to start authentication response reader");
             m_pipeClient->Disconnect();
+            if (InputStopSignaled()) {
+                FACELOGIN_INFO(L"StartAuth: stop signaled — failure presentation skipped");
+                return;
+            }
             PresentRetryableFailure(State::Error, L"人脸登录服务不可用");
             return;
         }
         FACELOGIN_INFO(L"Pipe connected, auth request sent");
     } else {
         FACELOGIN_WARN(L"Failed to connect to face service pipe");
+        if (InputStopSignaled()) {
+            FACELOGIN_INFO(L"StartAuth: stop signaled — failure presentation skipped");
+            return;
+        }
         if (facelogin::ipc::RemainingAuthTimeMs(authDeadline) == 0) {
             PresentRetryableFailure(State::Failed, L"识别超时，请重试");
         } else {
@@ -863,7 +884,9 @@ void LockFaceCredential::StartInputDetectionThread() {
         StopInputDetectionThread();
     }
 
-    m_hInputStop = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    // Manual-reset, see the member declaration: the watcher loop, the settle
+    // window and StartAuth's cancellable pipe waits all observe one signal.
+    m_hInputStop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!m_hInputStop) {
         FACELOGIN_ERROR(L"Failed to create input stop event");
         return;
@@ -876,32 +899,32 @@ void LockFaceCredential::StartInputDetectionThread() {
     if (!m_hInputThread || m_hInputThread == INVALID_HANDLE_VALUE) {
         FACELOGIN_ERROR(L"Failed to start input detection thread");
         m_inputThreadRunning = false;
+        CloseHandle(m_hInputStop);
+        m_hInputStop = nullptr;
     }
 }
 
 void LockFaceCredential::StopInputDetectionThread() {
-    if (!m_inputThreadRunning && !m_hInputThread && !m_hInputStop) {
+    if (!m_hInputThread && !m_hInputStop) {
         return;
     }
 
-    const bool wasRunning = m_inputThreadRunning;
-    if (wasRunning) {
-        FACELOGIN_DEBUG(L"Stopping input detection thread...");
-    }
-
-    // Signal only a live watcher. A naturally completed watcher merely needs
-    // its already-signaled thread handle and event reaped.
-    if (wasRunning && m_hInputStop) {
+    // Signal first (harmless on an already-exited watcher — the event is
+    // closed right after), then join. Every blocking stretch in
+    // InputDetectionThreadProc and its StartAuth / StartExplicitRetry pipe
+    // calls either waits on this event or is bounded (WaitNamedPipeW ≤200 ms,
+    // retry delays ≤500 ms, auth-deadline reads), so the join returns
+    // promptly — normally within one poll interval. TerminateThread is
+    // forbidden here: killing the thread mid-`m_cs` would orphan the critical
+    // section and freeze LogonUI, and a kill during an overlapped pipe write
+    // strands kernel completion writes into the dead thread's stack
+    // (security audit 1.9.0, finding 4).
+    if (m_hInputStop) {
         SetEvent(m_hInputStop);
     }
 
-    // Wait for thread to exit (up to 2 seconds)
     if (m_hInputThread) {
-        DWORD waitResult = WaitForSingleObject(m_hInputThread, 2000);
-        if (waitResult == WAIT_TIMEOUT) {
-            FACELOGIN_WARN(L"Input thread did not stop within 2s — terminating");
-            TerminateThread(m_hInputThread, 0);
-        }
+        WaitForSingleObject(m_hInputThread, INFINITE);
         CloseHandle(m_hInputThread);
         m_hInputThread = nullptr;
     }
@@ -912,9 +935,6 @@ void LockFaceCredential::StopInputDetectionThread() {
     }
 
     m_inputThreadRunning = false;
-    if (wasRunning) {
-        FACELOGIN_DEBUG(L"Input detection thread stopped");
-    }
 }
 
 void LockFaceCredential::ArmFailureRetryDetection() {
@@ -1085,6 +1105,11 @@ void LockFaceCredential::SetStatusText(const std::wstring& text) {
     EnterCriticalSection(&m_cs);
     m_statusText = text;
     LeaveCriticalSection(&m_cs);
+}
+
+bool LockFaceCredential::InputStopSignaled() const {
+    return m_hInputStop != nullptr &&
+           WaitForSingleObject(m_hInputStop, 0) == WAIT_OBJECT_0;
 }
 
 std::wstring LockFaceCredential::SnapshotStatusText() {

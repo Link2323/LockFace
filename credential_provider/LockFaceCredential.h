@@ -115,6 +115,13 @@ private:
     void OnPipeResponse(bool success, const std::wstring& message);
     void OnPipeStatus(const std::wstring& message);
 
+    // True when the current input-detection round's stop event exists and is
+    // signaled — i.e. the owner (LogonUI/destructor) is joining the watcher
+    // to tear the tile down. Failure presentations and watcher re-arms must
+    // not run in that window: the COM event interfaces may be gone and
+    // StartInputDetectionThread would spawn a watcher from inside a join.
+    bool InputStopSignaled() const;
+
     // m_cs guards exactly one thing: m_statusText (written from the pipe
     // read thread and the input-detection thread, read on the LogonUI
     // thread). All other cross-thread coordination is the
@@ -158,6 +165,11 @@ private:
     facelogin::credential_provider::InputDetectionRound m_inputDetectionRound =
         facelogin::credential_provider::InputDetectionRound::InitialLock;
     HANDLE m_hInputThread = nullptr;   // background input-detection thread
+    // Manual-reset: within one round several waits poll this event
+    // concurrently (the watcher loop, the mouse-settle window, and the
+    // cancellable pipe connect/send inside StartAuth), and no wait may
+    // consume the signal the others still need to observe. A fresh event is
+    // created for every round, so it never needs resetting.
     HANDLE m_hInputStop = nullptr;     // event: signal to stop the thread
     // Set before the thread starts, cleared by the thread itself on exit and
     // by StopInputDetectionThread after the join — atomic because it is the

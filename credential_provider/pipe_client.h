@@ -35,12 +35,23 @@ public:
     PipeClient& operator=(const PipeClient&) = delete;
 
     // Connect to the LockFace named pipe server.
-    // Retries for up to ~5 seconds (pipe server may not be ready yet).
+    // Retries for up to timeoutMs (pipe server may not be ready yet).
     // pipeName overrides ipc::PIPE_NAME for dev/test tools only.
-    bool Connect(DWORD timeoutMs = 5000, const wchar_t* pipeName = nullptr);
+    // hCancel: optional manual-reset event; once signaled, the retry loop
+    // aborts immediately and Connect returns false. The handle must remain
+    // valid for the duration of the call — pass it only from the thread that
+    // owns the event's lifetime (the input-detection thread; its stop event
+    // is closed only after that thread is joined).
+    bool Connect(DWORD timeoutMs = 5000, const wchar_t* pipeName = nullptr,
+                 HANDLE hCancel = nullptr);
 
     // Send a message to the server. Returns true on success.
-    bool SendMessage(const std::wstring& message, DWORD timeoutMs = ipc::AUTH_TIMEOUT_MS);
+    // hCancel: optional manual-reset event aborting a pending overlapped
+    // write (same validity contract as Connect). Cancellation aborts only
+    // this write via CancelIoEx; the pipe handle itself stays open.
+    bool SendMessage(const std::wstring& message,
+                     DWORD timeoutMs = ipc::AUTH_TIMEOUT_MS,
+                     HANDLE hCancel = nullptr);
 
     // Spawn a background thread that loops reading messages from the pipe.
     // STATUS: messages trigger onStatus (if set).

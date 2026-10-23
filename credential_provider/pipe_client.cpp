@@ -1,8 +1,6 @@
 #include "pipe_client.h"
 #include "../common/logger.h"
 #include "../common/ipc_protocol.h"
-#include <chrono>
-#include <thread>
 #include <cwchar>
 
 namespace facelogin {
@@ -12,6 +10,22 @@ namespace {
 bool IsPipeClosedError(DWORD error) {
     return error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA ||
            error == ERROR_PIPE_NOT_CONNECTED;
+}
+
+bool CancelSignaled(HANDLE hCancel) {
+    return hCancel != nullptr &&
+           WaitForSingleObject(hCancel, 0) == WAIT_OBJECT_0;
+}
+
+// Sleep for ms, waking immediately when hCancel is signaled. Returns false
+// when the wait ended in cancellation (true on a plain timeout / no event).
+bool CancelableDelay(HANDLE hCancel, DWORD ms) {
+    if (ms == 0) return !CancelSignaled(hCancel);
+    if (!hCancel) {
+        Sleep(ms);
+        return true;
+    }
+    return WaitForSingleObject(hCancel, ms) != WAIT_OBJECT_0;
 }
 
 } // namespace
@@ -62,13 +76,20 @@ void PipeClient::CleanupReadThread() {
     }
 }
 
-bool PipeClient::Connect(DWORD timeoutMs, const wchar_t* pipeName) {
+bool PipeClient::Connect(DWORD timeoutMs, const wchar_t* pipeName, HANDLE hCancel) {
     Disconnect();
 
     const auto deadline = ipc::MakeAuthDeadline(timeoutMs);
     const wchar_t* name = pipeName ? pipeName : ipc::PIPE_NAME;
 
     while (true) {
+        // Every blocking stretch below is bounded (WaitNamedPipeW caps at
+        // 200 ms, delays at 500 ms), so a stop signal is noticed within one
+        // iteration — cancellation must never strand the caller's thread.
+        if (CancelSignaled(hCancel)) {
+            FACELOGIN_INFO(L"Pipe connect cancelled by stop event");
+            return false;
+        }
         const DWORD remainingMs = ipc::RemainingAuthTimeMs(deadline);
         if (remainingMs == 0) return false;
         m_hPipe = CreateFileW(
@@ -99,7 +120,10 @@ bool PipeClient::Connect(DWORD timeoutMs, const wchar_t* pipeName) {
                     FACELOGIN_WARN(L"Pipe connection timed out (pipe busy)");
                     return false;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(retryMs < 100 ? retryMs : 100));
+                if (!CancelableDelay(hCancel, retryMs < 100 ? retryMs : 100)) {
+                    FACELOGIN_INFO(L"Pipe connect cancelled by stop event");
+                    return false;
+                }
             }
             continue;
         }
@@ -110,7 +134,10 @@ bool PipeClient::Connect(DWORD timeoutMs, const wchar_t* pipeName) {
                 FACELOGIN_WARN(L"Pipe connection timed out (pipe not found)");
                 return false;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(retryMs < 500 ? retryMs : 500));
+            if (!CancelableDelay(hCancel, retryMs < 500 ? retryMs : 500)) {
+                FACELOGIN_INFO(L"Pipe connect cancelled by stop event");
+                return false;
+            }
             continue;
         }
 
@@ -119,7 +146,8 @@ bool PipeClient::Connect(DWORD timeoutMs, const wchar_t* pipeName) {
     }
 }
 
-bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs) {
+bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs,
+                             HANDLE hCancel) {
     if (!m_connected || m_hPipe == INVALID_HANDLE_VALUE) return false;
 
     DWORD byteSize = static_cast<DWORD>((message.size() + 1) * sizeof(wchar_t));
@@ -136,7 +164,14 @@ bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs) {
                             nullptr, &overlapped);
     DWORD error = result ? ERROR_SUCCESS : GetLastError();
     if (!result && error == ERROR_IO_PENDING) {
-        const DWORD wait = WaitForSingleObject(writeEvent, timeoutMs);
+        DWORD wait = WAIT_OBJECT_0;
+        if (hCancel) {
+            HANDLE waitHandles[] = { writeEvent, hCancel };
+            wait = WaitForMultipleObjects(ARRAYSIZE(waitHandles), waitHandles,
+                                          FALSE, timeoutMs);
+        } else {
+            wait = WaitForSingleObject(writeEvent, timeoutMs);
+        }
         if (wait == WAIT_OBJECT_0) {
             result = GetOverlappedResult(m_hPipe, &overlapped,
                                          &bytesWritten, FALSE);
@@ -145,7 +180,9 @@ bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs) {
             CancelIoEx(m_hPipe, &overlapped);
             DWORD ignored = 0;
             GetOverlappedResult(m_hPipe, &overlapped, &ignored, TRUE);
-            error = wait == WAIT_TIMEOUT ? ERROR_TIMEOUT : ERROR_GEN_FAILURE;
+            error = wait == WAIT_TIMEOUT ? ERROR_TIMEOUT
+                 : hCancel && wait == WAIT_OBJECT_0 + 1 ? ERROR_OPERATION_ABORTED
+                 : ERROR_GEN_FAILURE;
             result = FALSE;
         }
     } else if (result) {
@@ -160,6 +197,8 @@ bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs) {
             FACELOGIN_WARN(L"Pipe broken during send");
         } else if (error == ERROR_TIMEOUT) {
             FACELOGIN_WARN(L"Pipe write timed out after %lu ms", timeoutMs);
+        } else if (error == ERROR_OPERATION_ABORTED) {
+            FACELOGIN_INFO(L"Pipe write cancelled by stop event");
         } else {
             FACELOGIN_ERROR(L"Overlapped WriteFile on pipe failed: %lu", error);
         }
