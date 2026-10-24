@@ -80,6 +80,9 @@ struct AuthResult {
 //   "AUTH_SUCCESS:SID::DOMAIN\\USER:PASSWORD"  (no UPN, e.g. local account)
 //   "AUTH_TIMEOUT"
 //   "AUTH_ERROR:some error message"
+// AUTH_SUCCESS is parsed in place: the password is copied exactly once, into
+// result.password. The caller receiving a Success result owns that copy and
+// must clear it (facelogin::SecureWStringGuard / SecureClearWString).
 AuthResult ParseAuthMessage(const std::wstring& message);
 
 // Build a success message to send through the pipe.

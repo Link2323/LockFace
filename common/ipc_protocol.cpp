@@ -24,42 +24,54 @@ AuthResult ParseAuthMessage(const std::wstring& message) {
 
     // Success format: "AUTH_SUCCESS:SID:UPN:USERNAME:PASSWORD".
     if (message.starts_with(MSG_AUTH_SUCCESS_PREFIX)) {
-        std::wstring payload = message.substr(wcslen(MSG_AUTH_SUCCESS_PREFIX));
+        // Parse in place on the caller-owned message. The password is copied
+        // exactly once, straight into result.password (whose receiver guards
+        // and zeroes it); no intermediate payload/passwordPart strings may
+        // ever hold the password, because a plain std::wstring destructor
+        // frees without scrubbing and leaves plaintext in the heap (security
+        // audit 1.9.0, finding 1).
+        const size_t prefixLen = wcslen(MSG_AUTH_SUCCESS_PREFIX);
 
         // The first three colons delimit SID, UPN, and username; the password
         // is the remaining suffix and may itself contain colons.
         size_t colonCount = 0;
-        for (wchar_t ch : payload) {
-            if (ch == L':') colonCount++;
+        for (size_t i = prefixLen; i < message.size(); ++i) {
+            if (message[i] == L':') colonCount++;
         }
 
         if (colonCount >= 3) {
-            size_t pos1 = payload.find(L':');
+            size_t pos1 = message.find(L':', prefixLen);
             if (pos1 == std::wstring::npos) { result.status = AuthResult::Status::Error; result.errorMessage = L"Malformed AUTH_SUCCESS"; return result; }
-            result.sid = payload.substr(0, pos1);
 
-            size_t pos2 = payload.find(L':', pos1 + 1);
+            size_t pos2 = message.find(L':', pos1 + 1);
             if (pos2 == std::wstring::npos) { result.status = AuthResult::Status::Error; result.errorMessage = L"Malformed AUTH_SUCCESS"; return result; }
-            result.upn = payload.substr(pos1 + 1, pos2 - pos1 - 1);
 
-            size_t pos3 = payload.find(L':', pos2 + 1);
+            size_t pos3 = message.find(L':', pos2 + 1);
             if (pos3 == std::wstring::npos) { result.status = AuthResult::Status::Error; result.errorMessage = L"Malformed AUTH_SUCCESS"; return result; }
 
-            std::wstring userPart = payload.substr(pos2 + 1, pos3 - pos2 - 1);
-            std::wstring passwordPart = payload.substr(pos3 + 1);
-            const size_t slashPos = userPart.find(L'\\');
-            if (!IsValidSid(result.sid) || slashPos == std::wstring::npos ||
-                slashPos == 0 || slashPos + 1 >= userPart.size() || passwordPart.empty()) {
+            result.sid.assign(message, prefixLen, pos1 - prefixLen);
+            result.upn.assign(message, pos1 + 1, pos2 - pos1 - 1);
+
+            // The backslash must sit inside the DOMAIN\USER segment between
+            // pos2 and pos3 — not first, not last, and never beyond pos3 in
+            // the password suffix (npos + 1 wraps, so test npos first).
+            const size_t userBegin = pos2 + 1;
+            const size_t userEnd = pos3;
+            const size_t slashPos = message.find(L'\\', userBegin);
+            const bool slashValid = slashPos != std::wstring::npos &&
+                                    slashPos != userBegin &&
+                                    slashPos + 1 < userEnd;
+            if (!IsValidSid(result.sid) || !slashValid ||
+                pos3 + 1 >= message.size()) {
                 result.status = AuthResult::Status::Error;
                 result.errorMessage = L"Malformed AUTH_SUCCESS: invalid required field";
                 return result;
             }
 
-            // Split domain\user
-            result.domain = userPart.substr(0, slashPos);
-            result.username = userPart.substr(slashPos + 1);
+            result.domain.assign(message, userBegin, slashPos - userBegin);
+            result.username.assign(message, slashPos + 1, userEnd - slashPos - 1);
 
-            result.password = passwordPart;
+            result.password.assign(message, pos3 + 1, std::wstring::npos);
             result.status = AuthResult::Status::Success;
             return result;
         }

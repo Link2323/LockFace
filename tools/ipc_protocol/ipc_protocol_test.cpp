@@ -1,6 +1,8 @@
 #include "../../common/ipc_protocol.h"
+#include "../../common/secure_clear.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -42,6 +44,102 @@ void TestLocalAccountRoundTrip() {
           parsed.domain == L"DESKTOP" && parsed.username == L"local-user" &&
           parsed.password == L"local-password",
           "local account success message round trips");
+}
+
+void TestNonAsciiPasswordRoundTrip() {
+    // Audit 1.9.0 finding 1 acceptance: colons AND non-ASCII characters must
+    // both survive the single-copy in-place parse.
+    const std::wstring password = L"密码:pässwörd::密码";
+    const std::wstring message = facelogin::ipc::BuildAuthSuccessMessage(
+        L"S-1-5-21-300", L"bob@example.test", L"DESKTOP", L"bob", password);
+    const AuthResult parsed = facelogin::ipc::ParseAuthMessage(message);
+    Check(parsed.status == AuthResult::Status::Success &&
+              parsed.password == password,
+          "password with colons and non-ASCII characters round trips");
+}
+
+// ----------------------------------------------------------------------------
+// Memory-hygiene regression (audit 1.9.0 finding 1, acceptance 1, parser
+// scope): after the caller-owned buffers are cleared, the plaintext password
+// must not linger in any committed private memory region. The parser must not
+// create intermediate password copies — std::wstring frees without scrubbing,
+// so a stale substr copy stays readable in the heap until the pages are
+// reused. The needle is a function-local static: it lives in the image's
+// read-only data, which the scan skips by memory type (MEM_IMAGE), so the
+// pattern itself can never be a false positive. Only meaningful in Release:
+// the debug CRT overwrites freed blocks with fill patterns, masking stale
+// copies (the test still passes there, just less sharply).
+// ----------------------------------------------------------------------------
+
+bool IsReadableProtection(DWORD protect) {
+    switch (protect) {
+    case PAGE_READONLY:
+    case PAGE_READWRITE:
+    case PAGE_WRITECOPY:
+    case PAGE_EXECUTE_READ:
+    case PAGE_EXECUTE_READWRITE:
+    case PAGE_EXECUTE_WRITECOPY:
+        return true;
+    default:
+        return false;  // PAGE_NOACCESS, guard/no-cache modifiers, etc.
+    }
+}
+
+size_t CountPatternInPrivateMemory(const wchar_t* pattern, size_t chars) {
+    const wchar_t first = pattern[0];
+    const BYTE* needle = reinterpret_cast<const BYTE*>(pattern);
+    const size_t bytes = chars * sizeof(wchar_t);
+    SYSTEM_INFO si = {};
+    GetSystemInfo(&si);
+    MEMORY_BASIC_INFORMATION mbi = {};
+    size_t matches = 0;
+    for (BYTE* address = static_cast<BYTE*>(si.lpMinimumApplicationAddress);
+         address < si.lpMaximumApplicationAddress;) {
+        if (!VirtualQuery(address, &mbi, sizeof(mbi))) break;
+        if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+            IsReadableProtection(mbi.Protect) && mbi.RegionSize >= bytes) {
+            const BYTE* base = static_cast<const BYTE*>(mbi.BaseAddress);
+            const BYTE* last = base + mbi.RegionSize - bytes;
+            for (const BYTE* p = base; p <= last; ++p) {
+                if (*reinterpret_cast<const wchar_t*>(p) == first &&
+                    std::memcmp(p, needle, bytes) == 0) {
+                    ++matches;
+                }
+            }
+        }
+        address = static_cast<BYTE*>(mbi.BaseAddress) + mbi.RegionSize;
+    }
+    return matches;
+}
+
+void TestParseLeavesNoPasswordCopiesInMemory() {
+    static const wchar_t kSecret[] =
+        L"S3cret-密码-Пароль:pw-0123456789-unique";  // >7 wchars: no SSO
+    std::wstring message;
+    {
+        // Bind the needle to a named wstring: passing kSecret directly would
+        // materialize an un-scrubbed temporary wstring for the const&
+        // parameter and the scan would (correctly) find that test artifact.
+        std::wstring passwordArg(kSecret);
+        message = facelogin::ipc::BuildAuthSuccessMessage(
+            L"S-1-5-21-400", L"carol@example.test", L"DESKTOP", L"carol",
+            passwordArg);
+        facelogin::SecureClearWString(passwordArg);
+    }
+    AuthResult parsed = facelogin::ipc::ParseAuthMessage(message);
+    Check(parsed.status == AuthResult::Status::Success &&
+              parsed.password == kSecret,
+          "memory-hygiene setup: password parses");
+    // Emulate the CP receiver: clear every owned password-bearing buffer.
+    facelogin::SecureClearWString(parsed.password);
+    facelogin::SecureClearWString(message);
+    const size_t stale = CountPatternInPrivateMemory(
+        kSecret, (sizeof(kSecret) / sizeof(kSecret[0])) - 1);
+    Check(stale == 0,
+          "no plaintext password remains in private memory after parse+clear");
+    if (stale != 0) {
+        std::fprintf(stderr, "found %zu stale copy(ies)\n", stale);
+    }
 }
 
 void TestLegacyFormatIsRejected() {
@@ -109,6 +207,8 @@ void TestMalformedMessagesFailClosed() {
 int wmain() {
     TestMsaRoundTrip();
     TestLocalAccountRoundTrip();
+    TestNonAsciiPasswordRoundTrip();
+    TestParseLeavesNoPasswordCopiesInMemory();
     TestLegacyFormatIsRejected();
     TestTerminalMessages();
     TestAcknowledgementMessages();

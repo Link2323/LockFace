@@ -406,6 +406,10 @@ void WebviewHost::ResizeWebView(HWND hWnd) {
         /* The COM entry point owns the only plaintext password buffer on */ \
         /* this path (everything downstream takes it by const&) — the */ \
         /* guard zeroes it on every exit, including the DISP_E returns. */ \
+        /* Boundary: the rgvarg BSTR itself is owned and freed un-zeroed by */ \
+        /* the WebView2/OLE marshaling layer and cannot be scrubbed here */ \
+        /* (security audit 1.9.0, finding 1 — recorded boundary; applies to */ \
+        /* every BSTR password entry below). */ \
         facelogin::SecureWStringGuard passGuard(pass); \
         if (res) *res = MakeBool(m_wizard->ValidatePassword(pass)); \
     }) \
