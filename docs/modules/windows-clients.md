@@ -12,14 +12,24 @@
 
 - 支持 `CPUS_LOGON` 和 `CPUS_UNLOCK_WORKSTATION`。
 - `LockFaceProvider::ReadUserCountFromDatabase` 只读 `users.dat` header；无注册账号时隐藏磁贴。
-- 登录与解锁行为一致：输入检测线程只在 `SetSelected()`（用户真正落到本磁贴）启动；`Advise()` 不监听全局输入，避免从未选中本磁贴的 MSA PIN 重置等流程中打字误开摄像头。`SetDeselected()` 先停止监听，再断开进行中的认证管道并释放摄像头；迟到响应由 `ShouldProcessPipeResponse` 丢弃。
+- 登录与解锁行为一致：输入检测线程只在 `SetSelected()`（用户真正落到本磁贴）启动；`Advise()` 不监听全局输入，避免从未选中本磁贴的 MSA PIN 重置等流程中打字误开摄像头。`SetDeselected()` 先停止监听，再断开进行中的认证管道并释放摄像头；迟到响应由轮次 generation 和 `ShouldProcessPipeResponse` 一起丢弃。
 - 输入触发采用 `input_trigger_policy.h` 的**边沿状态机**，不再读取 `GetLastInputInfo`，也没有静默窗、沉降窗或键盘重复速度假设。Raw Input 键盘 MAKE/BREAK 进入纯策略类；鼠标只轮询物理按钮状态，移动事件没有进入策略的入口，因此永不触发。输入线程以 10ms 粒度采样按钮并通过 `MsgWaitForMultipleObjectsEx` 泵送 `WM_INPUT`。
 - 保留 Windows 原生锁屏壁纸时的产品语义：普通键盘键按一次即触发（壁纸阶段 MAKE 可能被吞，普通孤立 BREAK 仍算一次完整按压）；鼠标第一次点击只推走壁纸、第二次在凭据视图完成 DOWN→UP 后形成触发候选。鼠标候选有 100ms 可取消窗口：若该点击切换到密码/PIN 磁贴，`SetDeselected()` 会先停止监听，摄像头不启动；只有仍停留在本磁贴时才开始认证。单纯移动鼠标只推走壁纸，不启动摄像头。Raw Input 注册失败时降级为凭据视图阶段的 `GetAsyncKeyState` 键盘边沿轮询。
 - Win+L 残留按**事件归属**排水：初始锁屏轮吞掉第一条 L 事件链（含任意数量自动重复直到 BREAK），没有本轮 MAKE 的 LWIN/RWIN BREAK 永不构成按压。它覆盖 Win+L 一起释放、先松 Win 后松 L、先松 L 后松 Win三种长按顺序，且不依赖重复延迟/频率。代价是无法从 CP 内区分“Win+L 的 L 尾巴”和“其它方式锁屏后立即第一次按 L”，后者保守地需要再按一次；这是保留壁纸且不增加锁前常驻输入代理时的明确边界。完整排水后下一次新按键立即触发。
-- 失败磁贴使用独立的 `FailureRetry` 轮次：启动时快照当前仍按住的键和鼠标按钮，自动重复与释放尾巴都不触发，只有快照之后新的键盘 MAKE 或完整鼠标点击才调用 `StartExplicitRetry`。密码输入靠结构隔离：本磁贴无编辑字段，切换磁贴先停止监听；密码命令链接入口也主动停止 watcher，并断开可能已抢跑的认证管道。服务不可用导致监视线程内立即失败时仍不自动重武装；重新选中磁贴后再武装。失败磁贴无命令链接，字段 4 显示“请按任意键重试”；原因文案与密码/重录指引规则保持不变。
+- 失败磁贴使用独立的 `FailureRetry` 轮次：启动时快照当前仍按住的键和鼠标按钮，自动重复与释放尾巴都不触发，只有快照之后新的键盘 MAKE 或完整鼠标点击才调用 `StartExplicitRetry`。密码输入靠结构隔离：本磁贴无编辑字段，切换磁贴先停止监听；密码命令链接入口也主动停止 watcher，并断开可能已抢跑的认证管道。连接或请求写入失败时仍不自动重武装；重新选中磁贴后再武装。失败磁贴无命令链接，字段 4 显示“请按任意键重试”；原因文案与密码/重录指引规则保持不变。
 - `STATUS:` 更新 UI；终态到达后先发送 `AUTH_ACK`，再进入凭据状态回调。
 - 管道读写使用 overlapped 完成事件；`SetDeselected()` / `UnAdvise()` 通过停止事件和 `CancelIoEx` 立即取消，并在释放缓冲区前回收 I/O。管道读取不得阻塞 LogonUI 主线程。
 - 单次认证从进入 `Authenticating` 起最多等待 5 秒，连接、请求写入和后台读取共用同一单调时钟截止时间。后台读即使只收到 `STATUS:` 或完全无响应也主动超时并关闭管道，界面显示“识别超时”；不依赖 `GetSerialization` 轮询。迟到终态不能放行凭据，重试另起一轮预算。
+
+### 线程与事件生命周期
+
+- Credential 的认证状态、账户字段、密码、序列化缓存、COM 事件接口和线程句柄只由创建它的 STA 访问。输入 watcher 只发布输入边沿；独立认证线程独占 `PipeClient`，同步执行连接、请求及 `ReadResponses`，不再另建管道读取线程。
+- 后台通过 `m_cs` 保护的值消息队列及 `PostMessage` 唤醒 STA 的 message-only window；后台不读取认证状态、不调用 COM，也不等待 UI 回调。STA 在通知前完成整组状态更新；所有 getter 因而看到同一线程的完整状态。此方案替代审计最初的 GIT 建议，避免 STA join 与后台同步 COM 调用互等；依据 [COM STA 消息循环约定](https://learn.microsoft.com/windows/win32/com/single-threaded-apartments)。
+- `SetDeselected`、Credential/Provider `UnAdvise` 和 Provider 析构先关闭队列入口、使 generation 失效，再取消并 join 输入/认证线程，最后擦除排队消息并释放相应事件引用。取消、join 时不持队列锁、不调用外部 COM；认证线程的停止事件一直保留到 pending I/O 回收和线程退出之后。
+- 后台线程在创建前持有 Credential 引用，启动失败和退出时归还；Provider 在释放自己的 Credential 引用前显式停线程，避免遗漏 `UnAdvise` 时留下循环寿命。窗口分发和会通知 COM 的公共入口也持有临时引用，事件通知使用局部接口引用和文本副本，并在跨调用后检查 generation，防御同步重入撤销。
+- COM 工厂在 QI 后归还构造引用；工厂、Provider 和 Credential 各持 DLL 实例计数，`DllCanUnloadNow` 只在实例与服务器锁计数均为零时允许卸载。仍被分发/调用持有的 Credential 因此也保护窗口过程的代码寿命。
+- 成功重枚举中的 `UnAdvise` 保留 `Ready` 凭据/缓存；其他取消不会把旧轮次结果带入新认证。队列中的成功消息无论消费、取消或投递失败都清零后释放。后台无 COM 调用，因此不需要 GIT 或额外 COM 公寓初始化。
+- `CredentialConcurrencyTest` 使用真实 STA 消息循环、事件接口替身、隔离测试管道及仅测试目标编译的 barrier 验证这些边界；不能替代 LogonUI 内的 Application Verifier/PageHeap 和锁屏实测。
 
 ### 凭据打包
 

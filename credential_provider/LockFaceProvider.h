@@ -70,6 +70,9 @@ public:
         ICredentialProviderCredential** ppcpc) override;
 
 private:
+#ifdef FACELOGIN_CONCURRENCY_TESTS
+    friend struct CredentialConcurrencyTestAccess;
+#endif
     LONG m_refCount = 1;
     CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR m_rgFieldDescriptors[5];
     ICredentialProviderEvents* m_pEvents = nullptr;

@@ -63,6 +63,12 @@ public:
                              OnStatusCallback onStatus = nullptr,
                              ipc::AuthDeadline deadline = {});
 
+    // Read on the calling worker, with no additional thread. The caller owns
+    // this client and the borrowed stop event until this method returns.
+    // Callbacks must not destroy the client or call Disconnect.
+    bool ReadResponses(OnResponseCallback onResponse, OnStatusCallback onStatus,
+                       ipc::AuthDeadline deadline, HANDLE stop);
+
     // Check if connected
     bool IsConnected() const { return m_connected; }
 
@@ -73,6 +79,7 @@ public:
 
 private:
     static DWORD WINAPI ReadThreadProc(LPVOID param);
+    DWORD ReadMessages(HANDLE stop);
     void CleanupReadThread();
     void NotifyReadFailure();
     void NotifyReadTimeout();

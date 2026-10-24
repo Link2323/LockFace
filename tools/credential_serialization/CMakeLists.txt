@@ -14,3 +14,7 @@ foreach(test_target CredentialSerializationTest CredentialDomainRoutingTest)
     target_compile_definitions(${test_target} PRIVATE FACELOGIN_SERIALIZATION_TESTS)
     target_link_libraries(${test_target} PRIVATE facelogin_common credui advapi32 ole32 oleaut32 kernel32 shlwapi netapi32 secur32)
 endforeach()
+
+add_executable(CredentialConcurrencyTest credential_concurrency_test.cpp ${CREDENTIAL_TEST_SOURCES})
+target_compile_definitions(CredentialConcurrencyTest PRIVATE FACELOGIN_SERIALIZATION_TESTS FACELOGIN_CONCURRENCY_TESTS)
+target_link_libraries(CredentialConcurrencyTest PRIVATE facelogin_common credui advapi32 ole32 oleaut32 kernel32 shlwapi netapi32 secur32)

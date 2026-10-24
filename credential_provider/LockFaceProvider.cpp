@@ -1,5 +1,6 @@
 #include "LockFaceProvider.h"
 #include "LockFaceCredential.h"
+#include "dll_lifetime.h"
 #include "../common/logger.h"
 #include "../common/registry_util.h"
 #include "../storage/credential_store.h"
@@ -15,6 +16,7 @@
 extern const GUID CLSID_LockFaceProvider;
 
 LockFaceProvider::LockFaceProvider() {
+    LockFaceDllAddRef();
     // Define fields for our credential tile (no tile image — text only)
 
     m_rgFieldDescriptors[kFieldTitle].dwFieldID = kFieldTitle;
@@ -51,10 +53,13 @@ LockFaceProvider::LockFaceProvider() {
 
 LockFaceProvider::~LockFaceProvider() {
     FACELOGIN_INFO(L"LockFaceProvider destroyed");
+    UnAdvise();
+    if (m_pCredential) m_pCredential->UnAdvise();
     if (m_pCredential) {
         m_pCredential->Release();
         m_pCredential = nullptr;
     }
+    LockFaceDllRelease();
 }
 
 // ============================================================================
@@ -189,12 +194,20 @@ STDMETHODIMP LockFaceProvider::SetUsageScenario(
         return E_NOTIMPL;
     }
 
-    // Create our credential
+    // A repeated scenario setup must quiesce the previous credential before
+    // dropping the provider reference that owns its worker lifetimes.
+    if (m_pCredential) {
+        m_pCredential->UnadviseProvider();
+        m_pCredential->UnAdvise();
+        m_pCredential->Release();
+        m_pCredential = nullptr;
+    }
     m_pCredential = new LockFaceCredential();
     if (!m_pCredential) {
         return E_OUTOFMEMORY;
     }
     m_pCredential->Initialize(this, cpus);
+    m_pCredential->AdviseProvider(m_pEvents, m_upAdviseContext);
 
     return S_OK;
 }
@@ -209,16 +222,11 @@ STDMETHODIMP LockFaceProvider::SetSerialization(
 
 STDMETHODIMP LockFaceProvider::Advise(
     ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext) {
-    if (m_pEvents) {
-        m_pEvents->Release();
-    }
-
+    if (pcpe) pcpe->AddRef();
+    auto oldEvents = m_pEvents;
     m_pEvents = pcpe;
     m_upAdviseContext = upAdviseContext;
-
-    if (m_pEvents) {
-        m_pEvents->AddRef();
-    }
+    if (oldEvents) oldEvents->Release();
 
     if (m_pCredential) {
         m_pCredential->AdviseProvider(m_pEvents, upAdviseContext);
@@ -228,14 +236,11 @@ STDMETHODIMP LockFaceProvider::Advise(
 }
 
 STDMETHODIMP LockFaceProvider::UnAdvise() {
-    if (m_pEvents) {
-        m_pEvents->Release();
-        m_pEvents = nullptr;
-    }
-
-    if (m_pCredential) {
-        m_pCredential->UnadviseProvider();
-    }
+    // Quiesce worker callbacks before releasing the provider's event sink.
+    if (m_pCredential) m_pCredential->UnadviseProvider();
+    auto events = m_pEvents;
+    m_pEvents = nullptr;
+    if (events) events->Release();
 
     return S_OK;
 }

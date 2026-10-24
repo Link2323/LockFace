@@ -7,6 +7,7 @@
 
 #include "LockFaceProvider.h"
 #include "resource.h"
+#include "dll_lifetime.h"
 #include "../common/logger.h"
 #include "../common/registry_util.h"
 
@@ -17,6 +18,9 @@
 HMODULE g_hModule = nullptr;
 static LONG g_cRefCount = 0;
 static LONG g_cLockCount = 0;
+
+void LockFaceDllAddRef() { InterlockedIncrement(&g_cRefCount); }
+void LockFaceDllRelease() { InterlockedDecrement(&g_cRefCount); }
 
 // ============================================================================
 // GUIDs
@@ -30,7 +34,8 @@ static LONG g_cLockCount = 0;
 
 class LockFaceClassFactory : public IClassFactory {
 public:
-    LockFaceClassFactory() = default;
+    LockFaceClassFactory() { LockFaceDllAddRef(); }
+    ~LockFaceClassFactory() { LockFaceDllRelease(); }
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) {
@@ -62,7 +67,9 @@ public:
         if (!pProvider) return E_OUTOFMEMORY;
 
         HRESULT hr = pProvider->QueryInterface(riid, ppv);
-        if (FAILED(hr)) delete pProvider;
+        // QueryInterface owns the returned reference. Always drop the initial
+        // construction reference, including the unsupported-interface path.
+        pProvider->Release();
 
         return hr;
     }
@@ -140,7 +147,8 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
 }
 
 STDAPI DllCanUnloadNow() {
-    return (g_cRefCount == 0 && g_cLockCount == 0) ? S_OK : S_FALSE;
+    return (InterlockedCompareExchange(&g_cRefCount, 0, 0) == 0 &&
+            InterlockedCompareExchange(&g_cLockCount, 0, 0) == 0) ? S_OK : S_FALSE;
 }
 
 // ============================================================================

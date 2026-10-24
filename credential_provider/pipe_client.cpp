@@ -217,6 +217,22 @@ bool PipeClient::SendMessage(const std::wstring& message, DWORD timeoutMs,
 
 DWORD WINAPI PipeClient::ReadThreadProc(LPVOID param) {
     PipeClient* self = static_cast<PipeClient*>(param);
+    return self->ReadMessages(self->m_hReadStop);
+}
+
+bool PipeClient::ReadResponses(OnResponseCallback onResponse,
+                               OnStatusCallback onStatus,
+                               ipc::AuthDeadline deadline, HANDLE stop) {
+    if (!m_connected || !stop || m_hReadThread) return false;
+    m_onResponse = std::move(onResponse);
+    m_onStatus = std::move(onStatus);
+    m_authDeadline = deadline;
+    ReadMessages(stop);
+    return true;
+}
+
+DWORD PipeClient::ReadMessages(HANDLE stop) {
+    PipeClient* self = this;
 
     HANDLE readEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!readEvent) {
@@ -231,7 +247,7 @@ DWORD WINAPI PipeClient::ReadThreadProc(LPVOID param) {
     wchar_t buffer[4096] = {};
     const auto deadline = self->m_authDeadline;
     while (true) {
-        if (WaitForSingleObject(self->m_hReadStop, 0) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) {
             FACELOGIN_DEBUG(L"Background read: stop signaled — exiting");
             break;
         }
@@ -255,7 +271,7 @@ DWORD WINAPI PipeClient::ReadThreadProc(LPVOID param) {
             // Prefer the stop event if completion and teardown race. A
             // terminal message received during Disconnect must not call back
             // into a credential whose owner is being destroyed.
-            HANDLE waits[] = { self->m_hReadStop, readEvent };
+            HANDLE waits[] = { stop, readEvent };
             const DWORD wait = WaitForMultipleObjects(ARRAYSIZE(waits), waits,
                                                       FALSE, ipc::RemainingAuthTimeMs(deadline));
             if (wait == WAIT_OBJECT_0) {
@@ -289,7 +305,7 @@ DWORD WINAPI PipeClient::ReadThreadProc(LPVOID param) {
 
         // Disconnect may race an immediately-completed read. Teardown wins;
         // discard the completed message instead of issuing a late callback.
-        if (WaitForSingleObject(self->m_hReadStop, 0) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) {
             FACELOGIN_DEBUG(L"Background read: stop won completion race");
             break;
         }
@@ -337,7 +353,7 @@ DWORD WINAPI PipeClient::ReadThreadProc(LPVOID param) {
         // terminal result already received by LogonUI; the server will time
         // out and close its side after a bounded wait.
         SecureZeroMemory(buffer, sizeof(buffer));
-        if (!self->SendMessage(ipc::MSG_AUTH_ACK, ipc::RemainingAuthTimeMs(deadline))) {
+        if (!self->SendMessage(ipc::MSG_AUTH_ACK, ipc::RemainingAuthTimeMs(deadline), stop)) {
             FACELOGIN_WARN(L"Failed to acknowledge terminal pipe message");
         }
         if (ipc::RemainingAuthTimeMs(deadline) == 0) {

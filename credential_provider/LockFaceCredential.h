@@ -5,6 +5,9 @@
 #include <atomic>
 #include <string>
 #include <memory>
+#include <deque>
+#include <cstdint>
+#include <wrl/client.h>
 
 #include "pipe_client.h"
 #include "auth_interaction_policy.h"
@@ -33,6 +36,7 @@ class LockFaceCredential : public ICredentialProviderCredential {
 public:
 #ifdef FACELOGIN_SERIALIZATION_TESTS
     friend struct CredentialSerializationTestAccess;
+    friend struct CredentialConcurrencyTestAccess;
 #endif
     LockFaceCredential();
     virtual ~LockFaceCredential();
@@ -98,8 +102,7 @@ private:
     void TriggerReEnumeration();
 
     // Start the authentication pipeline (connect pipe + send AUTH_REQUEST).
-    // Called from the input-detection thread (LOGON and unlock alike — the
-    // provider no longer auto-triggers on cold boot).
+    // Called on the owner STA after a queued input edge or explicit retry.
     void StartAuth();
 
     // Start / stop the background input-detection thread (LOGON + unlock).
@@ -114,21 +117,41 @@ private:
     // (Advise refuses to arm in failure state); no-op while running.
     void ArmFailureRetryDetection();
 
-    // Pipe callbacks — called from background read thread
+    // Apply queued pipe results on the owner STA
     void OnPipeResponse(bool success, const std::wstring& message);
     void OnPipeStatus(const std::wstring& message);
 
-    // True when the current input-detection round's stop event exists and is
-    // signaled — i.e. the owner (LogonUI/destructor) is joining the watcher
-    // to tear the tile down. Failure presentations and watcher re-arms must
-    // not run in that window: the COM event interfaces may be gone and
-    // StartInputDetectionThread would spawn a watcher from inside a join.
-    bool InputStopSignaled() const;
+    // All auth state, strings, packed credentials, event interfaces and thread
+    // handles belong to the creating STA. Workers only publish value messages
+    // through m_cs; they never call COM or mutate the tile's state.
+    enum class EventKind { Input, Status, Response, ConnectFailure };
+    struct PendingEvent {
+        EventKind kind;
+        std::uint64_t generation;
+        bool success;
+        std::wstring message;
+        ~PendingEvent();
+    };
+    struct WorkerContext {
+        LockFaceCredential* credential;
+        HANDLE stop;
+        std::uint64_t generation;
+        facelogin::ipc::AuthDeadline deadline;
+        facelogin::credential_provider::InputDetectionRound round;
+        const wchar_t* pipeName = nullptr; // tests only; normal rounds use ipc::PIPE_NAME
+    };
+    bool EnsureDispatcher();
+    static LRESULT CALLBACK DispatchWndProc(HWND, UINT, WPARAM, LPARAM);
+    void QueueEvent(EventKind kind, std::uint64_t generation, bool success,
+                    const std::wstring& message = {});
+    void DispatchEvent();
+    void StopBackgroundWork();
+    void StopAuthThread();
+    static unsigned __stdcall AuthThreadProc(void* context);
+    void NotifyStatusText();
+    void NotifyTileFields(bool failure, bool showRetryHint);
+    void AssertOwner() const;
 
-    // m_cs guards exactly one thing: m_statusText (written from the pipe
-    // read thread and the input-detection thread, read on the LogonUI
-    // thread). All other cross-thread coordination is the
-    // auth_interaction_policy guards plus LogonUI's serialized calls.
     void SetStatusText(const std::wstring& text);
     std::wstring SnapshotStatusText();
 
@@ -137,17 +160,29 @@ private:
     // tiles), then re-arm the passive watcher so a qualifying press can
     // request another round (ArmFailureRetryDetection).
     void PresentRetryableFailure(State failureState,
-                                 const std::wstring& statusText);
+                                 const std::wstring& statusText, bool armRetry = true);
     void StartExplicitRetry();
 
     LONG m_refCount = 1;
-    LockFaceProvider* m_pProvider = nullptr;
-    ICredentialProviderCredentialEvents* m_pCredentialEvents = nullptr;
-    ICredentialProviderEvents* m_pProviderEvents = nullptr;
+    Microsoft::WRL::ComPtr<ICredentialProviderCredentialEvents> m_pCredentialEvents;
+    Microsoft::WRL::ComPtr<ICredentialProviderEvents> m_pProviderEvents;
     UINT_PTR m_upAdviseContext = 0;
 
     State m_state = State::Waiting;
-    std::unique_ptr<facelogin::PipeClient> m_pipeClient;
+#ifdef FACELOGIN_CONCURRENCY_TESTS
+    std::function<void(int)> m_testBarrier;
+    std::wstring m_testPipeName;
+#endif
+    const DWORD m_ownerThread = GetCurrentThreadId();
+    HWND m_dispatchWindow = nullptr;
+    HINSTANCE m_dispatchInstance = nullptr;
+    wchar_t m_dispatchClass[80]{};
+    std::deque<std::unique_ptr<PendingEvent>> m_pendingEvents;
+    bool m_acceptEvents = false; // protected by m_cs
+    std::uint64_t m_generation = 0; // owner only; copied into WorkerContext
+    bool m_selected = false;
+    HANDLE m_hAuthThread = nullptr;
+    HANDLE m_hAuthStop = nullptr;
 
     // Received credentials (zeroed after serialization)
     CREDENTIAL_PROVIDER_USAGE_SCENARIO m_usageScenario = CPUS_LOGON;
@@ -157,7 +192,7 @@ private:
     std::wstring m_username;
     std::wstring m_password;
 
-    // Live status text pushed from service (updated from background thread)
+    // Status text applied on the owner STA from queued service messages
     std::wstring m_statusText;
 
     // Auth timeout tracking (so we don't block LogonUI forever)
@@ -171,8 +206,7 @@ private:
         facelogin::credential_provider::InputDetectionRound::InitialLock;
     HANDLE m_hInputThread = nullptr;   // background input-detection thread
     // Manual-reset: within one round several waits poll this event
-    // concurrently (the watcher loop, the mouse-settle window, and the
-    // cancellable pipe connect/send inside StartAuth), and no wait may
+    // (the watcher loop and the mouse-settle window), and no wait may
     // consume the signal the others still need to observe. A fresh event is
     // created for every round, so it never needs resetting.
     HANDLE m_hInputStop = nullptr;     // event: signal to stop the thread
@@ -189,6 +223,6 @@ private:
     DWORD m_cbPackedCreds = 0;
     ULONG m_ulAuthPackage = 0;
 
-    // Synchronization
+    // Protects only the worker-to-STA queue and its acceptance gate.
     CRITICAL_SECTION m_cs;
 };
