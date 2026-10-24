@@ -36,8 +36,10 @@ add_library(facelogin_enrollment_support STATIC
     session_identity.cpp
     service_client.cpp
     log_viewer.cpp
+    enrollment_accounts.cpp
 )
-target_link_libraries(facelogin_enrollment_support PUBLIC facelogin_common)
+target_link_libraries(facelogin_enrollment_support
+    PUBLIC facelogin_common facelogin_credential_store)
 target_include_directories(facelogin_enrollment_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(LockFaceConsole
@@ -48,7 +50,6 @@ add_executable(LockFaceConsole
     preview_frame_encoder.cpp
     enrollment_capture.cpp
     enrollment_templates.cpp
-    enrollment_accounts.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/resource.rc
 )
 facelogin_add_version_rc(LockFaceConsole VFT_APP

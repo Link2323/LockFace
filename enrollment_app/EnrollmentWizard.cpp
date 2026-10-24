@@ -392,6 +392,7 @@ bool EnrollmentWizard::RefreshAccountIdentity(const std::wstring& password) {
 }
 bool EnrollmentWizard::ClearStaleAccountUpn() { return m_accounts->ClearStaleAccountUpn(); }
 bool EnrollmentWizard::AutoRepairEmptyUpnOnStartup() { return m_accounts->AutoRepairEmptyUpnOnStartup(); }
+bool EnrollmentWizard::AutoRepairMachineSidOnStartup() { return m_accounts->AutoRepairMachineSidOnStartup(); }
 
 // ============================================================================
 // Camera device enumeration

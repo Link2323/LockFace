@@ -33,6 +33,9 @@ public:
     bool RefreshAccountIdentity(const std::wstring& password);
     bool ClearStaleAccountUpn();
     bool AutoRepairEmptyUpnOnStartup();
+    // Rewrites this session user's record when it carries a non-user SID (the
+    // machine SID a pre-fix build stored where computer name == user name).
+    bool AutoRepairMachineSidOnStartup();
 
 private:
     struct AccountChange {

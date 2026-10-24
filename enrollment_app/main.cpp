@@ -108,11 +108,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     facelogin::EnrollmentWizard wizard;
 
-    // Repair records enrolled while GetUserNameExW(NameUserPrincipal) failed
-    // (err 1332 on some machines): backfill the MSA UPN into the current
-    // session user's record if it is still empty. Best-effort, never fatal —
-    // must run after the wizard constructor (which resolves m_sid) and before
-    // the UI loop so the first GetAccountType() the page reads is correct.
+    // Startup repairs, best-effort and never fatal — both must run after the
+    // wizard constructor (which resolves the session identity) and before the
+    // UI loop so the first account state the page reads is correct.
+    //
+    // 1. SID repair (upstream #24): records stored with the machine SID a
+    //    pre-fix build resolved on machines where computer name == user name.
+    //    Runs FIRST — the UPN repair below only considers records already
+    //    keyed by the token SID, so the SID repair must land for both to
+    //    apply within a single launch.
+    wizard.AutoRepairMachineSidOnStartup();
+
+    // 2. UPN repair: backfill the MSA UPN into the current session user's
+    //    record if it is still empty (enrolled while GetUserNameExW returned
+    //    err 1332 on some machines).
     wizard.AutoRepairEmptyUpnOnStartup();
 
     WebviewHost host(hInstance, &wizard);

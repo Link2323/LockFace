@@ -372,4 +372,55 @@ bool EnrollmentAccounts::AutoRepairEmptyUpnOnStartup() {
     return SaveAndReload();
 }
 
+// Repair records written by a pre-fix build on machines where the computer
+// name equals the user name (upstream #24): ReadSessionIdentity then resolved
+// the MACHINE domain SID via LookupAccountNameW and stored it. Unlock kept
+// working (authentication is face-matched, the SID plays no role), but the
+// token-SID guard refuses every append, multi-angle re-enrollment and identity
+// refresh forever. The fix rewrites THIS session user's own record with the
+// authoritative token SID; a stored SID that still resolves to a genuine user
+// account (possibly another user's record) is never touched.
+bool EnrollmentAccounts::AutoRepairMachineSidOnStartup() {
+    std::wstring tokenSid = session_identity::GetCurrentProcessUserSid();
+    if (tokenSid.empty()) {
+        FACELOGIN_WARN(L"AutoRepairMachineSidOnStartup: could not resolve current session SID, skipping");
+        return false;
+    }
+    if (!session_identity::SidIsUserAccount(tokenSid)) {
+        FACELOGIN_WARN(L"AutoRepairMachineSidOnStartup: session SID does not resolve to a user account, skipping");
+        return false;
+    }
+
+    if (!m_store.LoadDatabase()) return false;
+    bool modified = false;
+    for (size_t idx = 0; idx < m_store.GetUsers().size(); ++idx) {
+        const auto& rec = m_store.GetUsers()[idx];
+        if (rec.sid == tokenSid) continue;
+        if (rec.sid.empty() || session_identity::SidIsUserAccount(rec.sid)) continue;
+        // Only THIS session user's own record: same SAM name (case-insensitive,
+        // as SAM itself is) or same MSA UPN.
+        const bool sameUser =
+            (!rec.upn.empty() && !m_identity.upn.empty() && rec.upn == m_identity.upn) ||
+            (!rec.username.empty() && !m_identity.username.empty() &&
+             lstrcmpiW(rec.username.c_str(), m_identity.username.c_str()) == 0);
+        if (!sameUser) continue;
+
+        // Pass the record's own username/upn and encryptedPassword back
+        // unchanged so the stored credential is not re-encrypted; faces are
+        // preserved by UpdateAccountIdentity.
+        if (!m_store.UpdateAccountIdentity(idx, rec.username, rec.upn, tokenSid, rec.encryptedPassword)) {
+            FACELOGIN_ERROR(L"AutoRepairMachineSidOnStartup: identity update failed for %s", rec.username.c_str());
+            continue;
+        }
+        FACELOGIN_INFO(L"AutoRepairMachineSidOnStartup: replaced non-user SID with the session token SID "
+                       L"for %s (faces=%zu, password untouched)",
+                       rec.username.c_str(), rec.faces.size());
+        modified = true;
+    }
+
+    if (!modified) return false;
+
+    return SaveAndReload();
+}
+
 } // namespace facelogin

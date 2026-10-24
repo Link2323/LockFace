@@ -125,6 +125,14 @@ public:
     // Returns true iff a record was actually modified.
     bool AutoRepairEmptyUpnOnStartup();
 
+    // Repair records whose SID is not a user account SID — the machine SID a
+    // pre-fix build resolved on machines where computer name == user name
+    // (upstream #24). Rewrites them with the authoritative session token SID
+    // so appends/re-enrollments/identity refreshes stop being refused. Same
+    // rules as AutoRepairEmptyUpnOnStartup: only the current session user's
+    // own record, best-effort, never fatal.
+    bool AutoRepairMachineSidOnStartup();
+
     // Configuration
     std::string GetConfig() const;
     bool SetConfig(const std::string& json);

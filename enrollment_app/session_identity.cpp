@@ -116,6 +116,61 @@ static std::wstring ResolveSessionMsaUpnFromToken() {
     return result;
 }
 
+// Name-based SID fallback: resolves an account name and accepts the SID only
+// when it belongs to a USER account. The sidType check is what keeps the
+// fallback safe on machines where the computer name equals the user name
+// (SAM names are case-insensitive): LookupAccountNameW would otherwise hand
+// back the MACHINE domain SID, which a pre-fix build stored into the
+// enrollment record — after that, every append/re-enroll/identity refresh is
+// refused by the token-SID guard forever (upstream #24).
+static std::wstring LookupUserSidByName(const std::wstring& name) {
+    DWORD sidSize = 0, domainSize = 0;
+    SID_NAME_USE sidType = SidTypeUnknown;
+    LookupAccountNameW(nullptr, name.c_str(),
+                       nullptr, &sidSize, nullptr, &domainSize, &sidType);
+    if (sidSize == 0) return L"";
+
+    std::vector<BYTE> sidBuf(sidSize);
+    std::vector<wchar_t> domainBuf(domainSize > 0 ? domainSize : 1);
+    if (!LookupAccountNameW(nullptr, name.c_str(),
+                            sidBuf.data(), &sidSize,
+                            domainBuf.data(), &domainSize, &sidType)) {
+        DWORD err = GetLastError();
+        FACELOGIN_WARN(L"LookupAccountNameW(%s) FAILED: err=%lu", name.c_str(), err);
+        return L"";
+    }
+    if (sidType != SidTypeUser) {
+        FACELOGIN_WARN(L"LookupAccountNameW(%s) resolved a non-user SID (type=%d), rejected",
+                       name.c_str(), static_cast<int>(sidType));
+        return L"";
+    }
+    std::wstring sid;
+    LPWSTR sidStr = nullptr;
+    if (ConvertSidToStringSidW(reinterpret_cast<PSID>(sidBuf.data()), &sidStr)) {
+        sid = sidStr;
+        LocalFree(sidStr);
+    }
+    return sid;
+}
+
+// True when sidString resolves on this machine to a USER account. The startup
+// repair uses it to tell pollution (e.g. the machine SID written by the
+// name-collision bug above) from real account identity: a SID that belongs to
+// a genuine user account is never rewritten.
+bool SidIsUserAccount(const std::wstring& sidString) {
+    if (sidString.empty()) return false;
+    PSID sid = nullptr;
+    if (!ConvertStringSidToSidW(sidString.c_str(), &sid) || !sid) return false;
+    wchar_t name[256] = {};
+    wchar_t domain[256] = {};
+    DWORD nameLen = ARRAYSIZE(name), domainLen = ARRAYSIZE(domain);
+    SID_NAME_USE sidType = SidTypeUnknown;
+    BOOL ok = LookupAccountSidW(nullptr, sid, name, &nameLen,
+                                domain, &domainLen, &sidType);
+    LocalFree(sid);
+    return ok && sidType == SidTypeUser;
+}
+
 // Unified entry point for ALL MSA/local decisions. Try the authoritative
 // GetUserNameExW query first; on 1332/empty fall back to the token MSA group.
 std::wstring ResolveSessionUpn() {
@@ -170,52 +225,17 @@ SessionIdentity ReadSessionIdentity() {
         identity.accountType = "msa";
     }
 
-    // Get SID via LookupAccountNameW
-    {
-        DWORD sidSize = 0, domainSize = 0;
-        SID_NAME_USE sidType;
+    // Get SID: the process token's user SID is the authoritative source. A
+    // name-based lookup here is ambiguous when the computer name equals the
+    // user name — it resolves the machine SID instead of the account SID
+    // (upstream #24) — so the name lookup survives only as a fallback for a
+    // failed token query, and it accepts SidTypeUser results only.
+    identity.sid = GetCurrentProcessUserSid();
+    if (identity.sid.empty()) {
         std::wstring lookupName = identity.upn.empty() ? identity.username : identity.upn;
-
-        LookupAccountNameW(nullptr, lookupName.c_str(),
-                           nullptr, &sidSize, nullptr, &domainSize, &sidType);
-        if (sidSize > 0) {
-            std::vector<BYTE> sidBuf(sidSize);
-            std::vector<wchar_t> domainBuf(domainSize > 0 ? domainSize : 1);
-            if (LookupAccountNameW(nullptr, lookupName.c_str(),
-                                   sidBuf.data(), &sidSize,
-                                   domainBuf.data(), &domainSize, &sidType)) {
-                LPWSTR sidStr = nullptr;
-                if (ConvertSidToStringSidW(reinterpret_cast<PSID>(sidBuf.data()), &sidStr)) {
-                    identity.sid = sidStr;
-                    LocalFree(sidStr);
-                }
-            } else {
-                DWORD err = GetLastError();
-                FACELOGIN_WARN(L"LookupAccountNameW(UPN) FAILED: err=%lu", err);
-            }
-        }
-
+        identity.sid = LookupUserSidByName(lookupName);
         if (identity.sid.empty()) {
-            DWORD sidSize2 = 0, domainSize2 = 0;
-            SID_NAME_USE sidType2;
-            LookupAccountNameW(nullptr, identity.username.c_str(),
-                               nullptr, &sidSize2, nullptr, &domainSize2, &sidType2);
-            if (sidSize2 > 0) {
-                std::vector<BYTE> sidBuf2(sidSize2);
-                std::vector<wchar_t> domainBuf2(domainSize2 > 0 ? domainSize2 : 1);
-                if (LookupAccountNameW(nullptr, identity.username.c_str(),
-                                       sidBuf2.data(), &sidSize2,
-                                       domainBuf2.data(), &domainSize2, &sidType2)) {
-                    LPWSTR sidStr = nullptr;
-                    if (ConvertSidToStringSidW(reinterpret_cast<PSID>(sidBuf2.data()), &sidStr)) {
-                        identity.sid = sidStr;
-                        LocalFree(sidStr);
-                    }
-                } else {
-                    DWORD err = GetLastError();
-                    FACELOGIN_WARN(L"LookupAccountNameW(SAM) FAILED: err=%lu", err);
-                }
-            }
+            identity.sid = LookupUserSidByName(identity.username);
         }
     }
 

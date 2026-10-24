@@ -1,8 +1,11 @@
 #include "log_viewer.h"
 #include "service_client.h"
+#include "session_identity.h"
+#include "enrollment_accounts.h"
 #include "ipc_protocol.h"
 
 #include <windows.h>
+#include <sddl.h>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -225,6 +228,166 @@ void TestServiceClient() {
           "unavailable service retains learning error response");
 }
 
+// Upstream #24: the session SID must come from the process token, never from
+// a name lookup that silently returns the machine SID when computer name ==
+// user name. These invariants hold on every machine; the collision itself is
+// exercised structurally by TestMachineSidRepair below.
+void TestSessionIdentity() {
+    namespace si = facelogin::session_identity;
+    const auto identity = si::ReadSessionIdentity();
+    const auto tokenSid = si::GetCurrentProcessUserSid();
+    Check(!tokenSid.empty(), "process token user SID resolves");
+    Check(identity.sid == tokenSid, "ReadSessionIdentity adopts the authoritative token SID");
+    Check(si::SidIsUserAccount(tokenSid), "session token SID resolves to a user account");
+
+    Check(!si::SidIsUserAccount(L""), "empty SID is not a user account");
+    Check(!si::SidIsUserAccount(L"S-1-5-18"), "well-known SYSTEM SID is not a user account");
+    Check(!si::SidIsUserAccount(L"S-1-5-21-1-2-3-4"), "unresolvable SID is not a user account");
+
+    // The pollution source itself: the computer name must resolve to a
+    // NON-user SID — that is exactly what a pre-fix build stored when the
+    // two names collided.
+    wchar_t computer[256] = {};
+    DWORD computerLen = ARRAYSIZE(computer);
+    if (GetComputerNameW(computer, &computerLen)) {
+        DWORD sidSize = 0, domainSize = 0;
+        SID_NAME_USE sidType = SidTypeUnknown;
+        LookupAccountNameW(nullptr, computer, nullptr, &sidSize, nullptr, &domainSize, &sidType);
+        if (sidSize > 0) {
+            std::vector<BYTE> sidBuf(sidSize);
+            std::vector<wchar_t> domainBuf(domainSize > 0 ? domainSize : 1);
+            if (LookupAccountNameW(nullptr, computer, sidBuf.data(), &sidSize,
+                                   domainBuf.data(), &domainSize, &sidType)) {
+                LPWSTR sidStr = nullptr;
+                if (ConvertSidToStringSidW(reinterpret_cast<PSID>(sidBuf.data()), &sidStr)) {
+                    const std::wstring computerSid = sidStr;
+                    LocalFree(sidStr);
+                    Check(!facelogin::session_identity::SidIsUserAccount(computerSid),
+                          "computer-name SID is not a user account (pollution is detectable)");
+                }
+            }
+        }
+    }
+}
+
+// Resolves the machine SID (S-1-5-21-X-Y-Z) the way the pre-fix build did on
+// machines where computer name == user name: LookupAccountNameW of the
+// computer name.
+std::wstring ResolveComputerSidForTest() {
+    wchar_t computer[256] = {};
+    DWORD computerLen = ARRAYSIZE(computer);
+    if (!GetComputerNameW(computer, &computerLen)) return L"";
+    DWORD sidSize = 0, domainSize = 0;
+    SID_NAME_USE sidType = SidTypeUnknown;
+    LookupAccountNameW(nullptr, computer, nullptr, &sidSize, nullptr, &domainSize, &sidType);
+    if (sidSize == 0) return L"";
+    std::vector<BYTE> sidBuf(sidSize);
+    std::vector<wchar_t> domainBuf(domainSize > 0 ? domainSize : 1);
+    if (!LookupAccountNameW(nullptr, computer, sidBuf.data(), &sidSize,
+                            domainBuf.data(), &domainSize, &sidType)) return L"";
+    LPWSTR sidStr = nullptr;
+    std::wstring sid;
+    if (ConvertSidToStringSidW(reinterpret_cast<PSID>(sidBuf.data()), &sidStr)) {
+        sid = sidStr;
+        LocalFree(sidStr);
+    }
+    return sid;
+}
+
+// End-to-end repair: a record stored with the machine SID (upstream #24
+// pollution) is rewritten to the session token SID on startup, keeping
+// username/UPN/password bytes/faces; a record keyed by a genuine user SID
+// (local Administrator, machineSid + "-500") is left untouched.
+void TestMachineSidRepair(const fs::path& dataDir) {
+    namespace si = facelogin::session_identity;
+    const std::wstring machineSid = ResolveComputerSidForTest();
+    Check(!machineSid.empty(), "resolve machine SID for fixture");
+    const std::wstring tokenSid = si::GetCurrentProcessUserSid();
+    Check(!tokenSid.empty(), "resolve session token SID for fixture");
+    if (machineSid.empty() || tokenSid.empty()) return;
+
+    const std::wstring adminSid = machineSid + L"-500";
+    Check(si::SidIsUserAccount(adminSid),
+          "local Administrator SID is a genuine user account (fixture)");
+
+    std::error_code error;
+    Check(fs::create_directory(dataDir, error) && !error, "create sid-repair fixture directory");
+
+    // What ReadSessionIdentity computed on the collision machine.
+    wchar_t username[256] = {};
+    DWORD usernameLen = ARRAYSIZE(username);
+    si::SessionIdentity identity;
+    if (GetUserNameW(username, &usernameLen) && usernameLen > 0) {
+        identity.username = username;
+    }
+    identity.sid = machineSid;
+    identity.accountType = "local";
+
+    facelogin::CredentialStore store;
+    store.SetDataDir(dataDir.wstring());
+    const std::vector<uint8_t> password = {0x41, 0x42, 0x43};
+    const std::vector<float> embedding(facelogin::kRecognizerDimension, 0.25f);
+    uint32_t faceId = 0;
+    Check(store.AddFace(identity.username, L"", machineSid, password, embedding,
+                        L"正面", &faceId, 0.0f, 0.0f),
+          "create polluted record keyed by machine SID");
+    Check(store.AddFace(L"admin-untouched", L"", adminSid, password, embedding,
+                        L"正面", &faceId, 0.0f, 0.0f),
+          "create untouched record keyed by a genuine user SID");
+    Check(store.SaveDatabase(), "persist polluted fixture");
+
+    // One-shot service stub answering the single RELOAD_DB the repair issues.
+    const std::wstring pipeName = L"\\\\.\\pipe\\FaceLogin.EnrollmentSupportTest.SidRepair." +
+        std::to_wstring(GetCurrentProcessId());
+    HANDLE pipe = CreateNamedPipeW(pipeName.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                                   PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                                   1, 65536, 65536, 0, nullptr);
+    Check(pipe != INVALID_HANDLE_VALUE, "create sid-repair test pipe");
+    if (pipe == INVALID_HANDLE_VALUE) return;
+    std::thread server([&] {
+        OVERLAPPED operation{};
+        operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!operation.hEvent) return;
+        DWORD bytes = 0;
+        BOOL immediate = ConnectNamedPipe(pipe, &operation);
+        bool connected = !immediate && GetLastError() == ERROR_PIPE_CONNECTED;
+        if (!connected) connected = CompleteIo(pipe, operation, immediate, bytes);
+        CloseHandle(operation.hEvent);
+        std::wstring request, acknowledgement;
+        if (connected && ReadMessage(pipe, request)) {
+            WriteMessage(pipe, ipc::MSG_RELOAD_OK);
+            ReadMessage(pipe, acknowledgement);
+        }
+        DisconnectNamedPipe(pipe);
+    });
+
+    facelogin::EnrollmentServiceClient client(pipeName);
+    facelogin::EnrollmentAccounts accounts(dataDir.wstring(), identity, client);
+    const bool repaired = accounts.AutoRepairMachineSidOnStartup();
+    server.join();
+    CloseHandle(pipe);
+    Check(repaired, "machine-SID record repaired and reload confirmed");
+
+    facelogin::CredentialStore verify;
+    verify.SetDataDir(dataDir.wstring());
+    Check(verify.LoadDatabase(), "reload repaired database");
+    const auto& users = verify.GetUsers();
+    Check(users.size() == 2, "repair rewrites in place, never creates accounts");
+    const size_t repairedIdx = verify.FindUserIndex(tokenSid, L"", L"");
+    Check(repairedIdx < users.size(), "repaired record is keyed by the token SID");
+    if (repairedIdx < users.size()) {
+        Check(lstrcmpiW(users[repairedIdx].username.c_str(), username) == 0,
+              "repaired record keeps the username");
+        Check(users[repairedIdx].encryptedPassword == password,
+              "repaired record keeps the stored credential bytes");
+        Check(users[repairedIdx].faces.size() == 1, "repaired record keeps its faces");
+    }
+    const size_t untouchedIdx = verify.FindUserIndex(adminSid, L"", L"");
+    Check(untouchedIdx < users.size() && users[untouchedIdx].sid == adminSid &&
+              users[untouchedIdx].faces.size() == 1,
+          "genuine user-SID record is untouched");
+}
+
 } // namespace
 
 int main() {
@@ -236,6 +399,8 @@ int main() {
     if (!fs::create_directory(dataDir, error) || error) return 1;
     TestLogs(dataDir);
     TestServiceClient();
+    TestSessionIdentity();
+    TestMachineSidRepair(dataDir / L"sidrepair");
     // Only remove the unique directory successfully created by this test.
     fs::remove_all(dataDir, error);
     Check(!error, "remove temporary test fixtures");
