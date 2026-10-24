@@ -1,0 +1,2 @@
+add_executable(AclUtilTest acl_util_test.cpp)
+target_link_libraries(AclUtilTest PRIVATE facelogin_common)

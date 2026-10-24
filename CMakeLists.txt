@@ -78,6 +78,7 @@ add_development_tool(tools/pad_calibration PadCalibration)
 add_development_tool(tools/camera_lifecycle CameraLifecycleTest)
 add_development_tool(tools/auth_worker_protocol AuthWorkerProtocolTest)
 add_development_tool(tools/credential_store CredentialStoreTest)
+add_development_tool(tools/acl_util AclUtilTest)
 add_development_tool(tools/template_learner TemplateLearnerTest)
 add_development_tool(tools/model_integrity ModelIntegrityTest)
 add_development_tool(tools/ipc_protocol IpcProtocolTest)
@@ -93,7 +94,7 @@ set_target_properties(CredentialDomainRoutingTest CredentialConcurrencyTest PROP
 # Hardware-free regression suite. Camera probes remain explicit manual targets.
 enable_testing()
 set(FACELOGIN_AUTOMATED_TESTS
-    AuthWorkerProtocolTest CredentialStoreTest TemplateLearnerTest
+    AuthWorkerProtocolTest CredentialStoreTest TemplateLearnerTest AclUtilTest
     ModelIntegrityTest IpcProtocolTest LivenessTimingTest AuthPipelineTest
     ExposureWarmupTest FaceGainTuneTest EnrollmentSupportTest
     AuthenticationResidencyTest CredentialSerializationTest CredentialDomainRoutingTest CredentialConcurrencyTest

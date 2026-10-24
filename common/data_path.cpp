@@ -1,5 +1,6 @@
 #include "data_path.h"
 #include "registry_util.h"
+#include "acl_util.h"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -36,22 +37,13 @@ std::wstring CanonicalizePath(const std::wstring& path) {
     return result;
 }
 
-// Case-insensitive prefix check: does `path` start with `prefix\` (or equal
-// `prefix`)? Used to test whether the EXE lives under Program Files.
-bool StartsWithDir(const std::wstring& path, const std::wstring& prefix) {
-    if (path.size() < prefix.size()) return false;
-    if (_wcsnicmp(path.c_str(), prefix.c_str(), prefix.size()) != 0) return false;
-    // Either equal, or the next char in `path` must be a separator so we
-    // don't match "C:\Program Filesx" against "C:\Program Files".
-    return path.size() == prefix.size() || path[prefix.size()] == L'\\';
-}
-
-// True if the EXE runs from an ACL-protected install location (Program Files),
-// i.e. production deployment. This is the trust-mode switch — it cannot be
-// spoofed without admin + Windows Installer protection bypass.
-bool IsProductionExePath(const std::wstring& exeDir) {
-    return StartsWithDir(exeDir, L"C:\\Program Files\\") ||
-           StartsWithDir(exeDir, L"C:\\Program Files (x86)\\");
+// True when `exeDir` is admin-write-protected, i.e. production deployment.
+// The check reads the directory's owner and DACL instead of a drive-letter
+// prefix: an install under D:\Program Files with admin-only write access is
+// production, while a Users-writable location is not, whatever the drive.
+// Production requires an admin-class owner as well as protected write access.
+bool IsProductionExeDir(const std::wstring& exeDir) {
+    return IsDirectoryAdminWriteProtected(exeDir);
 }
 
 // The default fallback directory (%ProgramData%\LockFace). Used only in
@@ -66,11 +58,19 @@ std::wstring GetProgramDataFallback() {
 
 } // namespace
 
+std::wstring GetExeDirPath() {
+    return CanonicalizePath(GetExeDir());
+}
+
+bool IsProductionExePath() {
+    return IsProductionExeDir(GetExeDirPath());
+}
+
 std::wstring ResolveSecureDataDir(const std::wstring& dataDirHint,
                                   std::wstring* outReason)
 {
-    const std::wstring exeDir = CanonicalizePath(GetExeDir());
-    const bool production = IsProductionExePath(exeDir);
+    const std::wstring exeDir = GetExeDirPath();
+    const bool production = IsProductionExeDir(exeDir);
 
     // Build the candidate path with the same precedence as the legacy code:
     // caller hint > registry DataPath > [dev only] ProgramData fallback.

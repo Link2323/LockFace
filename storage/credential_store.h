@@ -44,8 +44,11 @@ inline float EmbeddingThresholdForDim(float baseThreshold, size_t dim) {
 //       Nominal pitch: 4 bytes (float, degrees)            ← V5
 // V4/V5 faces are never loaded or converted; every account must re-enroll.
 // Full layout: docs/contracts/users-dat.md.
-// The file is protected by ACLs (SYSTEM + Administrators only).
-// Passwords are encrypted with user-scope DPAPI by the SYSTEM service.
+// The service enforces the data-directory DACL at startup — SYSTEM and
+// Administrators full control everywhere, Users read-only on the data root
+// and no Users ACE inside data\ (mirroring the installer's posture); see
+// common/acl_util.h. Passwords are encrypted with user-scope DPAPI by the
+// SYSTEM service.
 
 // Maximum number of user accounts in the database. One Windows machine
 // typically has ≤5 local accounts; this cap keeps the lock-screen tile list

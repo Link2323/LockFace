@@ -128,13 +128,14 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 
 ## DataPath 差异
 
-Credential Provider 和 Enrollment 直接信任注册表 DataPath，读取不到时回退 ProgramData；只有服务使用 `ResolveSecureDataDir` 白名单。因此修改路径逻辑必须同时检查：
+Credential Provider 和 Enrollment 直接信任注册表 DataPath，读取不到时回退 ProgramData；只有服务使用 `ResolveSecureDataDir` 白名单。Enrollment 先提权，仅对无 DataPath 时的隐式回退目录通过 `common/acl_util.*` 指定 Administrators 所有者及受保护 DACL；现存低权限所有者被拒绝，可信所有者的宽松 DACL 才可修复。已配置目录的 ACL 由安装器/服务管理，避免用 Console 的 EXE 目录误判服务开发树。Enrollment 记录失败，服务启动时检查并 fail-closed；服务另对 `data\` 整个子树去掉普通用户读取授权。服务开发模式下数据目录恰为其 EXE 目录时跳过。因此修改路径逻辑必须同时检查：
 
 - `credential_provider/dllmain.cpp`
 - `credential_provider/LockFaceProvider.cpp`
 - `enrollment_app/main.cpp`
 - `enrollment_app/EnrollmentWizard.cpp`
 - `common/data_path.*`
+- `common/acl_util.*`
 - `face_service/FaceService.cpp`
 
 不要因为默认安装结果一致，就假设三组件共享同一解析实现。

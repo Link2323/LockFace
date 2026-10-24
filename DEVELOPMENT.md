@@ -36,7 +36,7 @@
 | 第三方声明、模型许可、安装器许可查看 | `scripts/update_third_party_notices.ps1`、`scripts/stage_licenses.ps1`、`THIRD_PARTY_NOTICES.txt`、`third_party/MODEL_LICENSES.txt`、`docs/model-licenses.md`、`frontend/src/App.vue` | [`docs/BUILD.md`](docs/BUILD.md)、[`third_party/MODEL_LICENSES.txt`](third_party/MODEL_LICENSES.txt)、[`model-licenses.md`](docs/model-licenses.md) | 安装器 `go test ./...` + 前端构建；核对载荷/前端三份声明及 slim 卸载 |
 | 模型替换、量化、阈值 | `face_service/FaceService.cpp`、`installer/LockFaceSetup/internal/extract.go`、`scripts/download_models.ps1`、`tools/threshold_calibration/` | [`face-service.md`](docs/modules/face-service.md)、[历史阈值标定](docs/work/completed/threshold-calibration.md) | 标定 + hash/大小同步 + Go 测试 |
 
-无硬件自动化回归统一执行 `cmake --build build --config Release --target check --parallel 1`；目标会先构建再运行 14 个测试，不能替代相机、GUI 和锁屏实测。
+无硬件自动化回归统一执行 `cmake --build build --config Release --target check --parallel 1`；目标会先构建再运行 15 个测试，不能替代相机、GUI 和锁屏实测。
 
 ## 运行期架构
 
@@ -94,10 +94,12 @@ ProgramData 不是默认生产位置。
 |---|---|
 | Credential Provider | 直接读 DataPath；空值回退 `%ProgramData%\LockFace` |
 | Enrollment | 直接读 DataPath；空值回退 `%ProgramData%\LockFace` |
-| 服务（生产 EXE） | `ResolveSecureDataDir` 只信 EXE 目录；异常重定向 fail-closed |
+| 服务（生产 EXE） | 按 EXE 目录所有者和 DACL 判定，不限盘符；`ResolveSecureDataDir` 只信 EXE 目录，异常重定向 fail-closed |
 | 服务（EXE 位于开发目录） | DataPath → 空值时 ProgramData；候选必须在开发白名单 |
 
 改路径逻辑时必须同时检查三个组件和安装器注册表/ACL，不能只改 `common/data_path.cpp`。
+
+运行期目录 ACL 在 `common/acl_util.*`：低权限所有者直接拒绝，可信所有者才允许修复；`data\` 严格策略覆盖已有文件。专项验证用 `AclUtilTest`，分别在普通和提升权限进程中运行；普通进程明确跳过管理员创建/修复用例。服务开发构建目录例外见模块文档。
 
 已知实现差异：`CredentialStore::GetDataDir()` 在调用方未设置目录时仍回退到旧 `%ProgramData%\FaceLogin`；当前服务和注册程序入口均显式设置 DataPath，因此生产入口不走此回退。本次凭据保护改动未调整该历史路径。
 

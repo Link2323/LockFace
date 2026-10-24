@@ -5,6 +5,7 @@
 #include "enrollment_accounts.h"
 #include "log_viewer.h"
 #include "../common/logger.h"
+#include "../common/acl_util.h"
 #include "../common/registry_util.h"
 #include "../common/config_util.h"
 #include "../common/text_util.h"
@@ -35,7 +36,16 @@ EnrollmentWizard::EnrollmentWizard() {
             m_dataDir = L"C:\\ProgramData\\LockFace";
         }
     }
-    CreateDirectoryW(m_dataDir.c_str(), nullptr);
+    // Secure the implicit fallback, for which this process may be the first
+    // creator. Configured paths belong to the installer/service: the Console
+    // and Service EXEs have different build output directories, so the
+    // Console's EXE path cannot identify the service's development tree.
+    // Failure is non-fatal here; the service enforces its own startup checks.
+    if (!regData.empty()) {
+        CreateDirectoryW(m_dataDir.c_str(), nullptr);
+    } else if (!EnsureSecureDirectory(m_dataDir)) {
+        FACELOGIN_ERROR(L"Cannot secure data directory: %s", m_dataDir.c_str());
+    }
 
     // The console's own log file, read back by the log viewer's "Console"
     // source like any other file-based source. v1.7.x named it enrollment.log:

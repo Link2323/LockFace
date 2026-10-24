@@ -7,7 +7,7 @@
 - 文件位置：`<DataPath>\data\users.dat`
 - 默认生产位置：`C:\Program Files\LockFace\data\users.dat`
 - 密码：SYSTEM 服务使用用户作用域 DPAPI（不设置 `CRYPTPROTECT_LOCAL_MACHINE`）加密。普通用户仅拿到文件不能直接解密；不承诺抵抗 SYSTEM 或整盘离线攻击
-- `data\` 目录 DACL 仅 SYSTEM+Administrators（安装器 `SetDataDirectoryACL`）：DACL 保护账号、人脸特征和文件完整性；密码另有 SYSTEM 身份的 DPAPI 保护；Users 对安装目录其余部分仍保持只读（DLL 加载所需）
+- `data\` 目录及其文件 DACL 不向普通用户授权：安装时由安装器 `SetDataDirectoryACL` 设置 SYSTEM+Administrators 权限；服务每次启动通过 `EnsureSecureDirectory` 创建/修复并复核整个数据子树（含 `%ProgramData%` 回退、主库、备份、临时文件及显式文件 ACE）。低权限所有者和重解析点直接拒绝；可信所有者的权限无法收紧也拒绝启动。开发构建目录例外见服务模块文档。DACL 保护账号、人脸特征和文件完整性；密码另有 SYSTEM 身份的 DPAPI 保护；Users 对安装目录其余部分仍保持只读（DLL 加载所需）
 - 文本：Windows `wchar_t[]`，UTF-16LE，不写结尾 `NUL`
 - 数值：当前仅支持 Windows x64 本机产生的定长整数/IEEE 754 `float`
 

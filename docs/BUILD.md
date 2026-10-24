@@ -40,7 +40,9 @@ cmake --build build --config Release --parallel
 cmake --build build --config Release --target check --parallel 1
 ```
 
-`check` 先构建再通过 CTest 运行 14 个自动化测试，失败返回非零。只重跑已构建测试可用 `ctest --test-dir build -C Release --output-on-failure -L automated`。相机探针、标定、GUI 与锁屏实测不纳入此目标；普通产品构建和安装器打包不会运行测试。
+`check` 先构建再通过 CTest 运行 15 个自动化测试，失败返回非零。只重跑已构建测试可用 `ctest --test-dir build -C Release --output-on-failure -L automated`。相机探针、标定、GUI 与锁屏实测不纳入此目标；普通产品构建和安装器打包不会运行测试。
+
+`AclUtilTest` 覆盖所有者/DACL 策略、低权限预建目录拒绝和错误日志；需额外在提升权限终端运行 `build/tools/acl_util/Release/AclUtilTest.exe`，验证管理员创建、已有 `data\` 及主库/备份显式读取权限修复和幂等。普通进程明确跳过这些提升权限用例。
 
 
 `AuthenticationResidencyTest` 直接运行生产驻留状态机，以确定性 worker 替身覆盖预载中解锁、使用期间解锁、重载版本确认及失败、重载中解锁、加载失败重试、截止时间、worker 提前退出、终态补建策略和停止期间引用释放。测试不创建真实子进程或打开相机，不能替代进程/Job 故障注入及 Session 0 验收。

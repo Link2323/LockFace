@@ -6,6 +6,7 @@
 #include "../common/registry_util.h"
 #include "../common/config_util.h"
 #include "../common/data_path.h"
+#include "../common/acl_util.h"
 #include "../common/secure_clear.h"
 #include "../common/dpapi_util.h"
 #include "../common/text_util.h"
@@ -325,7 +326,26 @@ bool FaceService::Initialize() {
             return false;
         }
     }
-    CreateDirectoryW(m_dataDir.c_str(), nullptr);
+    // Create or heal the data directory with a locked-down DACL (see
+    // common/acl_util.h): this cuts the loose %ProgramData% inheritance and
+    // loose trusted-owner directory. Low-privilege owners are rejected, not
+    // taken over. The developer's own
+    // build tree (development mode with the data directory at the EXE dir)
+    // is left untouched — tightening it would lock the developer out of
+    // their own build output. `data\` is secured separately from its parent
+    // because it and its files may carry explicit loose ACEs that parent
+    // propagation does not override. Its entire subtree excludes Users,
+    // mirroring the installer's SetDataDirectoryACL posture.
+    const bool devOwnTree = !IsProductionExePath() &&
+                            lstrcmpiW(m_dataDir.c_str(), GetExeDirPath().c_str()) == 0;
+    if (devOwnTree) {
+        CreateDirectoryW(m_dataDir.c_str(), nullptr);
+    } else if (!EnsureSecureDirectory(m_dataDir) ||
+               !EnsureSecureDirectory(m_dataDir + L"\\data", /*allowUserRead=*/false)) {
+        FACELOGIN_ERROR(L"Refusing to start — cannot secure data directory: %s",
+                        m_dataDir.c_str());
+        return false;
+    }
     m_modelsDir = m_dataDir + L"\\models";
 
     // Attach the log file before LoadConfig: LoadConfig logs the active
