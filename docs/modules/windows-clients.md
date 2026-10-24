@@ -111,7 +111,7 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 
 - `LogonUserW` 验证密码：本地账户使用本机 SAM；MSA 保留 UPN + 空域的交互式路径；AD 使用 SID 解析得到的域/SAM 和交互式登录。
 - 空密码账户不支持录入或人脸解锁。
-- 密码经 DPAPI machine scope 加密后写入 `users.dat`。
+- 密码通过加密专用 IPC 交给经 SCM PID 和 SYSTEM 令牌验证的服务，由服务使用用户作用域 DPAPI 加密后返回密文，再写入 V7 `users.dat`。服务不可用时注册和密码更新失败；不回退到注册进程或机器作用域加密。
 - 保存数据库后通过 `RELOAD_DB` 通知服务，并等待 `RELOAD_OK` 后才向 UI 报告完成；管道忙时会有界重试。读到响应后发送 `CONTROL_ACK`，使服务无需阻塞式 flush 即可安全断开。禁止 fire-and-forget。
 - 配置保存后通过 `CONFIG_RELOAD`，失败时认证保持 fail-closed。
 - 服务日志直接读取 `<DataPath>\log\service.log`，避免大 JSON 经过固定管道缓冲区。

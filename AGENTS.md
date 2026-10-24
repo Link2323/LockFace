@@ -57,7 +57,7 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立，同月完成内�
 - 仅支持 Windows x64。C++ 使用 `/utf-8`；不要依赖本机默认代码页。
 - 按现有同步方式保护共享状态：Win32 临界区、原子变量和事件。注册程序的帧缓存由 `EnrollmentWizard::m_frameCacheMutex` 保护；该模块不用条件变量。
 - 函数以 `bool` 返回成功状态，详细错误通过 `FACELOGIN_ERROR` 记录；不用异常做控制流。
-- 密码保存在 `std::wstring` 中，所有退出路径都要清零；日志绝不记录密码。DPAPI 使用 `CRYPTPROTECT_LOCAL_MACHINE`，凭据绑定本机。
+- 密码保存在 `std::wstring` 中，所有退出路径都要清零；日志绝不记录密码。密码由 SYSTEM 服务使用用户作用域 DPAPI 保护；注册端通过已验证服务身份的加密专用 IPC 获取密文。旧库及备份升级规则见 `docs/contracts/users-dat.md`。
 - 处理 MSA 账户时，UPN 解析和当前进程令牌回退行为见 [`docs/modules/windows-clients.md`](docs/modules/windows-clients.md#账号身份)。无密码 MSA 账户必须被检测并阻止。
 - 安装器是 Go 项目，安装与卸载逻辑放在 `installer/LockFaceSetup/internal/`，参见 [`docs/modules/installer.md`](docs/modules/installer.md)。
 - 一次性验证和下载中间产物在任务结束时清理；正式 `build/` 输出保留。

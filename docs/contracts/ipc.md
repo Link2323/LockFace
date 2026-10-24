@@ -6,7 +6,7 @@
 
 - 服务端：`LockFaceService.exe`
 - 认证客户端：LogonUI 中加载的 `LockFaceCredentialProvider.dll`
-- 管理客户端：`LockFaceConsole.exe`，当前通过管道发送 `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS`
+- 管理客户端：`LockFaceConsole.exe`，通过管道发送 `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS` / `PROTECT_PASSWORD:...`
 
 安装器不参与运行期 IPC。注册控制台的服务日志页面直接读取 `<DataPath>\log\service.log`，以避开固定消息缓冲区限制。
 
@@ -37,7 +37,8 @@
 - 服务模式下有效主体为 SYSTEM + Administrators。
 - ACL 构造还会尝试加入当前进程用户；正式服务以 SYSTEM 运行。
 - 管道拒绝远程客户端。
-- 明文密码只存在于认证成功消息和短生命周期内存中；禁止记录消息全文，使用后必须清零。
+- 明文密码只存在于注册加密请求、认证成功消息和短生命周期内存中；禁止记录消息全文，使用后必须清零。
+- 发送 `PROTECT_PASSWORD` 前，注册端检查管道服务端 PID 与 SCM 中运行的 `LockFaceService` 一致，并验证其进程令牌为 SYSTEM；使用 identification 级别 SQOS。服务端模拟客户端后，以 `OpenThreadToken(TOKEN_QUERY, OpenAsSelf=TRUE)` 获取客户端令牌，恢复自身身份，再对显式客户端令牌检查 SYSTEM/启用的 Administrators 成员资格；失败时拒绝请求，不回退到服务进程令牌。加密始终在恢复服务身份之后执行。
 
 ## 消息表
 
@@ -55,6 +56,7 @@
 | `AUTH_ACK` | CP → 服务 | CP 已复制并擦除终态传输缓冲区；服务最多等待 2 秒 |
 | `RELOAD_DB` / `RELOAD_OK` | 控制台 ↔ 服务 | 凭据数据库保存后热重载；客户端必须保持双向连接并等到 `RELOAD_OK`，不能写完即关闭 |
 | `CONFIG_RELOAD` / `CONFIG_RELOAD_OK` / `CONFIG_RELOAD_ERROR` | 控制台 ↔ 服务 | 配置热重载；无效活体配置保持 fail-closed |
+| `PROTECT_PASSWORD:password` / `PROTECT_PASSWORD_OK:HEX` / `PROTECT_PASSWORD_ERROR` | 控制台 ↔ 服务 | 仅加密，SYSTEM 服务使用用户作用域 DPAPI；密码为前缀之后全部字符（可含冒号），1..256 个 UTF-16 code units，不含内嵌 NUL。响应为 2..4096 字节密文的大写十六进制编码，客户端读取后回 `CONTROL_ACK`；无解密接口，无机器作用域回退 |
 | `LEARNING_STATUS` | 控制台 ↔ 服务 | 只读查询渐进式学习状态；响应为单条 JSON（`enabled`/`gate_cap`/`faces[]`/`recent[]`，无 OK/ERROR 后缀），服务端同步组装。数据为内存快照，服务重启清零（持久事实源是日志）。客户端读取后回 `CONTROL_ACK`。管道单实例，控制台侧按 10s 节流，不得变成高频轮询 |
 | `CONTROL_ACK` | 控制台 → 服务 | 控制台已读取 reload 响应；服务最多等待 2 秒 |
 

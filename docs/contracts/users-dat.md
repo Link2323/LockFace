@@ -1,26 +1,26 @@
 # `users.dat` 持久化契约
 
-本文定义 LockFace 凭据数据库 V6 契约。实现事实源是 [`storage/credential_store.h`](../../storage/credential_store.h) 和 [`storage/credential_store.cpp`](../../storage/credential_store.cpp)。不要根据本文单独重写解析器；修改格式时必须同步所有消费者。
+本文定义 LockFace 凭据数据库 V7 契约。实现事实源是 [`storage/credential_store.h`](../../storage/credential_store.h) 和 [`storage/credential_store.cpp`](../../storage/credential_store.cpp)。不要根据本文单独重写解析器；修改格式时必须同步所有消费者。
 
 ## 位置与安全属性
 
 - 文件位置：`<DataPath>\data\users.dat`
 - 默认生产位置：`C:\Program Files\LockFace\data\users.dat`
-- 密码：DPAPI `CRYPTPROTECT_LOCAL_MACHINE` 加密，绑定本机
-- `data\` 目录 DACL 仅 SYSTEM+Administrators（安装器 `SetDataDirectoryACL`）：机器作用域 DPAPI 密文任何本地账户都能解密，文件 ACL 是非管理员进程读取的唯一屏障；Users 对安装目录其余部分仍保持只读（DLL 加载所需）
+- 密码：SYSTEM 服务使用用户作用域 DPAPI（不设置 `CRYPTPROTECT_LOCAL_MACHINE`）加密。普通用户仅拿到文件不能直接解密；不承诺抵抗 SYSTEM 或整盘离线攻击
+- `data\` 目录 DACL 仅 SYSTEM+Administrators（安装器 `SetDataDirectoryACL`）：DACL 保护账号、人脸特征和文件完整性；密码另有 SYSTEM 身份的 DPAPI 保护；Users 对安装目录其余部分仍保持只读（DLL 加载所需）
 - 文本：Windows `wchar_t[]`，UTF-16LE，不写结尾 `NUL`
 - 数值：当前仅支持 Windows x64 本机产生的定长整数/IEEE 754 `float`
 
 不得记录密码、DPAPI 密文或完整认证消息。密码解密后每条退出路径都要清零。
 
-## V6 字节布局
+## V7 字节布局
 
 所有长度字段均为元素个数；只有密码长度是字节数。
 
 ```text
 [Header]
   magic:          uint32 = 0x474F4C46  // "FLOG"
-  version:        uint32 = 6           // SFace only
+  version:        uint32 = 7           // SFace + SYSTEM user-scope DPAPI
   accountCount:   uint32
   recognizerTag:  uint32 = 0x31434653  // "SFC1", pinned SFace 2021dec
 
@@ -32,7 +32,7 @@
   sidLen:         uint32
   sid:            wchar_t[sidLen]
   passwordLen:    uint32               // bytes
-  passwordBlob:   uint8_t[passwordLen] // DPAPI blob (length >= 2)
+  passwordBlob:   uint8_t[passwordLen] // SYSTEM user-scope DPAPI blob (length >= 2)
   faceCount:      uint32
 
   [Face] × faceCount
@@ -59,7 +59,11 @@
 
 ## 版本策略
 
-只读写 V6，且模型标识必须是 SFC1。遇到 V4/V5 时清空活动身份、记录需重新录入并返回空库成功；不读旧人脸、密码或迁移旧记录，文件在完成新录入保存前保持原样。其他版本、错误模型标识或损坏的 V6 返回失败。首次新录入保存会写入新的 V6 数据库，所有账户必须重新录入。Credential Provider 只接受完整 V6/SFC1 header。
+正常读写只接受 V7/SFC1；未升级 V6 返回失败，不允许将其直接用于认证。服务启动在 SYSTEM 有效身份下先独立升级 `users.dat.bak`，再升级主库：V6 密码解密后重新以 SYSTEM 用户作用域保护，保留全部身份、人脸及角度；V7 不重复加密。缺失文件视为空库，访问失败、损坏或解密失败则服务启动失败。每个文件先写同目录临时文件，再原子替换，失败保留原文件；两文件之间中断可在下次启动重试。
+
+V4/V5 仍不导入旧模型人脸或密码，服务启动时将其替换为空 V7，要求重新录入，以清除旧机器作用域密码。普通只读加载 V4/V5 仍返回空库，不改文件。其他版本或错误模型标识返回失败。Credential Provider 只接受完整 V7/SFC1 header，产品组件必须一起升级；旧版本不支持读取 V7。
+
+注册及密码更新必须调用已验证 SYSTEM 服务的 `PROTECT_PASSWORD` 加密专用 IPC，不能在注册进程内加密。服务不提供通用解密接口。升级不会保护外部已复制的旧密文；疑似泄露时必须更换对应账号密码。
 
 ## 账号与人脸操作语义
 
@@ -88,7 +92,7 @@
 
 - `LockFaceService`：完整加载、匹配、保存
 - `LockFaceConsole`：注册、追加、删除、重命名、身份更新
-- Credential Provider：只读 header（仅接受 V6/SFC1）判断是否显示磁贴
+- Credential Provider：只读 header（仅接受 V7/SFC1）判断是否显示磁贴
 
 ## 修改检查表
 
@@ -100,4 +104,4 @@
 - 安装/升级/卸载是否保留或清除用户数据
 - 本文和 `DEVELOPMENT.md`
 
-验证至少覆盖：空数据库、不支持的版本拒绝、V4/V5 停用、V6 模型标识和标称角往返、多脸、密码 blob 长度、上限、截断/异常长度、删除最后一张脸、保存后重载、不同 embedding 维度，以及 DPAPI 解密失败。
+验证至少覆盖：空数据库、不支持的版本拒绝、V4/V5 停用、V7 模型标识和标称角往返、V6 主库和备份升级、非 SYSTEM 升级拒绝、多脸、密码 blob 长度、上限、截断/异常长度、删除最后一张脸、保存后重载、不同 embedding 维度，以及 DPAPI 解密失败。

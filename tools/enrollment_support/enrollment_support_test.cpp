@@ -1,5 +1,6 @@
 #include "log_viewer.h"
 #include "service_client.h"
+#include "../../face_service/pipe_server.h"
 #include "session_identity.h"
 #include "../../common/account_identity.h"
 #include "enrollment_accounts.h"
@@ -229,6 +230,86 @@ void TestServiceClient() {
           "unavailable service retains learning error response");
 }
 
+void TestPasswordEndpointVerification() {
+    const std::wstring name = L"\\\\.\\pipe\\LockFace.FakePasswordService." +
+        std::to_wstring(GetCurrentProcessId());
+    HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, 4096, 4096, 0, nullptr);
+    Check(pipe != INVALID_HANDLE_VALUE, "create fake password service");
+    if (pipe == INVALID_HANDLE_VALUE) return;
+    std::wstring received;
+    std::thread server([&] {
+        OVERLAPPED op{};
+        op.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        DWORD bytes = 0;
+        BOOL immediate = ConnectNamedPipe(pipe, &op);
+        bool connected = !immediate && GetLastError() == ERROR_PIPE_CONNECTED;
+        if (!connected) connected = CompleteIo(pipe, op, immediate, bytes);
+        CloseHandle(op.hEvent);
+        if (connected) ReadMessage(pipe, received);
+        DisconnectNamedPipe(pipe);
+    });
+    facelogin::EnrollmentServiceClient client(name);
+    std::vector<uint8_t> encrypted{1, 2};
+    Check(!client.ProtectPassword(L"must-not-reach-fake-service", encrypted) && encrypted.empty(),
+          "password protection rejects a server outside the SCM SYSTEM service");
+    server.join();
+    CloseHandle(pipe);
+    Check(received.empty(), "fake service receives no password bytes");
+    Check(!client.ProtectPassword(L"", encrypted), "empty password rejected");
+    Check(!client.ProtectPassword(std::wstring(257, L'x'), encrypted), "oversized password rejected");
+    Check(!client.ProtectPassword(std::wstring(L"a\0b", 3), encrypted), "embedded NUL password rejected");
+}
+
+void TestPipeClientAuthorization() {
+    BYTE adminSid[SECURITY_MAX_SID_SIZE]{};
+    DWORD sidSize = sizeof(adminSid);
+    BOOL elevated = FALSE;
+    Check(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, adminSid, &sidSize) &&
+          CheckTokenMembership(nullptr, adminSid, &elevated), "read enabled administrator membership");
+    for (DWORD level : {SECURITY_IDENTIFICATION, SECURITY_IMPERSONATION, SECURITY_ANONYMOUS}) {
+        const std::wstring name = L"\\\\.\\pipe\\LockFace.AuthorizationTest." +
+            std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(level);
+        facelogin::PipeServer pipeServer;
+        bool exchange = false, privileged = false, restored = false;
+        std::thread server([&] {
+            std::wstring request;
+            if (!pipeServer.WaitForClient(5000, name.c_str()) ||
+                !pipeServer.ReadMessage(request, 5000)) return;
+            exchange = request == L"AUTHORIZATION_TEST";
+            privileged = pipeServer.IsClientPrivileged();
+            HANDLE token = nullptr;
+            const BOOL opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token);
+            restored = !opened && GetLastError() == ERROR_NO_TOKEN;
+            if (opened) { CloseHandle(token); RevertToSelf(); }
+            pipeServer.Disconnect();
+        });
+        HANDLE client = INVALID_HANDLE_VALUE;
+        const auto deadline = GetTickCount64() + 5000;
+        do {
+            client = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                OPEN_EXISTING, SECURITY_SQOS_PRESENT | level, nullptr);
+            if (client != INVALID_HANDLE_VALUE) break;
+            Sleep(5);
+        } while (GetTickCount64() < deadline);
+        if (client != INVALID_HANDLE_VALUE) {
+            const wchar_t request[] = L"AUTHORIZATION_TEST";
+            DWORD written = 0;
+            WriteFile(client, request, sizeof(request), &written, nullptr);
+        }
+        server.join();
+        if (client != INVALID_HANDLE_VALUE) CloseHandle(client);
+        const bool expected = elevated && level != SECURITY_ANONYMOUS;
+        Check(exchange && restored, "authorization checks the connected client and restores thread identity");
+        if (privileged != expected) {
+            std::fprintf(stderr, "Authorization level=%lu, elevated=%d: expected=%d actual=%d\n",
+                         level, elevated, expected, privileged);
+        }
+        Check(privileged == expected,
+              "Identification/Impersonation accept enabled admins; anonymous and unelevated clients are denied");
+    }
+}
+
 // Upstream #24: the session SID must come from the process token, never from
 // a name lookup that silently returns the machine SID when computer name ==
 // user name. These invariants hold on every machine; the collision itself is
@@ -400,6 +481,8 @@ int main() {
     if (!fs::create_directory(dataDir, error) || error) return 1;
     TestLogs(dataDir);
     TestServiceClient();
+    TestPasswordEndpointVerification();
+    TestPipeClientAuthorization();
     TestSessionIdentity();
     {
         std::wstring domain, sam;

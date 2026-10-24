@@ -9,7 +9,7 @@ namespace facelogin {
 // Pinned OpenCV SFace 2021dec FP32, with initializer graph inputs removed.
 // Weight values/nodes and the 128-D metric space are preserved.
 inline constexpr size_t kRecognizerDimension = 128;
-inline constexpr uint32_t kCredentialDatabaseVersion = 6;
+inline constexpr uint32_t kCredentialDatabaseVersion = 7;
 inline constexpr uint32_t kRecognizerModelTag = 0x31434653; // "SFC1"
 // Conservative trial ceiling, below the offline 1.0693 exploratory cutoff.
 // Not a calibrated production FAR guarantee; keep ratio=0.75 and mandatory PAD.

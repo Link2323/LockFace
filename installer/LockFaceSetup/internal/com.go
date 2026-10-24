@@ -122,10 +122,10 @@ func SetDirectoryACL(dirPath string) error {
 // SetDataDirectoryACL locks down <installDir>\data — where users.dat lives.
 // Unlike the install dir, no Users entry is granted: everything that touches
 // data\ (service = SYSTEM, elevated console, LogonUI's header read = SYSTEM)
-// is privileged. users.dat holds a DPAPI LOCAL_MACHINE password blob, which
-// ANY local account could decrypt after reading the file — the file ACL is
-// the only barrier for non-admin processes, so granting Users read here would
-// nullify the encryption. Must run AFTER SetDirectoryACL on the parent: that
+// is privileged. V7 passwords use SYSTEM user-scope DPAPI, but the ACL still
+// protects account/face data and integrity, as well as pre-upgrade V6 files.
+// Keep all files, including users.dat.bak, restricted.
+// Must run AFTER SetDirectoryACL on the parent: that
 // call's /T sweeps would re-apply the Users entry onto the data subtree.
 func SetDataDirectoryACL(dataDir string) error {
 	if !DirExists(dataDir) {

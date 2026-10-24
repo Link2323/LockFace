@@ -3,6 +3,20 @@
 
 namespace facelogin {
 
+bool DpapiUtil::IsSystemContext() {
+    HANDLE token = nullptr;
+    if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token)) {
+        if (GetLastError() != ERROR_NO_TOKEN ||
+            !OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    }
+    BYTE storage[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE] = {};
+    DWORD size = 0;
+    const bool system = GetTokenInformation(token, TokenUser, storage, sizeof(storage), &size) &&
+        IsWellKnownSid(reinterpret_cast<TOKEN_USER*>(storage)->User.Sid, WinLocalSystemSid);
+    CloseHandle(token);
+    return system;
+}
+
 std::vector<uint8_t> DpapiUtil::Protect(const std::vector<uint8_t>& plaintext) {
     return Protect(plaintext.data(), plaintext.size());
 }
@@ -59,6 +73,7 @@ std::vector<uint8_t> DpapiUtil::Unprotect(const uint8_t* data, size_t size) {
     std::vector<uint8_t> result(blobOut.pbData, blobOut.pbData + blobOut.cbData);
 
     if (pDesc) LocalFree(pDesc);
+    SecureZeroMemory(blobOut.pbData, blobOut.cbData);
     LocalFree(blobOut.pbData);
     return result;
 }

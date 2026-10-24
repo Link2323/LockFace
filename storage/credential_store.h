@@ -18,10 +18,10 @@ inline float EmbeddingThresholdForDim(float baseThreshold, size_t dim) {
 
 // Stores and retrieves encrypted user credentials and face embeddings.
 //
-// File format (DataPath\data\users.dat), version 6 (SFace only; V4/V5 inactive):
+// File format (DataPath\data\users.dat), version 7 (SFace + SYSTEM user-scope DPAPI):
 //   Header:
 //     Magic:  4 bytes ("FLOG")
-//     Version: 4 bytes (uint32, 6 only)
+//     Version: 4 bytes (uint32, 7 only)
 //     Count:   4 bytes (uint32, number of records)
 //     Model tag: 4 bytes (uint32, kRecognizerModelTag = "SFC1")
 //   Records (Count times):
@@ -45,7 +45,7 @@ inline float EmbeddingThresholdForDim(float baseThreshold, size_t dim) {
 // V4/V5 faces are never loaded or converted; every account must re-enroll.
 // Full layout: docs/contracts/users-dat.md.
 // The file is protected by ACLs (SYSTEM + Administrators only).
-// Passwords are encrypted with DPAPI CRYPTPROTECT_LOCAL_MACHINE.
+// Passwords are encrypted with user-scope DPAPI by the SYSTEM service.
 
 // Maximum number of user accounts in the database. One Windows machine
 // typically has ≤5 local accounts; this cap keeps the lock-screen tile list
@@ -100,6 +100,10 @@ public:
 
     // Load users.dat from disk. Returns true on success.
     bool LoadDatabase();
+
+    // SYSTEM-service startup only: re-protect V6 passwords, including .bak,
+    // and retire inactive V4/V5 secrets. Normal loads reject unmigrated V6.
+    bool UpgradeLegacyPasswords();
 
     // Save current in-memory records to users.dat. Returns true on success.
     bool SaveDatabase();
@@ -288,6 +292,9 @@ public:
     std::wstring GetDataDir() const;
 
 private:
+    bool LoadDatabaseFile(const std::wstring& path, bool allowLegacy);
+    bool SaveDatabaseFile(const std::wstring& path);
+    uint32_t m_loadedVersion = kCredentialDatabaseVersion;
     std::wstring m_dataDir;  // If empty, uses default
     std::vector<UserRecord> m_users;
 

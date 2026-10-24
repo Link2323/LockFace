@@ -17,7 +17,7 @@ LockFace 是面向 Windows 的人脸登录应用，通过 Credential Provider �
 ## 安全边界
 
 - 所有组件间通信均为本机命名管道；服务端限制客户端为 SYSTEM 与 Administrators，并拒绝远程连接。具体消息格式见 [`IPC 契约`](../contracts/ipc.md) 和 [`worker IPC 契约`](../contracts/auth-worker-ipc.md)。
-- `users.dat` 中的密码凭据由机器范围 DPAPI 保护；数据布局和兼容规则见 [`users.dat 契约`](../contracts/users-dat.md)。
+- `users.dat` 中的密码凭据由 SYSTEM 服务的用户作用域 DPAPI 保护；数据布局和兼容规则见 [`users.dat 契约`](../contracts/users-dat.md)。
 - 活体检测必须通过；模型或认证错误按失败处理，仍可使用 Windows 密码登录。
 - worker 独占模型和摄像头，单次认证后退出；服务父进程不在锁屏前打开摄像头。
 

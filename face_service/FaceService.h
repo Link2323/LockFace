@@ -15,7 +15,7 @@
 namespace facelogin {
 
 // Windows service implementing the face recognition pipeline.
-// Runs as LOCAL SYSTEM (required for DPAPI machine-scope decryption
+// Runs as LOCAL SYSTEM (owns user-scope DPAPI credentials
 // and credential provider IPC).
 //
 // Lifecycle:

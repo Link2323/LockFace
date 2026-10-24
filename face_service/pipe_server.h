@@ -72,6 +72,8 @@ public:
     // of the pipe (or the pipe is otherwise broken). Uses PeekNamedPipe so it
     // never blocks — safe to poll from a busy authentication loop.
     bool IsClientDisconnected() const;
+    // Verify the connected client's effective token, never a client-supplied ID.
+    bool IsClientPrivileged() const;
 
 private:
     // Absolute-format security descriptor + its separately-allocated DACL.

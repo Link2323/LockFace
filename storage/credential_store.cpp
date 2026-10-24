@@ -46,16 +46,22 @@ std::wstring CredentialStore::GetDataDir() const {
 }
 
 bool CredentialStore::LoadDatabase() {
-    std::wstring path = GetDataDir() + L"\\data\\users.dat";
+    return LoadDatabaseFile(GetDataDir() + L"\\data\\users.dat", false);
+}
+
+bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegacy) {
     // Reload is transactional and fail-closed. Never expose a prefix of a
     // malformed database: authentication must see either the complete newly
     // validated file or no identities at all.
     m_users.clear();
+    m_loadedVersion = FILE_VERSION;
 
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
-        FACELOGIN_INFO(L"No existing database at %s (this is normal on first run)", path.c_str());
-        return true; // Empty database is valid
+        const DWORD attributes = GetFileAttributesW(path.c_str());
+        const DWORD error = GetLastError();
+        return attributes == INVALID_FILE_ATTRIBUTES &&
+            (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
     }
 
     // Read header
@@ -71,10 +77,11 @@ bool CredentialStore::LoadDatabase() {
         return false;
     }
     if (version == 4 || version == 5) {
+        m_loadedVersion = version;
         FACELOGIN_WARN(L"R50 database v%u is inactive: re-enroll all users with SFace", version);
         return true; // Empty active database; old bytes remain until new enrollment saves.
     }
-    if (version != FILE_VERSION) {
+    if (version != FILE_VERSION && !(allowLegacy && version == 6)) {
         FACELOGIN_ERROR(L"Unsupported database version: %u", version);
         return false;
     }
@@ -211,12 +218,50 @@ bool CredentialStore::LoadDatabase() {
     }
 
     m_users = std::move(loadedUsers);
+    m_loadedVersion = version;
     FACELOGIN_INFO(L"Loaded %zu user(s) from database (v%u)", m_users.size(),
                    version);
     return true;
 }
 
 bool CredentialStore::SaveDatabase() {
+    return SaveDatabaseFile(GetDataDir() + L"\\data\\users.dat");
+}
+
+bool CredentialStore::UpgradeLegacyPasswords() {
+    if (!DpapiUtil::IsSystemContext()) {
+        FACELOGIN_ERROR(L"Credential migration requires the SYSTEM service identity");
+        return false;
+    }
+    const std::wstring main = GetDataDir() + L"\\data\\users.dat";
+    // Upgrade the independent rollback copy too. A partial upgrade is safe to
+    // retry: V7 is left unchanged, V6 is never accepted by a normal load.
+    for (const auto& path : {main + L".bak", main}) {
+        if (!LoadDatabaseFile(path, true)) { m_users.clear(); return false; }
+        if (m_loadedVersion == FILE_VERSION) continue;
+        for (auto& user : m_users) {
+            auto plain = DpapiUtil::Unprotect(user.encryptedPassword);
+            auto encrypted = plain.empty() ? std::vector<uint8_t>{} : DpapiUtil::Protect(plain);
+            if (!plain.empty()) SecureZeroMemory(plain.data(), plain.size());
+            if (encrypted.empty()) {
+                m_users.clear();
+                FACELOGIN_ERROR(L"Legacy credential migration failed; database not replaced");
+                return false;
+            }
+            user.encryptedPassword = std::move(encrypted);
+        }
+        // V4/V5 remain inactive and become an empty V7 database, retiring
+        // passwords for the obsolete recognizer without importing old faces.
+        m_loadedVersion = FILE_VERSION;
+        if (!SaveDatabaseFile(path)) { m_users.clear(); return false; }
+        FACELOGIN_INFO(L"Upgraded credential file to service-identity protection");
+    }
+    return true;
+}
+
+bool CredentialStore::SaveDatabaseFile(const std::wstring& path) {
+    if (m_loadedVersion != FILE_VERSION && m_loadedVersion != 4 && m_loadedVersion != 5)
+        return false;
     // Validate before opening with truncation. Never persist mixed model spaces.
     for (const auto& user : m_users) {
         for (const auto& face : user.faces) {
@@ -224,14 +269,14 @@ bool CredentialStore::SaveDatabase() {
         }
     }
     std::wstring dataDir = GetDataDir() + L"\\data";
-    CreateDirectoryW(dataDir.c_str(), nullptr);
-    if (GetLastError() != ERROR_ALREADY_EXISTS && GetLastError() != 0) {
+    if (!CreateDirectoryW(dataDir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
         FACELOGIN_ERROR(L"Failed to create data directory: %s", dataDir.c_str());
         return false;
     }
 
-    std::wstring path = GetDataDir() + L"\\data\\users.dat";
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    const std::wstring temporary = path + L".tmp." + std::to_wstring(GetCurrentProcessId()) +
+        L"." + std::to_wstring(GetTickCount64());
+    std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) {
         FACELOGIN_ERROR(L"Failed to open database for writing: %s", path.c_str());
         return false;
@@ -312,6 +357,12 @@ bool CredentialStore::SaveDatabase() {
     }
 
     file.close();
+    if (!file || !MoveFileExW(temporary.c_str(), path.c_str(),
+                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(temporary.c_str());
+        FACELOGIN_ERROR(L"Failed to commit credential database");
+        return false;
+    }
     FACELOGIN_INFO(L"Saved %zu user(s) to database (v%u)", count, FILE_VERSION);
     return true;
 }

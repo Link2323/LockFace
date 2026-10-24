@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <cstdint>
 
 namespace facelogin {
 
@@ -15,6 +17,7 @@ public:
     // allows worker startup. True requires the corresponding service OK.
     bool ReloadDatabase() const;
     bool ReloadConfig() const;
+    bool ProtectPassword(const std::wstring& password, std::vector<uint8_t>& encrypted) const;
     // Returns the service JSON snapshot or the existing JSON error response.
     std::string QueryLearningStatus() const;
 

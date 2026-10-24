@@ -52,6 +52,7 @@ void CleanupTempRoot(const std::wstring& root) {
     if (root.empty()) return;
     const std::wstring data = root + L"\\data";
     DeleteFileW((data + L"\\users.dat").c_str());
+    DeleteFileW((data + L"\\users.dat.bak").c_str());
     RemoveDirectoryW(data.c_str());
     RemoveDirectoryW(root.c_str());
 }
@@ -108,7 +109,7 @@ std::string ReadDatabaseBytes(const std::wstring& root) {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
-void WriteValidV6Record(std::ofstream& file, const std::wstring& username,
+void WriteValidV7Record(std::ofstream& file, const std::wstring& username,
                         const std::wstring& sid) {
     WriteText(file, username);
     WriteText(file, L"");
@@ -135,7 +136,7 @@ void WriteValidV6Record(std::ofstream& file, const std::wstring& username,
 void TestIdentityMatching() {
     facelogin::CredentialStore store;
     const auto password = facelogin::DpapiUtil::Protect(L"test-password");
-    Check(!password.empty(), "DPAPI creates a machine-bound test credential");
+    Check(!password.empty(), "DPAPI creates a identity-bound test credential");
     Check(store.AddFace(L"alice", L"alice@example.test", L"SID-A", password,
                         Basis(0)), "first Alice face is added");
     Check(store.AddFace(L"alice", L"alice@example.test", L"SID-A", password,
@@ -324,7 +325,7 @@ void TestUpdateTemplateFace() {
     CleanupTempRoot(root);
 }
 
-void TestV6RoundTripAndReload() {
+void TestV7RoundTripAndReload() {
     const std::wstring root = MakeTempRoot();
     Check(!root.empty(), "temporary credential-store directory is created");
     if (root.empty()) return;
@@ -335,23 +336,23 @@ void TestV6RoundTripAndReload() {
     Check(writer.AddFace(L"roundtrip", L"roundtrip@example.test", L"SID-R",
                          encrypted, Basis(0), L"front"),
           "round-trip record is added");
-    Check(writer.SaveDatabase(), "V6 database saves");
+    Check(writer.SaveDatabase(), "V7 database saves");
 
     facelogin::CredentialStore reader;
     reader.SetDataDir(root);
     Check(reader.LoadDatabase() && reader.GetUserCount() == 1 &&
           reader.GetFaceCount(L"SID-R") == 1,
-          "V6 database reload preserves account and face");
+          "V7 database reload preserves account and face");
     const auto credential = reader.LoadCredentialForSid(L"SID-R");
     Check(credential && credential->password == L"round-trip-password",
-          "V6 reload preserves decryptable credential");
+          "V7 reload preserves decryptable credential");
 
     // Replace the file with a valid empty database. A previously authorized
     // SID must disappear immediately after the reload.
     {
         std::ofstream file(root + L"\\data\\users.dat",
                            std::ios::binary | std::ios::trunc);
-        const uint32_t version = 6;
+        const uint32_t version = facelogin::kCredentialDatabaseVersion;
         const uint32_t count = 0;
         Write(file, kFileMagic);
         Write(file, version);
@@ -365,12 +366,12 @@ void TestV6RoundTripAndReload() {
     CleanupTempRoot(root);
 }
 
-void TestV6NominalAnglesAndLegacyRead() {
+void TestV7NominalAnglesAndLegacyRead() {
     const std::wstring root = MakeTempRoot();
-    Check(!root.empty(), "temp root created for V6 nominal-angle tests");
+    Check(!root.empty(), "temp root created for V7 nominal-angle tests");
     if (root.empty()) return;
 
-    // V6 round trip: nominal angles persist per face.
+    // V7 round trip: nominal angles persist per face.
     {
         facelogin::CredentialStore writer;
         writer.SetDataDir(root);
@@ -381,20 +382,20 @@ void TestV6NominalAnglesAndLegacyRead() {
         Check(writer.AddFace(L"v5", L"", L"SID-V5", {}, Basis(1),
                              L"左转", nullptr, 30.0f, 0.0f),
               "left face with nominal yaw +30 is added");
-        Check(writer.SaveDatabase(), "V6 database saves");
+        Check(writer.SaveDatabase(), "V7 database saves");
         facelogin::CredentialStore reader;
         reader.SetDataDir(root);
-        Check(reader.LoadDatabase(), "V6 database reloads");
+        Check(reader.LoadDatabase(), "V7 database reloads");
         const auto& users = reader.GetUsers();
         Check(users.size() == 1 && users[0].faces.size() == 2 &&
                   users[0].faces[0].nominalYaw == 0.0f &&
                   users[0].faces[1].nominalYaw == 30.0f &&
                   users[0].faces[0].nominalPitch == 0.0f &&
                   users[0].faces[1].nominalPitch == 0.0f,
-              "V6 nominal angles round-trip per face");
+              "V7 nominal angles round-trip per face");
         auto credential = reader.LoadCredentialForSid(L"SID-V5");
         Check(credential && credential->password == L"v5-password",
-              "V6 reload preserves decryptable credential");
+              "V7 reload preserves decryptable credential");
 
         // Landing-clarity input: the winning account's second-nearest face
         // is exposed on IdentityMatch; a probe near face #1 reports face #2's
@@ -432,12 +433,12 @@ void TestV6NominalAnglesAndLegacyRead() {
     {
         std::ofstream file(root + L"\\data\\users.dat", std::ios::binary | std::ios::trunc);
         Write(file, kFileMagic);
-        const uint32_t version = 6, count = 0, wrongTag = 0;
+        const uint32_t version = facelogin::kCredentialDatabaseVersion, count = 0, wrongTag = 0;
         Write(file, version); Write(file, count); Write(file, wrongTag);
     }
     facelogin::CredentialStore wrong;
     wrong.SetDataDir(root);
-    Check(!wrong.LoadDatabase(), "a V6 file with a different recognizer is rejected");
+    Check(!wrong.LoadDatabase(), "a V7 file with a different recognizer is rejected");
     CleanupTempRoot(root);
 }
 
@@ -446,7 +447,7 @@ void TestUnsupportedVersionsAreRejected() {
     Check(!root.empty(), "unsupported-version fixture directory is created");
     if (root.empty()) return;
 
-    for (uint32_t version : {1u, 2u, 3u, 7u}) {
+    for (uint32_t version : {1u, 2u, 3u, 8u}) {
         WriteUnsupportedDatabase(root, version);
         facelogin::CredentialStore store;
         store.SetDataDir(root);
@@ -467,13 +468,13 @@ void TestMalformedReloadIsTransactional() {
     {
         std::ofstream file(root + L"\\data\\users.dat",
                            std::ios::binary | std::ios::trunc);
-        const uint32_t version = 6;
+        const uint32_t version = facelogin::kCredentialDatabaseVersion;
         const uint32_t count = 2;
         Write(file, kFileMagic);
         Write(file, version);
         Write(file, count);
         Write(file, facelogin::kRecognizerModelTag);
-        WriteValidV6Record(file, L"first", L"SID-FIRST");
+        WriteValidV7Record(file, L"first", L"SID-FIRST");
         const uint32_t secondNameLength = 8;
         Write(file, secondNameLength);
     }
@@ -487,7 +488,7 @@ void TestMalformedReloadIsTransactional() {
     {
         std::ofstream file(root + L"\\data\\users.dat",
                            std::ios::binary | std::ios::trunc);
-        const uint32_t version = 6;
+        const uint32_t version = facelogin::kCredentialDatabaseVersion;
         const uint32_t count = static_cast<uint32_t>(facelogin::kMaxUsers + 1);
         Write(file, kFileMagic);
         Write(file, version);
@@ -499,16 +500,154 @@ void TestMalformedReloadIsTransactional() {
     CleanupTempRoot(root);
 }
 
+void TestIdentityScopedProtection() {
+    const auto encrypted = facelogin::DpapiUtil::Protect(L"identity-scope-test");
+    Check(!encrypted.empty(), "identity-scope fixture is encrypted");
+    auto plain = facelogin::DpapiUtil::Unprotect(encrypted);
+    Check(!plain.empty(), "encrypting identity can decrypt its credential");
+    if (!plain.empty()) SecureZeroMemory(plain.data(), plain.size());
+    const bool impersonated = ImpersonateAnonymousToken(GetCurrentThread()) != FALSE;
+    Check(impersonated, "test enters a different security identity");
+    if (impersonated) {
+        const bool system = facelogin::DpapiUtil::IsSystemContext();
+        auto forbidden = facelogin::DpapiUtil::Unprotect(encrypted);
+        const bool reverted = RevertToSelf() != FALSE;
+        if (!reverted) TerminateProcess(GetCurrentProcess(), ERROR_CANNOT_IMPERSONATE);
+        Check(!system && forbidden.empty(), "another identity cannot decrypt copied user-scope ciphertext");
+        if (!forbidden.empty()) SecureZeroMemory(forbidden.data(), forbidden.size());
+    }
+}
+
+void TestAtomicSaveFailure() {
+    const auto root = MakeTempRoot();
+    Check(!root.empty(), "atomic-save fixture directory created");
+    if (root.empty()) return;
+    facelogin::CredentialStore store;
+    store.SetDataDir(root);
+    const auto password = facelogin::DpapiUtil::Protect(L"atomic-save-test");
+    Check(store.AddFace(L"atomic", L"", L"SID-ATOMIC", password, Basis(0)) && store.SaveDatabase(),
+          "atomic-save initial database persisted");
+    const auto original = ReadDatabaseBytes(root);
+    const auto main = root + L"\\data\\users.dat";
+    HANDLE locked = CreateFileW(main.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    Check(locked != INVALID_HANDLE_VALUE, "hold original database against replacement");
+    if (locked != INVALID_HANDLE_VALUE) {
+        Check(store.RenameFace(L"SID-ATOMIC", 1, L"changed"), "modify in-memory face label");
+        Check(!store.SaveDatabase() && ReadDatabaseBytes(root) == original,
+              "failed atomic replacement preserves original database bytes");
+        CloseHandle(locked);
+        Check(store.SaveDatabase(), "save succeeds after replacement lock released");
+    }
+    CleanupTempRoot(root);
+}
+
+void TestLegacyPasswordMigration() {
+    const auto root = MakeTempRoot();
+    Check(!root.empty(), "migration fixture directory created");
+    if (root.empty()) return;
+    std::wstring password = L"migration-test-password";
+    DATA_BLOB input{static_cast<DWORD>(password.size() * sizeof(wchar_t)),
+                    reinterpret_cast<BYTE*>(password.data())}, output{};
+    Check(CryptProtectData(&input, nullptr, nullptr, nullptr, nullptr,
+                          CRYPTPROTECT_LOCAL_MACHINE | CRYPTPROTECT_UI_FORBIDDEN, &output),
+          "legacy machine-scope fixture encrypted");
+    if (!output.pbData) { CleanupTempRoot(root); return; }
+    const std::vector<uint8_t> legacy(output.pbData, output.pbData + output.cbData);
+    LocalFree(output.pbData);
+    facelogin::CredentialStore writer;
+    writer.SetDataDir(root);
+    Check(writer.AddFace(L"migration", L"", L"SID-MIGRATION", legacy, Basis(0),
+                         L"left", nullptr, 30.0f, 0.0f) && writer.SaveDatabase(),
+          "migration fixture records saved");
+    const auto main = root + L"\\data\\users.dat";
+    {
+        std::fstream file(main, std::ios::binary | std::ios::in | std::ios::out);
+        file.seekp(sizeof(uint32_t));
+        const uint32_t version = 6;
+        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+    }
+    Check(CopyFileW(main.c_str(), (main + L".bak").c_str(), FALSE), "legacy backup created");
+    const auto original = ReadDatabaseBytes(root);
+    facelogin::CredentialStore reader;
+    reader.SetDataDir(root);
+    Check(!reader.LoadDatabase() && reader.GetUserCount() == 0,
+          "ordinary loads cannot activate legacy machine-scope credentials");
+    if (!facelogin::DpapiUtil::IsSystemContext()) {
+        Check(!reader.UpgradeLegacyPasswords() && ReadDatabaseBytes(root) == original,
+              "non-SYSTEM migration fails without modifying legacy records");
+        std::puts("SYSTEM migration integration: not run (requires SYSTEM test process)");
+    } else {
+        Check(reader.UpgradeLegacyPasswords() && reader.LoadDatabase(), "SYSTEM migrates V6 main and backup");
+        auto credential = reader.LoadCredentialForSid(L"SID-MIGRATION");
+        Check(credential && credential->password == password, "migration preserves the password");
+        if (credential) SecureZeroMemory(credential->password.data(), credential->password.size() * sizeof(wchar_t));
+        const auto& users = reader.GetUsers();
+        Check(users.size() == 1 && users[0].faces[0].nominalYaw == 30.0f &&
+              users[0].encryptedPassword != legacy, "migration preserves faces and replaces old ciphertext");
+        Check(CopyFileW((main + L".bak").c_str(), main.c_str(), FALSE) && reader.LoadDatabase(),
+              "backup is independently loadable as V7");
+        const auto upgraded = ReadDatabaseBytes(root);
+        Check(reader.UpgradeLegacyPasswords() && ReadDatabaseBytes(root) == upgraded,
+              "repeated migration leaves V7 ciphertext unchanged");
+        // An undecryptable legacy file must never be replaced by an empty/new database.
+        {
+            std::ofstream file(main, std::ios::binary | std::ios::trunc);
+            Write(file, kFileMagic); Write(file, uint32_t{6}); Write(file, uint32_t{1});
+            Write(file, facelogin::kRecognizerModelTag);
+            WriteValidV7Record(file, L"broken", L"SID-BROKEN");
+        }
+        const auto broken = ReadDatabaseBytes(root);
+        Check(!reader.UpgradeLegacyPasswords() && ReadDatabaseBytes(root) == broken,
+              "undecryptable legacy credential leaves original file intact");
+    }
+    SecureZeroMemory(password.data(), password.size() * sizeof(wchar_t));
+    CleanupTempRoot(root);
+}
+
 } // namespace
 
-int wmain() {
+int wmain(int argc, wchar_t** argv) {
+    // Synthetic cross-identity probe, never uses the installed database.
+    // Write under SYSTEM, copy to a normal user's readable directory, then
+    // run --reject-scope-probe as that user to verify the production identity boundary.
+    if (argc == 3 && std::wstring(argv[1]) == L"--write-scope-probe") {
+        if (!facelogin::DpapiUtil::IsSystemContext()) return 2;
+        auto encrypted = facelogin::DpapiUtil::Protect(L"synthetic-system-scope-probe");
+        if (encrypted.empty()) return 1;
+        auto plain = facelogin::DpapiUtil::Unprotect(encrypted);
+        const std::wstring expected = L"synthetic-system-scope-probe";
+        const bool valid = plain.size() == expected.size() * sizeof(wchar_t) &&
+            memcmp(plain.data(), expected.data(), plain.size()) == 0;
+        if (!plain.empty()) SecureZeroMemory(plain.data(), plain.size());
+        if (!valid) return 1;
+        std::ofstream file(argv[2], std::ios::binary | std::ios::trunc);
+        file.write(reinterpret_cast<const char*>(encrypted.data()), encrypted.size());
+        file.close();
+        return file ? 0 : 1;
+    }
+    if (argc == 3 && std::wstring(argv[1]) == L"--reject-scope-probe") {
+        if (facelogin::DpapiUtil::IsSystemContext()) return 2;
+        std::ifstream file(argv[2], std::ios::binary);
+        std::vector<uint8_t> encrypted((std::istreambuf_iterator<char>(file)), {});
+        if (encrypted.empty()) return 1;
+        auto plain = facelogin::DpapiUtil::Unprotect(encrypted);
+        const bool rejected = plain.empty();
+        if (!plain.empty()) SecureZeroMemory(plain.data(), plain.size());
+        std::puts(rejected ? "Cross-identity probe: decryption rejected" : "Cross-identity probe: FAILED");
+        return rejected ? 0 : 1;
+    }
+    if (argc != 1) return 2;
+    TestIdentityScopedProtection();
+    TestAtomicSaveFailure();
+    TestLegacyPasswordMigration();
     TestIdentityMatching();
     TestThresholds();
     TestPasswordBlobValidation();
     TestDeleteFace();
-    TestV6RoundTripAndReload();
+    TestV7RoundTripAndReload();
     TestUpdateTemplateFace();
-    TestV6NominalAnglesAndLegacyRead();
+    TestV7NominalAnglesAndLegacyRead();
     TestUnsupportedVersionsAreRejected();
     TestMalformedReloadIsTransactional();
     if (g_failures != 0) {

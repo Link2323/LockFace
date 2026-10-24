@@ -2,6 +2,7 @@
 #include "../common/ipc_protocol.h"
 #include "../common/logger.h"
 #include "../common/text_util.h"
+#include "../common/secure_clear.h"
 
 #include <utility>
 
@@ -44,7 +45,12 @@ static RequestAckOutcome RequestAckRoundTrip(HANDLE hPipe,
                                               const wchar_t* ackContext) {
     RequestAckOutcome outcome;
 
-    std::wstring message(request);
+    std::wstring message;
+    // Reserve the terminator before copying a secret: push_back must not
+    // reallocate and leave an uncleared password in the old allocation.
+    message.reserve(request.size() + 1);
+    SecureWStringGuard messageGuard(message);
+    message.append(request);
     message.push_back(L'\0');
     const DWORD expectedBytes =
         static_cast<DWORD>(message.size() * sizeof(wchar_t));
@@ -108,6 +114,79 @@ static RequestAckOutcome RequestAckRoundTrip(HANDLE hPipe,
     outcome.ok = true;
     outcome.response = std::move(response);
     return outcome;
+}
+
+// A password must never be sent to an unverified pipe-name squatter.
+// Match both the SCM service PID and its SYSTEM token before writing anything.
+static bool IsSystemServicePipe(HANDLE pipe) {
+    ULONG pid = 0;
+    if (!GetNamedPipeServerProcessId(pipe, &pid)) return false;
+    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!scm) return false;
+    SC_HANDLE service = OpenServiceW(scm, L"LockFaceService", SERVICE_QUERY_STATUS);
+    SERVICE_STATUS_PROCESS status{};
+    DWORD bytes = 0;
+    const bool matches = service && QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO,
+        reinterpret_cast<BYTE*>(&status), sizeof(status), &bytes) &&
+        status.dwCurrentState == SERVICE_RUNNING && status.dwProcessId == pid;
+    if (service) CloseServiceHandle(service);
+    CloseServiceHandle(scm);
+    if (!matches) return false;
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) return false;
+    HANDLE token = nullptr;
+    bool system = false;
+    if (OpenProcessToken(process, TOKEN_QUERY, &token)) {
+        BYTE user[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE]{};
+        DWORD size = 0;
+        system = GetTokenInformation(token, TokenUser, user, sizeof(user), &size) &&
+            IsWellKnownSid(reinterpret_cast<TOKEN_USER*>(user)->User.Sid, WinLocalSystemSid);
+        CloseHandle(token);
+    }
+    CloseHandle(process);
+    return system;
+}
+
+bool EnrollmentServiceClient::ProtectPassword(const std::wstring& password,
+                                             std::vector<uint8_t>& encrypted) const {
+    encrypted.clear();
+    if (password.empty() || password.size() > ipc::MAX_PASSWORD_CHARS ||
+        password.find(L'\0') != std::wstring::npos) return false;
+    HANDLE pipe = INVALID_HANDLE_VALUE;
+    for (unsigned attempt = 0; attempt < 5; ++attempt) {
+        pipe = CreateFileW(m_pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+                          nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
+                          nullptr);
+        if (pipe != INVALID_HANDLE_VALUE || GetLastError() != ERROR_PIPE_BUSY) break;
+        WaitNamedPipeW(m_pipeName.c_str(), 1000);
+    }
+    if (pipe == INVALID_HANDLE_VALUE) return false;
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    if (!IsSystemServicePipe(pipe) || !SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
+        CloseHandle(pipe);
+        FACELOGIN_ERROR(L"Password protection refused: unverified service endpoint");
+        return false;
+    }
+    std::wstring request(ipc::MSG_PROTECT_PASSWORD_PREFIX);
+    SecureWStringGuard guard(request);
+    request.append(password);
+    auto outcome = RequestAckRoundTrip(pipe, request, 5000, 25, L"password protection");
+    CloseHandle(pipe);
+    const std::wstring prefix(ipc::MSG_PROTECT_PASSWORD_OK_PREFIX);
+    if (!outcome.ok || outcome.response.compare(0, prefix.size(), prefix) != 0) return false;
+    const size_t digits = outcome.response.size() - prefix.size();
+    if (digits < 4 || digits > 8192 || digits % 2) return false;
+    auto hex = [](wchar_t c) -> int {
+        if (c >= L'0' && c <= L'9') return c - L'0';
+        if (c >= L'A' && c <= L'F') return c - L'A' + 10;
+        return -1;
+    };
+    for (size_t i = prefix.size(); i < outcome.response.size(); i += 2) {
+        const int hi = hex(outcome.response[i]), lo = hex(outcome.response[i + 1]);
+        if (hi < 0 || lo < 0) { encrypted.clear(); return false; }
+        encrypted.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    }
+    return true;
 }
 
 // Notify the LockFace service to reload the user database after a write and

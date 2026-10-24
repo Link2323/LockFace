@@ -54,6 +54,32 @@ PipeServer::~PipeServer() {
     }
 }
 
+bool PipeServer::IsClientPrivileged() const {
+    if (!m_connected || !ImpersonateNamedPipeClient(m_hPipe)) return false;
+    HANDLE clientToken = nullptr;
+    // Identification-level clients permit identity queries, not impersonated
+    // access checks. Open as the service, then check the explicit client token
+    // after restoring our identity. Never fall back to the process token.
+    const bool opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &clientToken) != FALSE;
+    if (!RevertToSelf()) {
+        FACELOGIN_ERROR(L"Failed to restore service identity after client authorization");
+        TerminateProcess(GetCurrentProcess(), ERROR_CANNOT_IMPERSONATE);
+        if (clientToken) CloseHandle(clientToken);
+        return false;
+    }
+    if (!opened) return false;
+    BYTE adminSid[SECURITY_MAX_SID_SIZE]{};
+    BYTE systemSid[SECURITY_MAX_SID_SIZE]{};
+    DWORD adminSize = sizeof(adminSid), systemSize = sizeof(systemSid);
+    BOOL admin = FALSE, system = FALSE;
+    const bool ok = CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, adminSid, &adminSize) &&
+        CreateWellKnownSid(WinLocalSystemSid, nullptr, systemSid, &systemSize) &&
+        CheckTokenMembership(clientToken, adminSid, &admin) &&
+        CheckTokenMembership(clientToken, systemSid, &system);
+    CloseHandle(clientToken);
+    return ok && (admin || system);
+}
+
 bool PipeServer::CreateSecurityDescriptor(PipeSecurity& out) {
     // Create a security descriptor that grants access to:
     // - SYSTEM (full control)

@@ -25,7 +25,7 @@
 
 - 在停止或移除现有服务前，先校验完整嵌入载荷；损坏载荷不能破坏可用安装。
 - 可执行文件写入前保护目标目录 ACL，启动 SYSTEM 服务前再次确认模型已落盘且校验通过。
-- 安装器拥有的程序数据目录限制为 SYSTEM 和 Administrators；`users.dat` 使用机器范围 DPAPI，文件 ACL 是阻止普通用户读取凭据密文的边界。
+- 安装器拥有的程序数据目录限制为 SYSTEM 和 Administrators；V7 `users.dat` 密码由 SYSTEM 服务使用用户作用域 DPAPI 保护；文件 ACL 继续保护账号、人脸特征和文件完整性。V6 主库和每日备份由新版服务启动时升级。
 - 服务更新前清理仍占用文件的旧服务、worker 和安装完成页控制台进程，避免覆盖失败。
 
 调整 `app.go` 顺序或 ACL 时，检查 `internal/com_test.go` 及安装器集成测试。安装目录默认也作为 `DataPath`；路径解析规则见 [`DEVELOPMENT.md`](../../DEVELOPMENT.md#sec-paths)。

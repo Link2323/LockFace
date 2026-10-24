@@ -88,7 +88,7 @@ static DWORD ReadUserCountFromDatabase() {
         return 0;  // No database → no users
     }
 
-    // V6 header: magic, version, count, SFace model tag (four uint32 values).
+    // V7 header: magic, version, count, SFace model tag (four uint32 values).
     uint32_t magic = 0, version = 0, count = 0, modelTag = 0;
     file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     file.read(reinterpret_cast<char*>(&version), sizeof(version));

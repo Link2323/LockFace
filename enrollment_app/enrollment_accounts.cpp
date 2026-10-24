@@ -1,5 +1,4 @@
 #include "enrollment_accounts.h"
-#include "../common/dpapi_util.h"
 #include "../common/logger.h"
 #include "../common/json_util.h"
 
@@ -110,10 +109,11 @@ bool EnrollmentAccounts::SaveTemplates(const std::vector<EnrollmentTemplate>& te
                 FACELOGIN_ERROR(L"Enrollment refused: a Windows account password is required");
                 return false;
             }
-            std::vector<uint8_t> protectedPassword = DpapiUtil::Protect(
-                reinterpret_cast<const uint8_t*>(password.c_str()),
-                static_cast<UINT>(password.size() * sizeof(wchar_t)));
-            if (protectedPassword.empty()) { FACELOGIN_ERROR(L"DPAPI encryption failed"); return false; }
+            std::vector<uint8_t> protectedPassword;
+            if (!m_serviceClient.ProtectPassword(password, protectedPassword)) {
+                FACELOGIN_ERROR(L"Service password protection failed");
+                return false;
+            }
             if (!m_store.AddFace(m_identity.username, m_identity.upn, m_identity.sid, protectedPassword, ef,
                                  groupLabel, &newFaceId,
                                  static_cast<float>(prepared.targetYaw), 0.0f)) {
@@ -248,10 +248,10 @@ bool EnrollmentAccounts::RefreshAccountIdentity(const std::wstring& password) {
         return false;
     }
 
-    // Re-encrypt with DPAPI (machine scope — matches first enrollment).
-    std::vector<uint8_t> protectedPassword = DpapiUtil::Protect(password);
-    if (protectedPassword.empty()) {
-        FACELOGIN_ERROR(L"RefreshAccountIdentity: DPAPI encryption failed");
+    // Only the SYSTEM service may create stored password ciphertext.
+    std::vector<uint8_t> protectedPassword;
+    if (!m_serviceClient.ProtectPassword(password, protectedPassword)) {
+        FACELOGIN_ERROR(L"RefreshAccountIdentity: service password protection failed");
         return false;
     }
 

@@ -56,7 +56,7 @@
 | `data_path.*` | 服务端安全路径解析 | 白名单只被 face_service 使用 |
 | `config_util.*` | `AppConfig` JSON + 注册表回退 | `CONFIG_RELOAD` 热加载 |
 | `logger.*` | 每进程文件日志 + 环形缓冲 | 打开失败会静默丢弃文件日志 |
-| `dpapi_util.*` | machine-scope DPAPI | 密文不可跨机恢复 |
+| `dpapi_util.*` | 当前身份作用域 DPAPI | 生产密码由 SYSTEM 服务加密；不抵抗 SYSTEM 或整盘离线攻击 |
 | `secure_clear.h` | 敏感内存清零 | 所有密码退出路径都要使用 |
 | `frame_image.h` | RGB 图像/裁剪/缩放 | 当前无 dlib |
 | `sha256_util.*` | 模型完整性校验 | 换模型要同步多处 hash |
@@ -69,7 +69,7 @@
 - 安装包载荷白名单（唯一事实源）：[`docs/BUILD.md`](docs/BUILD.md)
 - 命名管道线格式：[`docs/contracts/ipc.md`](docs/contracts/ipc.md)
 - 父服务/认证 worker 私有线格式：[`docs/contracts/auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md)
-- `users.dat` V6(SFace/SFC1 only，V4/V5 停用重录)：[`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)
+- `users.dat` V7（SYSTEM 身份保护；服务启动升级 V6 主库及备份，保留 SFace 人脸；V4/V5 停用重录）：[`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)
 
 <a id="sec-paths"></a>
 ## 路径与配置
@@ -98,6 +98,8 @@ ProgramData 不是默认生产位置。
 | 服务（EXE 位于开发目录） | DataPath → 空值时 ProgramData；候选必须在开发白名单 |
 
 改路径逻辑时必须同时检查三个组件和安装器注册表/ACL，不能只改 `common/data_path.cpp`。
+
+已知实现差异：`CredentialStore::GetDataDir()` 在调用方未设置目录时仍回退到旧 `%ProgramData%\FaceLogin`；当前服务和注册程序入口均显式设置 DataPath，因此生产入口不走此回退。本次凭据保护改动未调整该历史路径。
 
 配置字段事实源是 `common/config_util.h`;归一化逻辑在 `config_util.cpp`。认证阈值和实验依据只在服务模块与标定文档维护。
 

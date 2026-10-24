@@ -7,6 +7,7 @@
 #include "../common/config_util.h"
 #include "../common/data_path.h"
 #include "../common/secure_clear.h"
+#include "../common/dpapi_util.h"
 #include "../common/text_util.h"
 #include "../common/json_util.h"
 #include "../common/embedding_math.h"
@@ -346,7 +347,7 @@ bool FaceService::Initialize() {
 
     m_store = std::make_unique<CredentialStore>();
     m_store->SetDataDir(m_dataDir);
-    if (!m_store->LoadDatabase()) {
+    if (!m_store->UpgradeLegacyPasswords() || !m_store->LoadDatabase()) {
         FACELOGIN_ERROR(L"Failed to load credential database");
         return false;
     }
@@ -454,14 +455,39 @@ void FaceService::Run() {
         }
 
         std::wstring request;
+        SecureWStringGuard requestGuard(request);
         if (!m_pipeServer->ReadMessage(request, 30000)) {
             m_pipeServer->Disconnect();
             continue;
         }
 
-        FACELOGIN_INFO(L"Received request: %s", request.c_str());
+        // Requests can contain a plaintext enrollment password. Never log payloads.
+        FACELOGIN_DEBUG(L"Received pipe request");
 
-        if (request == ipc::MSG_RELOAD_DB) {
+        const std::wstring protectPrefix(ipc::MSG_PROTECT_PASSWORD_PREFIX);
+        if (request.compare(0, protectPrefix.size(), protectPrefix) == 0) {
+            std::wstring response(ipc::MSG_PROTECT_PASSWORD_ERROR);
+            const size_t chars = request.size() - protectPrefix.size();
+            if (m_pipeServer->IsClientPrivileged() && DpapiUtil::IsSystemContext() &&
+                chars > 0 && chars <= ipc::MAX_PASSWORD_CHARS &&
+                request.find(L'\0') == std::wstring::npos) {
+                const auto encrypted = DpapiUtil::Protect(
+                    reinterpret_cast<const uint8_t*>(request.data() + protectPrefix.size()),
+                    chars * sizeof(wchar_t));
+                if (!encrypted.empty() && encrypted.size() <= 4096) {
+                    response = ipc::MSG_PROTECT_PASSWORD_OK_PREFIX;
+                    constexpr wchar_t hex[] = L"0123456789ABCDEF";
+                    for (uint8_t byte : encrypted) {
+                        response.push_back(hex[byte >> 4]);
+                        response.push_back(hex[byte & 15]);
+                    }
+                }
+            }
+            SecureClearWString(request);
+            SendControlResponse(response);
+            m_pipeServer->Disconnect();
+        }
+        else if (request == ipc::MSG_RELOAD_DB) {
             // Honor LoadDatabase()'s return value: a corrupt users.dat (bad
             // magic, length fields out of range, truncated read) returns false
             // and clears the in-memory user list. Reporting success here would
@@ -531,11 +557,12 @@ void FaceService::Run() {
             m_pipeServer->Disconnect();
         }
         else if (request == ipc::MSG_AUTH_REQUEST) {
+            FACELOGIN_INFO(L"Received request: AUTH_REQUEST");
             ProcessAuthRequest();
             m_pipeServer->Disconnect();
         }
         else {
-            FACELOGIN_WARN(L"Unknown request: %s", request.c_str());
+            FACELOGIN_WARN(L"Unknown pipe request");
             m_pipeServer->Disconnect();
         }
     }

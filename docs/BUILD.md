@@ -66,6 +66,12 @@ cmake --build build --config Release --target EnrollmentSupportTest IpcProtocolT
 
 `EnrollmentSupportTest` 使用独立命名管道和自动清理的临时日志目录，覆盖服务请求/ACK、拒绝与断开响应，以及日志编码、截尾和正在写入的日志清空。
 
+凭据保护回归：`CredentialStoreTest` 验证当前身份 DPAPI 往返、其他身份拒绝和未升级 V6 拒绝；SYSTEM 专用迁移用例在普通用户进程中明确跳过。`EnrollmentSupportTest` 验证假服务管道在端点身份验证失败时收不到任何密码字节。
+
+`EnrollmentSupportTest` 还编译真实 `PipeServer`，验证 Identification/Impersonation 客户端的启用管理员组授权、普通/deny-only 令牌和匿名客户端拒绝，以及每次检查后恢复服务线程身份。需分别在未提升权限和提升后的管理员进程中运行；仅普通用户用例无法发现管理员也被错误拒绝的回归。
+
+发布 V7 前仍需在 SYSTEM 身份下运行 `CredentialStoreTest.exe`，覆盖 V6 主库/备份迁移、幂等和损坏密文不覆盖原文件；再完成跨账号验证：SYSTEM 运行 `CredentialStoreTest.exe --write-scope-probe <绝对路径>` 生成仅含合成测试数据的密文，将文件复制到普通账号可读目录，该账号运行 `CredentialStoreTest.exe --reject-scope-probe <绝对路径>` 必须成功报告解密被拒绝。完成后删除探针文件。此项及真实 GUI 注册、密码更新、重启后锁屏登录不能由同账号单元测试替代。
+
 ## 安装包构建
 
 ### 推荐：一键构建
