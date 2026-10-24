@@ -194,7 +194,7 @@ STDMETHODIMP LockFaceProvider::SetUsageScenario(
     if (!m_pCredential) {
         return E_OUTOFMEMORY;
     }
-    m_pCredential->Initialize(this);
+    m_pCredential->Initialize(this, cpus);
 
     return S_OK;
 }

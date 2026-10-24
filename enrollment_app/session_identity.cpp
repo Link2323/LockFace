@@ -1,5 +1,6 @@
 #include "session_identity.h"
 #include "../common/logger.h"
+#include "../common/account_identity.h"
 
 #include <windows.h>
 #include <sddl.h>
@@ -171,7 +172,7 @@ bool SidIsUserAccount(const std::wstring& sidString) {
     return ok && sidType == SidTypeUser;
 }
 
-// Unified entry point for ALL MSA/local decisions. Try the authoritative
+// Resolve a session UPN (AD and MSA). Try the authoritative
 // GetUserNameExW query first; on 1332/empty fall back to the token MSA group.
 std::wstring ResolveSessionUpn() {
     std::wstring upn = GetSessionUpn();
@@ -181,8 +182,8 @@ std::wstring ResolveSessionUpn() {
     return ResolveSessionMsaUpnFromToken();
 }
 
-// MSA test used everywhere: UPN non-empty and contains '@'.
-bool IsMsaUpn(const std::wstring& upn) {
+// Syntax check only; AD users also have UPNs.
+bool HasUpn(const std::wstring& upn) {
     return !upn.empty() && upn.find(L'@') != std::wstring::npos;
 }
 
@@ -200,10 +201,8 @@ SessionIdentity ReadSessionIdentity() {
         identity.username = username;
     }
 
-    // Get UPN (UserPrincipalName) — the ONLY trusted source of the current
-    // session's identity. GetUserNameExW(NameUserPrincipal) returns the email
-    // UPN for Microsoft accounts and fails with ERROR_NONE_MAPPED for local
-    // accounts, so identity.upn stays empty for local users.
+    // Get the session UPN. Both AD and Microsoft accounts may return one;
+    // classification below uses the SID authority rather than UPN syntax.
     //
     // NOTE: machine-wide registry fallbacks (IdentityCRL\StoredIdentities,
     // IdentityStore\LogonCache\Name2Sid) used to live here and adopted ANY
@@ -219,12 +218,6 @@ SessionIdentity ReadSessionIdentity() {
     // machine exhibits exactly that 1332 failure for the whole UPN family.
     identity.upn = ResolveSessionUpn();
 
-    // Determine account type: MSA accounts have a UPN containing '@'
-    identity.accountType = "local";
-    if (IsMsaUpn(identity.upn)) {
-        identity.accountType = "msa";
-    }
-
     // Get SID: the process token's user SID is the authoritative source. A
     // name-based lookup here is ambiguous when the computer name equals the
     // user name — it resolves the machine SID instead of the account SID
@@ -238,6 +231,21 @@ SessionIdentity ReadSessionIdentity() {
             identity.sid = LookupUserSidByName(identity.username);
         }
     }
+
+    std::wstring sam;
+    if (account_identity::ResolveUserSid(identity.sid, identity.domain, sam)) {
+        identity.username = sam;
+    }
+    wchar_t computer[MAX_COMPUTERNAME_LENGTH + 1]{};
+    DWORD chars = ARRAYSIZE(computer);
+    GetComputerNameW(computer, &chars);
+    const auto kind = account_identity::ClassifyAuthority(identity.domain, computer);
+    if (kind == account_identity::Kind::Domain) identity.accountType = "domain";
+    else if (kind == account_identity::Kind::AzureAd) identity.accountType = "azuread";
+    else if (kind == account_identity::Kind::MicrosoftAccount ||
+             (kind == account_identity::Kind::Local && HasUpn(identity.upn))) identity.accountType = "msa";
+    else if (kind == account_identity::Kind::Local) identity.accountType = "local";
+    else identity.accountType = "unknown";
 
     // Identity summary — referenced by the MSA-detection verification steps.
     // SID logs as RID tail only, matching the service binding lines.
@@ -286,13 +294,23 @@ std::wstring GetCurrentProcessUserSid() {
 
 bool ValidatePassword(const SessionIdentity& identity,
                       const std::wstring& password) {
-    // The MSA/local decision MUST come from the live session identity
-    // (ResolveSessionUpn), never from the stored record: a registry fallback
-    // used to pollute the stored UPN with another account's email
-    // (docs/todo.md bug1), which routed local users into the MSA path below
-    // and made the account refresh loop impossible to complete.
-    std::wstring sessionUpn = ResolveSessionUpn();
-    bool isMsa = IsMsaUpn(sessionUpn);
+    // Stored bindings may be stale: classify the live session.
+    const auto current = ReadSessionIdentity();
+    std::wstring sessionUpn = current.upn;
+    const bool isMsa = current.accountType == "msa";
+    if (current.accountType == "unknown") {
+        FACELOGIN_WARN(L"ValidatePassword: session authority could not be resolved");
+        return false;
+    }
+    if (current.accountType == "domain" || current.accountType == "azuread") {
+        HANDLE token = nullptr;
+        BOOL ok = LogonUserW(current.username.c_str(), current.domain.c_str(), password.c_str(),
+                            LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, &token);
+        if (ok && token) { CloseHandle(token); return true; }
+        const DWORD error = GetLastError();
+        FACELOGIN_WARN(L"ValidatePassword: domain logon failed (err=%lu)", error);
+        return false;
+    }
 
     if (isMsa) {
         // MSA: domain=NULL routes through CloudAP for an online validation of

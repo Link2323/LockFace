@@ -87,6 +87,8 @@ add_development_tool(tools/authentication_residency AuthenticationResidencyTest)
 add_development_tool(tools/exposure_warmup ExposureWarmupTest)
 add_development_tool(tools/face_gain_tune FaceGainTuneTest)
 add_development_tool(tools/enrollment_support EnrollmentSupportTest)
+add_development_tool(tools/credential_serialization CredentialSerializationTest)
+set_target_properties(CredentialDomainRoutingTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 # Hardware-free regression suite. Camera probes remain explicit manual targets.
 enable_testing()
@@ -94,7 +96,7 @@ set(FACELOGIN_AUTOMATED_TESTS
     AuthWorkerProtocolTest CredentialStoreTest TemplateLearnerTest
     ModelIntegrityTest IpcProtocolTest LivenessTimingTest AuthPipelineTest
     ExposureWarmupTest FaceGainTuneTest EnrollmentSupportTest
-    AuthenticationResidencyTest
+    AuthenticationResidencyTest CredentialSerializationTest CredentialDomainRoutingTest
 )
 foreach(test_target IN LISTS FACELOGIN_AUTOMATED_TESTS)
     add_test(NAME ${test_target} COMMAND $<TARGET_FILE:${test_target}>)

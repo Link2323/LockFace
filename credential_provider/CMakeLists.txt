@@ -3,6 +3,7 @@ add_library(LockFaceCredentialProvider SHARED
     LockFaceProvider.cpp
     LockFaceCredential.cpp
     pipe_client.cpp
+    native_logon.cpp
     resource.rc
     credential_provider.def
 )
@@ -25,6 +26,7 @@ facelogin_add_version_rc(LockFaceCredentialProvider VFT_DLL
 # absorb the common sources directly via target_sources, letting them compile
 # under this target's /MT setting.
 target_sources(LockFaceCredentialProvider PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/account_identity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/ipc_protocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/dpapi_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/logger.cpp

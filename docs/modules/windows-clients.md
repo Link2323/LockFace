@@ -25,12 +25,13 @@
 
 认证成功后：
 
-1. 解析 SID、UPN、域/用户名和密码。
-2. 通过 `LsaConnectUntrusted` / `LsaLookupAuthenticationPackage` 获取认证包。
-3. `CredPackAuthenticationBufferW` 打包交互式登录凭据。
-4. 本地账号使用 `Domain\Username`；MSA 优先使用 UPN。
-5. 返回 `KerbInteractiveLogon` 序列化结果。
-6. 所有密码字符串和消息缓冲区立即清零。
+1. 解析并保留 SID、UPN、域/用户名和密码；服务传输域是本机名，不是 AD 域。
+2. 用存储 SID 经 `LookupAccountSidW` 反查用户域和 SAM 用户名，只接受 `SidTypeUser`。域既非本机名也非 `MicrosoftAccount`/`AzureAD` 时判为 AD；UPN 含 `@` 不能作为 MSA 的充分条件。SID 查询失败时拒绝序列化，不退回 MSA 路径。
+3. AD 和无 UPN 的本地账户使用 Negotiate + `KERB_INTERACTIVE_UNLOCK_LOGON`，域/SAM 分字段写入、字符串使用相对偏移，密码先经 `CredProtectW` 保护。Provider 将使用场景传入 Credential：登录为 `KerbInteractiveLogon`，解锁为 `KerbWorkstationUnlockLogon`。
+4. MSA 和现有在线账户路径保留 MSV1_0 + `CredPackAuthenticationBufferW(flags=0)`，有 UPN 时仍使用纯 UPN。本地 SAM 关联 MSA（本地域 + UPN）沿用该路径。
+5. 缓存成功的序列化字节及认证包，以便 LogonUI 重复请求；原始密码在所有退出路径清零，缓存于失败、结果回报和销毁时清零。
+
+旧 AD 录入不需要迁移数据库或重录：SID 反查在提交时纠正域/SAM，不修改 `users.dat` 或 IPC 格式。
 
 ### COM 与注册
 
@@ -75,7 +76,8 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 1. `GetUserNameW` 获取 SAM 用户名。
 2. `GetUserNameExW(NameUserPrincipal)` 获取 UPN。
 3. UPN 不可用时，仅从当前进程令牌的已启用 MSA 身份组解析邮箱，不使用机器级 IdentityStore 缓存。
-4. `LookupAccountNameW` 优先按 UPN、再按 SAM 用户名获取身份快照中的 SID；人脸追加授权和账号记录修复另行读取当前进程令牌的用户 SID。
+4. 当前进程令牌的用户 SID 为身份主源；仅在令牌读取失败时才按 UPN/SAM 查询，并拒绝非用户 SID，避免机器名与用户名相同时误取机器 SID。
+5. `common/account_identity.*` 用该 SID 反查域/SAM；本机、AD、MicrosoftAccount、AzureAD 分别识别。AD UPN 保留供身份使用，不参与 MSA/local 自动修复和变化提示。身份域不明确时不执行密码校验或账户绑定刷新。
 
 检测 MSA ↔ local 变化时必须保留已有脸并正确更新/清除 UPN。人脸录入要求账户具有 Windows 或 MSA 密码。
 
@@ -97,7 +99,7 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 
 ### 密码与保存
 
-- `LogonUserW` 验证本地账号或 MSA UPN 密码。
+- `LogonUserW` 验证密码：本地账户使用本机 SAM；MSA 保留 UPN + 空域的交互式路径；AD 使用 SID 解析得到的域/SAM 和交互式登录。
 - 空密码账户不支持录入或人脸解锁。
 - 密码经 DPAPI machine scope 加密后写入 `users.dat`。
 - 保存数据库后通过 `RELOAD_DB` 通知服务，并等待 `RELOAD_OK` 后才向 UI 报告完成；管道忙时会有界重试。读到响应后发送 `CONTROL_ACK`，使服务无需阻塞式 flush 即可安全断开。禁止 fire-and-forget。

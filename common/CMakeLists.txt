@@ -1,4 +1,5 @@
 add_library(facelogin_common STATIC
+    account_identity.cpp
     ipc_protocol.cpp
     dpapi_util.cpp
     logger.cpp

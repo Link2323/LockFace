@@ -19,7 +19,7 @@ class LockFaceProvider;
 // The actual credential tile shown on the lock screen. Handles:
 //   1. Connecting to the face recognition service via named pipe
 //   2. Waiting for face authentication result
-//   3. Serializing credentials via CredPackAuthenticationBufferW
+//   3. Serializing native domain/local credentials or online credentials
 //   4. Auto-logon two-pass pattern
 //
 // State machine:
@@ -31,11 +31,14 @@ class LockFaceProvider;
 
 class LockFaceCredential : public ICredentialProviderCredential {
 public:
+#ifdef FACELOGIN_SERIALIZATION_TESTS
+    friend struct CredentialSerializationTestAccess;
+#endif
     LockFaceCredential();
     virtual ~LockFaceCredential();
 
     // Called by LockFaceProvider after creation
-    void Initialize(LockFaceProvider* pProvider);
+    void Initialize(LockFaceProvider* pProvider, CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario = CPUS_LOGON);
 
     // Provider-level advise/unadvise (called by LockFaceProvider::Advise/UnAdvise)
     void AdviseProvider(ICredentialProviderEvents* pEvents, UINT_PTR upAdviseContext);
@@ -147,6 +150,8 @@ private:
     std::unique_ptr<facelogin::PipeClient> m_pipeClient;
 
     // Received credentials (zeroed after serialization)
+    CREDENTIAL_PROVIDER_USAGE_SCENARIO m_usageScenario = CPUS_LOGON;
+    std::wstring m_sid;
     std::wstring m_upn;
     std::wstring m_domain;
     std::wstring m_username;

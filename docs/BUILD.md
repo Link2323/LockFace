@@ -40,12 +40,14 @@ cmake --build build --config Release --parallel
 cmake --build build --config Release --target check --parallel 1
 ```
 
-`check` 先构建再通过 CTest 运行 11 个自动化测试，失败返回非零。只重跑已构建测试可用 `ctest --test-dir build -C Release --output-on-failure -L automated`。相机探针、标定、GUI 与锁屏实测不纳入此目标；普通产品构建和安装器打包不会运行测试。
+`check` 先构建再通过 CTest 运行 13 个自动化测试，失败返回非零。只重跑已构建测试可用 `ctest --test-dir build -C Release --output-on-failure -L automated`。相机探针、标定、GUI 与锁屏实测不纳入此目标；普通产品构建和安装器打包不会运行测试。
 
 
 `AuthenticationResidencyTest` 直接运行生产驻留状态机，以确定性 worker 替身覆盖预载中解锁、使用期间解锁、重载版本确认及失败、重载中解锁、加载失败重试、截止时间、worker 提前退出、终态补建策略和停止期间引用释放。测试不创建真实子进程或打开相机，不能替代进程/Job 故障注入及 Session 0 验收。
 
 服务和注册程序通过静态库复用共享实现：`vision/` 提供 `facelogin_camera`（DirectShow）与 `facelogin_inference`（ONNX Runtime），`storage/` 提供 `facelogin_credential_store`。曝光状态文件读写由独立的 `facelogin_tune_state` 静态库提供，不依赖相机或推理。消费方链接目标即可获得头文件和传递依赖，不再把这些 `.cpp` 加入各自源码清单。相机诊断程序只链接相机库；`AuthPipelineTest` 保留确定性推理替身，不链接真实推理实现。Credential Provider 仅引用存储头文件中的定义，继续使用自己的静态 CRT 构建。
+
+凭据序列化可用 `CredentialSerializationTest` 和 `CredentialDomainRoutingTest` 两个目标验证。前者调用实际 Windows 凭据打包 API 并检查认证包、结构偏移、密码保护和登录/解锁消息类型；后者只替换 SID 查询，用固定域身份验证旧录入记录的真实域/SAM 覆盖和查询失败拒绝，以及重序列化缓存。它们不调用真实登录，不能替代域环境锁屏验收。
 
 注册端支持模块可独立验证，无需打开相机或启动已安装的服务：
 

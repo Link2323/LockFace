@@ -191,9 +191,8 @@ bool EnrollmentAccounts::RenameFace(int faceId, const std::wstring& label) {
 // Detect a stale account-type record (symmetric MSA ↔ local). We never trust
 // m_identity.upn/m_identity.accountType here — they are derived from the session at construction
 // and could be empty for local accounts; instead we re-query the CURRENT
-// session identity with session_identity::ResolveSessionUpn() (docs/todo.md bug1):
-//   UPN contains '@'  → current account is MSA
-//   empty (after fallback)  → current account is local
+// session identity with session_identity::ReadSessionIdentity() (docs/todo.md bug1):
+//   SID authority distinguishes domain accounts before MSA/local comparison.
 // Then compare against the stored record (matched by SID, which Windows keeps
 // across MSA↔local conversions):
 //   local + record UPN is an MSA email  → state 1 (MSA→local, clear UPN)
@@ -201,15 +200,18 @@ bool EnrollmentAccounts::RenameFace(int faceId, const std::wstring& label) {
 //   everything else                     → state 0 (no refresh needed)
 EnrollmentAccounts::AccountChange EnrollmentAccounts::ReadAccountChange() {
     AccountChange change;
-    change.currentUpn = session_identity::ResolveSessionUpn();
-    const bool sessionIsMsa = session_identity::IsMsaUpn(change.currentUpn);
+    const auto current = session_identity::ReadSessionIdentity();
+    // Domain UPNs are not MSA bindings.
+    if (current.accountType != "local" && current.accountType != "msa") return change;
+    change.currentUpn = current.upn;
+    const bool sessionIsMsa = current.accountType == "msa";
     if (!m_store.LoadDatabase()) return change;
     const auto tokenSid = session_identity::GetCurrentProcessUserSid();
     const auto idx = m_store.FindUserIndex(tokenSid, m_identity.upn, m_identity.username);
     if (idx >= m_store.GetUsers().size()) return change;
     const auto& record = m_store.GetUsers()[idx];
     change.faces = record.faces.size();
-    if (!sessionIsMsa && session_identity::IsMsaUpn(record.upn)) change.state = 1;
+    if (!sessionIsMsa && session_identity::HasUpn(record.upn)) change.state = 1;
     else if (sessionIsMsa && record.upn != change.currentUpn) change.state = 2;
     return change;
 }
@@ -239,7 +241,7 @@ bool EnrollmentAccounts::RefreshAccountIdentity(const std::wstring& password) {
     }
 
     // Validate the CURRENT password before touching the database.
-    // ValidatePassword routes by account type: MSA (UPN contains '@') goes
+    // ValidatePassword routes by live SID authority: MSA goes
     // through CloudAP online/cached validation, local uses LogonUserW(".").
     if (!session_identity::ValidatePassword(m_identity, password)) {
         FACELOGIN_WARN(L"RefreshAccountIdentity: password validation failed");
@@ -333,8 +335,9 @@ bool EnrollmentAccounts::ClearStaleAccountUpn() {
 bool EnrollmentAccounts::AutoRepairEmptyUpnOnStartup() {
     // Re-derive the current session's MSA identity (GetUserNameExW + token
     // fallback). Only proceed when we actually have an MSA email to write.
-    std::wstring curUpn = session_identity::ResolveSessionUpn();
-    if (!session_identity::IsMsaUpn(curUpn)) {
+    const auto current = session_identity::ReadSessionIdentity();
+    std::wstring curUpn = current.upn;
+    if (current.accountType != "msa") {
         // Local session (or detection inconclusive) — nothing to repair.
         return false;
     }

@@ -2,6 +2,8 @@
 #include "LockFaceProvider.h"
 #include "input_trigger_policy.h"
 #include "resource.h"
+#include "native_logon.h"
+#include "../common/account_identity.h"
 #include "../common/logger.h"
 #include "../common/ipc_protocol.h"
 #include "../common/secure_clear.h"
@@ -291,7 +293,8 @@ LockFaceCredential::~LockFaceCredential() {
     FACELOGIN_DEBUG(L"LockFaceCredential destroyed");
 }
 
-void LockFaceCredential::Initialize(LockFaceProvider* pProvider) {
+void LockFaceCredential::Initialize(LockFaceProvider* pProvider, CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario) {
+    m_usageScenario = scenario;
     m_pProvider = pProvider;
     FACELOGIN_DEBUG(L"LockFaceCredential initialized with provider");
 }
@@ -965,71 +968,60 @@ HRESULT LockFaceCredential::PackCredentials(
     // the credential's lifetime (security #9).
     facelogin::SecureWStringGuard pwdGuard(m_password);
 
-    // Auth package: MSV1_0 for LOGON/UNLOCK.
-    // (CredUI/PLAP never reach here — they're filtered in SetUsageScenario.)
+    using namespace facelogin::account_identity;
+    std::wstring domain = m_domain, username = m_username;
+    wchar_t computer[MAX_COMPUTERNAME_LENGTH + 1]{};
+    DWORD chars = ARRAYSIZE(computer);
+    if (!GetComputerNameW(computer, &chars)) return HRESULT_FROM_WIN32(GetLastError());
+    // Transport domain is the service's machine name, including for AD users.
+    // SID lookup also repairs the routing of previously enrolled AD records.
+    if (!m_sid.empty() && !ResolveUserSid(m_sid, domain, username)) {
+        FACELOGIN_ERROR(L"PackCred: stored user SID could not be resolved");
+        return HRESULT_FROM_WIN32(ERROR_NONE_MAPPED);
+    }
+    const Kind kind = ClassifyAuthority(domain, computer);
+    const bool online = kind == Kind::MicrosoftAccount || kind == Kind::AzureAd ||
+        (kind == Kind::Local && !m_upn.empty());
+    if (kind == Kind::Unknown) return E_INVALIDARG;
     ULONG ulAuthPackage = 0;
     HANDLE hLsa = nullptr;
-    NTSTATUS lsastatus = LsaConnectUntrusted(&hLsa);
-    if (lsastatus == 0 && hLsa) {
-        LSA_STRING pkgName;
-        char msvStr[] = "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0";
-        pkgName.Buffer = msvStr;
-        pkgName.Length = static_cast<USHORT>(strlen(msvStr));
-        pkgName.MaximumLength = pkgName.Length;
-        lsastatus = LsaLookupAuthenticationPackage(hLsa, &pkgName, &ulAuthPackage);
-        if (lsastatus != 0) {
-            FACELOGIN_ERROR(L"LsaLookupAuthenticationPackage MSV1_0 failed: 0x%08X", lsastatus);
-            ulAuthPackage = 0;
-        }
-        LsaDeregisterLogonProcess(hLsa);
-    } else {
-        FACELOGIN_ERROR(L"LsaConnectUntrusted failed: 0x%08X", lsastatus);
-    }
+    NTSTATUS status = LsaConnectUntrusted(&hLsa);
+    if (status != 0) return HRESULT_FROM_WIN32(LsaNtStatusToWinError(status));
+    if (!hLsa) return E_FAIL;
+    char nativePackage[] = "Negotiate";
+    char onlinePackage[] = "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0";
+    char* package = online ? onlinePackage : nativePackage;
+    LSA_STRING packageName{};
+    packageName.Buffer = package;
+    packageName.Length = static_cast<USHORT>(strlen(package));
+    packageName.MaximumLength = packageName.Length + 1;
+    status = LsaLookupAuthenticationPackage(hLsa, &packageName, &ulAuthPackage);
+    LsaDeregisterLogonProcess(hLsa);
+    if (status != 0) return HRESULT_FROM_WIN32(LsaNtStatusToWinError(status));
 
-    DWORD packFlags = 0;
     DWORD cbPackedCreds = 0;
-
-    PWSTR pwzPassword = const_cast<PWSTR>(m_password.c_str());
-
-    // Build the packed user name in the correct format.
-    // Local/domain: "DOMAIN\Username" (required by CredPackAuthenticationBuffer)
-    // MSA/AAD:      UPN "user@domain.com"
-    std::wstring packedUser;
-    if (!m_upn.empty() && m_upn.find(L'@') != std::wstring::npos) {
-        packedUser = m_upn;
+    BYTE* pPackedCreds = nullptr;
+    if (!online) {
+        HRESULT hr = facelogin::credential_provider::PackNativeLogon(
+            domain, username, m_password, m_usageScenario, &pPackedCreds, &cbPackedCreds);
+        if (FAILED(hr)) return hr;
     } else {
-        packedUser = m_domain + L"\\" + m_username;
-    }
-
-    if (!CredPackAuthenticationBufferW(
-            packFlags,
-            const_cast<LPWSTR>(packedUser.c_str()),
-            pwzPassword,
-            nullptr,
-            &cbPackedCreds)) {
-
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-            FACELOGIN_ERROR(L"CredPackAuthenticationBuffer size query failed: %lu",
-                           GetLastError());
-            return HRESULT_FROM_WIN32(GetLastError());
+        // Preserve the proven MSA path: plain UPN, flags=0 and MSV1_0.
+        std::wstring packedUser = m_upn.empty() ? domain + L"\\" + username : m_upn;
+        if (!CredPackAuthenticationBufferW(0, packedUser.data(), m_password.data(), nullptr, &cbPackedCreds)) {
+            const DWORD error = GetLastError();
+            if (error != ERROR_INSUFFICIENT_BUFFER) return error ? HRESULT_FROM_WIN32(error) : E_FAIL;
         }
-    }
-
-    // Allocate buffer and pack
-    BYTE* pPackedCreds = static_cast<BYTE*>(CoTaskMemAlloc(cbPackedCreds));
-    if (!pPackedCreds) {
-        return E_OUTOFMEMORY;
-    }
-
-    if (!CredPackAuthenticationBufferW(
-            packFlags,
-            const_cast<LPWSTR>(packedUser.c_str()),
-            pwzPassword,
-            pPackedCreds,
-            &cbPackedCreds)) {
-        FACELOGIN_ERROR(L"CredPackAuthenticationBuffer failed: %lu", GetLastError());
-        CoTaskMemFree(pPackedCreds);
-        return HRESULT_FROM_WIN32(GetLastError());
+        if (!cbPackedCreds) return E_FAIL;
+        pPackedCreds = static_cast<BYTE*>(CoTaskMemAlloc(cbPackedCreds));
+        if (!pPackedCreds) return E_OUTOFMEMORY;
+        const DWORD allocatedBytes = cbPackedCreds;
+        if (!CredPackAuthenticationBufferW(0, packedUser.data(), m_password.data(), pPackedCreds, &cbPackedCreds)) {
+            const DWORD error = GetLastError();
+            SecureZeroMemory(pPackedCreds, allocatedBytes);
+            CoTaskMemFree(pPackedCreds);
+            return error ? HRESULT_FROM_WIN32(error) : E_FAIL;
+        }
     }
 
     // Retain a private copy so GetSerialization can re-serve the credential
@@ -1041,6 +1033,7 @@ HRESULT LockFaceCredential::PackCredentials(
     ClearPackedCredentials();
     m_packedCreds = new (std::nothrow) BYTE[cbPackedCreds];
     if (!m_packedCreds) {
+        SecureZeroMemory(pPackedCreds, cbPackedCreds);
         CoTaskMemFree(pPackedCreds);
         return E_OUTOFMEMORY;
     }
@@ -1054,7 +1047,7 @@ HRESULT LockFaceCredential::PackCredentials(
     pcpcs->clsidCredentialProvider = CLSID_LockFaceProvider;
 
     FACELOGIN_INFO(L"PackCred SUCCESS: user=%s\\%s (UPN=%s), cbSerialization=%lu, ulAuthPackage=%lu",
-                  m_domain.c_str(), m_username.c_str(),
+                  domain.c_str(), username.c_str(),
                   m_upn.empty() ? L"<none>" : m_upn.c_str(),
                   cbPackedCreds, ulAuthPackage);
     return S_OK;
@@ -1152,6 +1145,7 @@ void LockFaceCredential::OnPipeResponse(bool success, const std::wstring& messag
                           result.domain.c_str(), result.username.c_str(),
                           result.upn.c_str());
             // NOTE: the password itself is never logged — only metadata.
+            m_sid = result.sid;
             m_upn = result.upn;
             m_domain = result.domain;
             m_username = result.username;

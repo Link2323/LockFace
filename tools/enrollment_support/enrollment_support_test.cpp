@@ -1,6 +1,7 @@
 #include "log_viewer.h"
 #include "service_client.h"
 #include "session_identity.h"
+#include "../../common/account_identity.h"
 #include "enrollment_accounts.h"
 #include "ipc_protocol.h"
 
@@ -400,6 +401,13 @@ int main() {
     TestLogs(dataDir);
     TestServiceClient();
     TestSessionIdentity();
+    {
+        std::wstring domain, sam;
+        const auto sid = facelogin::session_identity::GetCurrentProcessUserSid();
+        Check(facelogin::account_identity::ResolveUserSid(sid, domain, sam) && !domain.empty() && !sam.empty(), "real token SID resolves to user authority and SAM");
+        Check(!facelogin::account_identity::ResolveUserSid(L"invalid-sid", domain, sam) && domain.empty() && sam.empty(), "invalid SID fails and clears outputs");
+        Check(!facelogin::account_identity::ResolveUserSid(L"S-1-5-32-544", domain, sam), "group SID rejected as login identity");
+    }
     TestMachineSidRepair(dataDir / L"sidrepair");
     // Only remove the unique directory successfully created by this test.
     fs::remove_all(dataDir, error);
