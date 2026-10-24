@@ -17,6 +17,13 @@ libprotobuf.dll
 libprotobuf-lite.dll
 re2.dll
 abseil_dll.dll
+# App-local VC runtime for the /MD binaries (service, console, enrollment):
+# msvcp140/vcruntime140/vcruntime140_1 load from the install dir, so target
+# machines need no VC++ redist (upstream #22). The packaging script copies
+# them from the build toolset's VC redist. Credential Provider is /MT.
+msvcp140.dll
+vcruntime140.dll
+vcruntime140_1.dll
 LICENSE.txt
 THIRD_PARTY_NOTICES.txt
 MODEL_LICENSES.txt

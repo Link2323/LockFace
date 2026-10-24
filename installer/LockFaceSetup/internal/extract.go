@@ -200,7 +200,8 @@ func ExtractResource(embeddedPath, destPath string) error {
 //	  LockFaceService.exe
 //	  LockFaceCredentialProvider.dll
 //	  LockFaceConsole.exe
-//	  five runtime DLLs
+//	  five vcpkg runtime DLLs
+//	  three app-local CRT DLLs (msvcp140/vcruntime140/vcruntime140_1)
 //	  LICENSE.txt, THIRD_PARTY_NOTICES.txt, MODEL_LICENSES.txt, PRIVACY.txt
 //	  models/
 //	    four production *.onnx models

@@ -34,7 +34,7 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立，同月完成内�
 ## 构建、资源与模型
 
 - 构建、依赖和打包流程以 [`docs/BUILD.md`](docs/BUILD.md) 为准。优先使用 `scripts/build_installer.ps1`；版本同步使用 `scripts/bump_version.ps1`。
-- `installer/LockFaceSetup/resources/` 中的二进制和模型按文件类型被 Git 忽略。打包脚本按白名单复制并清理资源；手工打包前按 `docs/BUILD.md` 核对。安装包需要的 5 个运行时 DLL 来自 `build/face_service/Release/`；Credential Provider 使用静态 CRT，不依赖这些 DLL。
+- `installer/LockFaceSetup/resources/` 中的二进制和模型按文件类型被 Git 忽略。打包脚本按白名单复制并清理资源；手工打包前按 `docs/BUILD.md` 核对。安装包需要的 5 个 vcpkg 运行时 DLL 来自 `build/face_service/Release/`，另有 3 个 app-local CRT DLL（`msvcp140/vcruntime140/vcruntime140_1`）由打包脚本从构建工具集的 VC redist 复制；Credential Provider 使用静态 CRT，不依赖这些 DLL。
 - 完整安装器嵌入由 `resources/` 生成的 `payload.zip`，打包前按白名单清除意外残留；slim 卸载器不嵌入载荷。`tools/` 中的离线工具不属于安装载荷。
 - 注册页面修改 `enrollment_app/index.html.in`、`styles.css` 和 `enrollment_app/js/` 下的 JS 模块（`enrollment_app/CMakeLists.txt` 的 `ENROLLMENT_JS_SOURCES` 即拼接与依赖顺序，新增模块只需加进该列表，`tools/enrollment_ui/capture_flow_test.cjs` 运行时解析它）；CMake 合成并嵌入页面，不编辑 `build/enrollment_app/index.html`。构建与验证见 [`docs/BUILD.md`](docs/BUILD.md)。
 - 不编辑 `installer/LockFaceSetup/frontend/wailsjs/` 下的生成绑定；通过 Wails 命令重新生成。

@@ -83,7 +83,7 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 1. 显式串行构建产品目标：`cmake --build build --config Release --target LockFaceService LockFaceCredentialProvider LockFaceConsole --parallel 1`。
 2. 运行 `npm --prefix installer/LockFaceSetup/frontend ci`，再运行 `scripts/update_third_party_notices.ps1`。
 3. 在 `installer/LockFaceSetup/` 构建 slim 卸载器：`wails build -tags slim -platform windows/amd64 -ldflags "-s -w"`；将生成的 EXE 复制到 `resources/uninstall.exe`。
-4. 将 Service、Credential Provider 和恰好五个运行时 DLL 复制到 `resources/`。Console 与四个模型已由 CMake 放入该目录。
+4. 将 Service、Credential Provider 和恰好五个 vcpkg 运行时 DLL 复制到 `resources/`；再从构建工具集的 VC redist（`VC\Redist\MSVC\<版本>\x64\Microsoft.VC*.CRT\`）复制 `msvcp140.dll`、`vcruntime140.dll`、`vcruntime140_1.dll` 三个 app-local CRT DLL（一键脚本自动定位）。Console 与四个模型已由 CMake 放入该目录。
 5. 按下方白名单清理并核对 `resources/`，运行 `scripts/make_payload.ps1`。
 6. 运行 `wails build -platform windows/amd64 -ldflags "-s -w"`。
 
@@ -93,11 +93,11 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 
 ### 资源白名单
 
-载荷白名单的单一事实源是 [`installer/LockFaceSetup/internal/payload_manifest.txt`](../installer/LockFaceSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个运行时 DLL、四份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
+载荷白名单的单一事实源是 [`installer/LockFaceSetup/internal/payload_manifest.txt`](../installer/LockFaceSetup/internal/payload_manifest.txt)：根目录的产品 EXE、五个 vcpkg 运行时 DLL、三个 app-local CRT DLL（`msvcp140/vcruntime140/vcruntime140_1`，满足服务/Console 的 `/MD` 动态 CRT，目标机无需安装 VC++ 运行库）、四份法律文件与 `models/` 下的正式 ONNX 模型各占一行。`scripts/build_installer.ps1` 按它暂存与清理 `resources/`；Go 安装器将其嵌入为静态卸载清单（slim 卸载器同样嵌入该 manifest）；`payload_zip_test.go` 校验 `payload.zip` 内容与它逐项一致，`payload_manifest_test.go` 钉住它与 `requiredModels` 的模型集合一致。
 
 新增载荷文件只需在 manifest 加一行。新增模型还需在 `internal/extract.go` 的 `requiredModels` 补大小与 SHA-256（安装期安全校验需要哈希，故为独立清单，测试保证两表不漂移）。离线工具、旧 DLL、临时文件和其他残留都不得打包。
 
-服务和 Console 依赖的运行时 DLL 闭包就是清单中的五个文件；Credential Provider 使用静态 CRT，不需要额外运行时 DLL。DLL 清单或依赖变化时重新检查依赖闭包。
+服务和 Console 依赖的 vcpkg 运行时 DLL 闭包是清单中的五个文件；三个 app-local CRT DLL 覆盖其 `/MD` 动态 CRT 导入（用 `dumpbin /dependents` 核对，导入集就是这三个）。Credential Provider 使用静态 CRT，不需要额外运行时 DLL。DLL 清单或依赖变化时重新检查依赖闭包。
 
 ### 许可文件
 

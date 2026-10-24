@@ -4,7 +4,8 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_installer.ps1
 #
 #   1. incremental CMake build of the three product targets (serial)
-#   2. stage product binaries + the 5 runtime DLLs + slim uninstaller
+#   2. stage product binaries + the 5 vcpkg runtime DLLs + 3 app-local CRT
+#      DLLs + slim uninstaller
 #   3. prune resources/ against the payload allow-list (dev leftovers such as
 #      PadCalibration.exe or build-tree noise DLLs cannot ship silently)
 #   4. payload.zip via make_payload.ps1 (absolute paths, as it requires)
@@ -125,6 +126,25 @@ Step "2/5 stage binaries + slim uninstaller" {
     # Provider DLL builds to credential_provider/Release; everything else to
     # face_service/Release — do NOT glob *.dll (that dir also holds build-tree
     # noise outside the runtime closure).
+    # App-local CRT (upstream #22): every /MD binary in the payload (service,
+    # console, enrollment) imports msvcp140/vcruntime140/vcruntime140_1. Copy
+    # them from the VC redist of the newest installed VS toolset so target
+    # machines need no system redist. Credential Provider is /MT, needs none.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
+    $redistRoots = @()
+    if (Test-Path $vswhere) {
+        $redistRoots += @(& $vswhere -all -products '*' -property installationPath |
+                          ForEach-Object { Join-Path $_ "VC/Redist/MSVC" })
+    }
+    $crtSourceDir = @($redistRoots | ForEach-Object {
+        # VC/Redist/MSVC also holds non-versioned entries (e.g. toolset alias
+        # "v145"); only dotted version directories carry the CRT payloads.
+        Get-ChildItem -LiteralPath $_ -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d+(\.\d+){2,}$' }
+    }) | Sort-Object { [version]$_.Name } -Descending |
+       ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName "x64") -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue } |
+       Select-Object -First 1
+    if (-not $crtSourceDir) { throw "VC redist CRT directory not found (vswhere: $vswhere)" }
     $copyPlan = @(
         @{ Src = Join-Path $faceRel "LockFaceService.exe"; Dst = "LockFaceService.exe" },
         @{ Src = Join-Path $cpRel "LockFaceCredentialProvider.dll"; Dst = "LockFaceCredentialProvider.dll" },
@@ -132,7 +152,10 @@ Step "2/5 stage binaries + slim uninstaller" {
         @{ Src = Join-Path $faceRel "libprotobuf.dll"; Dst = "libprotobuf.dll" },
         @{ Src = Join-Path $faceRel "libprotobuf-lite.dll"; Dst = "libprotobuf-lite.dll" },
         @{ Src = Join-Path $faceRel "re2.dll"; Dst = "re2.dll" },
-        @{ Src = Join-Path $faceRel "abseil_dll.dll"; Dst = "abseil_dll.dll" }
+        @{ Src = Join-Path $faceRel "abseil_dll.dll"; Dst = "abseil_dll.dll" },
+        @{ Src = Join-Path $crtSourceDir.FullName "msvcp140.dll"; Dst = "msvcp140.dll" },
+        @{ Src = Join-Path $crtSourceDir.FullName "vcruntime140.dll"; Dst = "vcruntime140.dll" },
+        @{ Src = Join-Path $crtSourceDir.FullName "vcruntime140_1.dll"; Dst = "vcruntime140_1.dll" }
     )
     foreach ($c in $copyPlan) {
         if (-not (Test-Path $c.Src)) { throw "missing build output: $($c.Src)" }
