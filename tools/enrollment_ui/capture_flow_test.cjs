@@ -221,15 +221,48 @@ test('the consent pill opens a status dialog with view and withdraw actions', ()
   assert.ok(!p.element('modal-overlay').classList.contains('active'));
 });
 
-test('the status dialog hides the withdraw action without a current record', () => {
+test('the status dialog offers consent without a current record', () => {
   const p = page({ host: {
     GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.0', record: null })
   } });
   p.app.consent.statusMenu();
   assert.equal(p.element('modal-message').textContent,
                '尚未同意隐私说明；摄像头和采集启动前会先征求同意。');
-  assert.equal(p.element('modal-mid').style.display, 'none');
+  assert.equal(p.element('modal-mid').textContent, '重新同意');
+  assert.notEqual(p.element('modal-mid').style.display, 'none');
 });
+
+for (const action of ['decline', 'withdraw']) {
+  test(`${action} allows consent to be reopened and preview resumed from the status button`, () => {
+    let starts = 0, accepts = 0;
+    const rec = { noticeVersion: '1.0', record: null };
+    const p = page({ grantConsent: false, host: {
+      GetPrivacyConsent: () => JSON.stringify(rec),
+      AcceptPrivacyConsent() { accepts++; rec.record = { version: '1.0' }; },
+      WithdrawPrivacyConsent() { rec.record = null; },
+      StartPreview() { starts++; return true; },
+      StopPreview() {}
+    } });
+    if (action === 'withdraw') {
+      p.element('consent-agree').checked = true;
+      p.context.onConsentAccept();
+    }
+    p.app.consent[action]();
+    const before = starts;
+    p.context.onConsentStatus();
+    assert.equal(p.element('modal-mid').textContent, '重新同意');
+    p.context.onModalMid();
+    assert.ok(p.element('consent-overlay').classList.contains('active'));
+    assert.equal(p.element('consent-agree').checked, false);
+    p.context.onConsentAccept();
+    assert.equal(starts, before);
+    p.element('consent-agree').checked = true;
+    p.context.onConsentAccept();
+    assert.equal(starts, before + 1);
+    assert.equal(accepts, action === 'withdraw' ? 2 : 1);
+    assert.equal(p.app.captureCtl.isActive(), false);
+  });
+}
 
 test('page cancellation and retry cannot start an old sequence angle', () => {
   const started = [];

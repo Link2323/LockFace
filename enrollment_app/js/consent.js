@@ -153,9 +153,8 @@ function createConsentGate(deps) {
     }
   }
 
-  // The pill's click action: a status dialog with 查看隐私说明 (primary) and,
-  // only while the current notice version is accepted, 撤回同意 (secondary).
-  // hide-then-callback in the modal engine lets 查看开 the license viewer.
+  // The status dialog always offers the notice viewer, plus withdrawal for
+  // a current record or a way to reopen the consent gate otherwise.
   function statusMenu() {
     var s = readState();
     var opts = {
@@ -176,6 +175,12 @@ function createConsentGate(deps) {
       opts.message = '尚未同意隐私说明；摄像头和采集启动前会先征求同意。';
     } else {
       opts.message = '同意记录暂时读取不到；下次启动会重新征求同意。';
+    }
+    if (!s.current) {
+      opts.midText = '重新同意';
+      opts.onMid = function() {
+        show(function() { previewCtl.restartPreview(); });
+      };
     }
     ui.showAppModal(opts);
   }

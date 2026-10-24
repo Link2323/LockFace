@@ -75,7 +75,7 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 
 ### 隐私同意门
 
-摄像头启动前每个 Windows 用户需通过 `js/consent.js` 的同意门（首次仍是明示勾选）。接受记录按用户保存在 `HKCU\SOFTWARE\LockFace`（`ConsentVersion` + `ConsentTime`，与安装器的 HKLM 机器级记录同名但相互独立，不含个人数据）。版本号由 `WebviewHost.cpp` 运行时从 exe 旁 `PRIVACY.txt` 的 `版本：x.y` 行解析：记录版本与当前文书一致时启动静默放行；文书改版、无记录或撤回后重新弹门。录入页采集按钮上方选项行（多角度录入同一行）右侧的同意状态胶囊实时反映记录状态，点击弹出"查看隐私说明 / 撤回同意"；撤回同时吊销本次会话的同意并停相机。卸载时安装器清理各用户 hive 下的该键（见 [installer.md](installer.md) 卸载语义）。
+摄像头启动前每个 Windows 用户需通过 `js/consent.js` 的同意门（首次仍是明示勾选）。接受记录按用户保存在 `HKCU\SOFTWARE\LockFace`（`ConsentVersion` + `ConsentTime`，与安装器的 HKLM 机器级记录同名但相互独立，不含个人数据）。版本号由 `WebviewHost.cpp` 运行时从 exe 旁 `PRIVACY.txt` 的 `版本：x.y` 行解析：记录版本与当前文书一致时启动静默放行；文书改版、无记录或撤回后重新弹门。录入页采集按钮上方选项行（多角度录入同一行）右侧的同意状态胶囊实时反映记录状态，点击可查看隐私说明：当前已同意时提供“撤回同意”，否则提供“重新同意”。重新同意会打开勾选确认弹窗，确认后恢复预览，不自动开始采集；撤回同时吊销本次会话的同意并停相机。卸载时安装器清理各用户 hive 下的该键（见 [installer.md](installer.md) 卸载语义）。
 
 ### 账号身份
 
