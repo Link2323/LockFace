@@ -54,9 +54,10 @@ struct AuthPipelineCallbacks {
     std::function<void(const std::wstring&)> reportStatus;
 
     // Called for each identity-binding frame (counted frames 1/3/5 in the
-    // default plan; every counted frame in fast-unlock mode). The callback
-    // must preserve the first-identity / same-identity invariant and must
-    // not release a password. Retry means the current frame is not counted for PAD.
+    // strict 5-frame plan; every counted frame in the 3- and 2-frame tiers).
+    // The callback must preserve the first-identity / same-identity
+    // invariant and must not release a password. Retry means the current
+    // frame is not counted for PAD.
     // preNorm is the embedding's L2 norm before normalization (quality
     // signal; the embedding itself arrives unit-length so the raw norm is
     // unrecoverable downstream). yawDeg/pitchDeg are the weak-perspective
@@ -74,10 +75,11 @@ struct AuthPipelineConfig {
     float antiSpoofThreshold = 0.28f;
     int authTimeoutSeconds = ipc::AUTH_TIMEOUT_SECONDS;
     int cameraRotation = 0;
-    // Fast unlock: 3 counted frames, every frame binds identity (the
-    // default 5-frame plan binds counted frames 1/3/5). Security
-    // trade-off documented on AppConfig::fast_unlock.
-    bool fastUnlock = false;
+    // Unlock tier (AppConfig unlock_frames): counted PAD frames. 3 standard
+    // — the default, every counted frame binds identity; 2 ultra-fast —
+    // every frame binds; 5 strict — binds counted frames 1/3/5. Security
+    // trade-off documented on AppConfig::unlock_frames.
+    int unlockFrames = 3;
     // Absolute path of the persisted last-good exposure/gain combo
     // (camera_tune.state in the data dir, face_gain_tune.h). Empty disables
     // persistence and replay.

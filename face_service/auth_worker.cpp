@@ -502,7 +502,7 @@ int RunAuthenticationWorker(HANDLE parentToWorker, HANDLE workerToParent) {
                           AuthPipelineConfig{config.antiSpoofThreshold,
                                              config.authTimeoutSeconds,
                                              config.cameraRotation,
-                                             config.fastUnlock,
+                                             config.unlockFrames,
                                              dataDir + L"\\camera_tune.state",
                                              authStart + std::chrono::seconds(config.authTimeoutSeconds)},
                           std::move(callbacks));

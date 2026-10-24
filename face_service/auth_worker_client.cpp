@@ -267,7 +267,11 @@ AuthWorkerResult AuthWorkerClient::Authenticate(AuthWorkerCallbacks callbacks,
         return result;
     }
 
-    auth_worker::AuthExchangeValidator exchange(requestId);
+    // Probe count follows the tier this worker was spawned with (2 for the
+    // ultra-fast tier, 3 otherwise) — it must match what the worker's
+    // pipeline will emit, or valid probes would fail as protocol anomalies.
+    auth_worker::AuthExchangeValidator exchange(
+        requestId, static_cast<unsigned int>(BindingCountRequired(m_config.unlockFrames)));
     while (std::chrono::steady_clock::now() < deadline) {
         if (callbacks.isCancelled()) {
             result.outcome = AuthOutcome::Cancelled;

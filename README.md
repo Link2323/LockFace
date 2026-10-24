@@ -111,7 +111,7 @@ flowchart TB
 | 进程通信 | 命名管道 DACL：仅 SYSTEM + Administrators，拒绝远程 |
 | 凭据存储 | DPAPI `CRYPTPROTECT_LOCAL_MACHINE` 机器范围加密 |
 | 内存保护 | 密码使用后 `SecureZeroMemory` 即时擦除 |
-| 活体检测 | MiniFASNetV2 + MiniFASNetV1SE 50/50 融合，固定 5/5 帧验证 |
+| 活体检测 | MiniFASNetV2 + MiniFASNetV1SE 50/50 融合，全部计帧 fail-closed；解锁档位 3 帧（默认）/ 5 帧（严格）/ 2 帧（实验性） |
 | 匹配安全 | 欧氏距离阈值 + 最佳/次佳匹配比双重校验 |
 | 模型完整性 | 4 个 ONNX 模型启动时 SHA-256 校验，篡改/损坏即 fail-closed（拒绝认证） |
 | 日志脱敏 | AUTH_SUCCESS 凭据载荷不再写入日志 |

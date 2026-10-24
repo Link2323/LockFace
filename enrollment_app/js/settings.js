@@ -19,7 +19,10 @@ function createSettingsModule(deps) {
       loadedConfig = cfg;
       document.getElementById('cfg-rotation').value = String(cfg.camera_rotation || 0);
       document.getElementById('cfg-learning').checked = (cfg.ema_learning !== false);
-      document.getElementById('cfg-fastunlock').checked = (cfg.fast_unlock === true);
+      // Unlock tier {5,3,2}; anything unexpected displays as the standard 3.
+      var unlockFrames = Number(cfg.unlock_frames || 3);
+      if (unlockFrames !== 5 && unlockFrames !== 2) unlockFrames = 3;
+      document.getElementById('cfg-unlockframes').value = String(unlockFrames);
 
       // Populate the camera dropdown from the enumerated devices.
       var camSel = document.getElementById('cfg-camera');
@@ -90,7 +93,7 @@ function createSettingsModule(deps) {
       camera_device: document.getElementById('cfg-camera').value,
       ema_learning: learning,
       failure_learning: learning,
-      fast_unlock: document.getElementById('cfg-fastunlock').checked,
+      unlock_frames: parseInt(document.getElementById('cfg-unlockframes').value) || 3,
       learning_distance_gate: parseFloat(document.getElementById('cfg-learn-gate').value)
     });
     // withBusy defers the synchronous COM call so the locked button and
@@ -119,7 +122,7 @@ function createSettingsModule(deps) {
     var camSel = document.getElementById('cfg-camera');
     if (camSel.querySelector('option[value=""]')) camSel.value = '';
     document.getElementById('cfg-learning').checked = false;
-    document.getElementById('cfg-fastunlock').checked = false;
+    document.getElementById('cfg-unlockframes').value = '3';
     document.getElementById('cfg-threshold').value = 1.00;
     document.getElementById('cfg-threshold-val').textContent = '1.00';
     document.getElementById('cfg-antispoof-threshold').value = 0.28;

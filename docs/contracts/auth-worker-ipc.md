@@ -1,6 +1,6 @@
 # 认证 worker 私有 IPC 契约
 
-当前协议版本为 **8**：只接受 128 维 SFace 嵌入。
+当前协议版本为 **9**：只接受 128 维 SFace 嵌入，`WorkerConfig` 携带三档解锁档位 `unlockFrames`。
 
 本文是 `LockFaceService.exe` 父服务与同一 EXE 的 `-auth-worker` 模式之间的线协议事实源。它不替代 Credential Provider 使用的公共命名管道；公共协议见 [`ipc.md`](ipc.md)。实现位于 `face_service/auth_worker_protocol.*`，父端状态机位于 `auth_worker_client.*`。
 
@@ -10,7 +10,7 @@
 - `CreateProcessW` 使用绝对 EXE 路径、完整引号、`CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT`。
 - `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` 只允许继承两只 worker 管道句柄。父进程先把子进程加入带 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job，再恢复主线程。
 - worker 必须以 LocalSystem 运行，并在取得有效继承句柄、完成 `HELLO → INIT → READY` 握手后才进入就绪态；任一条件不成立立即退出。
-- 通道只承载配置、状态文本、三条 128-D SFace embedding 和判定结果。用户名、SID、密码、DPAPI 密文、`users.dat` 记录及完整 `AUTH_SUCCESS` 永不进入 worker 通道。
+- 通道只承载配置、状态文本、2–3 条 128-D SFace embedding（按档位）和判定结果。用户名、SID、密码、DPAPI 密文、`users.dat` 记录及完整 `AUTH_SUCCESS` 永不进入 worker 通道。
 - worker 仍位于服务的 Session 0；该协议不授予它进入交互用户 Session 的能力。
 
 ## 固定头
@@ -20,7 +20,7 @@
 ```cpp
 struct MessageHeader {
     uint32_t magic;       // 0x4B574C46，即 "FLWK"
-    uint16_t version;     // 8
+    uint16_t version;     // 9
     uint16_t type;
     uint64_t requestId;
     uint32_t payloadSize;
@@ -50,7 +50,7 @@ struct MessageHeader {
 
 设计中的 `MATCH_DECISION` 在 v1 线上拆为 `MatchAccept/MatchRetry/MatchReject`，`AUTH_COMPLETE` 拆为 `AuthSucceeded/AuthFailed/AuthTimedOut`，使每个终态的合法 payload 可单独校验。`Cancel` 是父端停止、解锁、服务退出或客户端断开时的协议意图；父端同时终止 Job，因此不会等待被驱动或推理阻塞的 worker 自愿退出。
 
-生产认证共用 5 秒预算：父服务从公共 `AUTH_REQUEST` 起计时，有界等待 worker 就绪，再把原截止时间传给本地 supervisor；相机初始化和私有 IPC 等待计入剩余预算。supervisor 的读取等待截断为剩余时间，读取或身份回调返回后再次检查截止时间，迟到结果不能认证成功。worker 配置默认 `authTimeoutSeconds=5`，其 pipeline 继承从相机初始化前开始的截止时间，曝光准备和调节不重置它。截止时间在父进程内传递，不新增线上字段；协议仍为 v8，工具用配置字段的既有 `[1, 60]` 编解码范围保持不变。父端到时终止 Job；进程退出确认属于资源回收，不延长 CP 的认证等待上限。
+生产认证共用 5 秒预算：父服务从公共 `AUTH_REQUEST` 起计时，有界等待 worker 就绪，再把原截止时间传给本地 supervisor；相机初始化和私有 IPC 等待计入剩余预算。supervisor 的读取等待截断为剩余时间，读取或身份回调返回后再次检查截止时间，迟到结果不能认证成功。worker 配置默认 `authTimeoutSeconds=5`，其 pipeline 继承从相机初始化前开始的截止时间，曝光准备和调节不重置它。截止时间在父进程内传递，不新增线上字段；工具用配置字段的既有 `[1, 60]` 编解码范围保持不变。父端到时终止 Job；进程退出确认属于资源回收，不延长 CP 的认证等待上限。
 
 ## Payload 编码
 
@@ -63,19 +63,27 @@ int32  cameraRotation      // 0/90/180/270
 float  antiSpoofThreshold // 有限值，[0.15, 0.50]
 int32  authTimeoutSeconds // [1, 60]
 wstring cameraDevice
-int32  fastUnlock          // 0/1（v7，2026-09-13）：快速解锁模式——3 个计帧、
-                           // 每帧绑定身份；默认 0 = 5 帧标定策略
+int32  unlockFrames        // 5/3/2（v9，2026-10-24）：解锁档位——严格 5 帧
+                           // （绑定 1/3/5）/ 标准 3 帧 / 极速 2 帧（均每帧
+                           // 绑定）；默认 3 = 标准档
 ```
 
 v5 及之前的线上在该表 `cameraDevice` 之前还有一个 `uint32 lowLightEnhance`；
 识别器侧暗光增强删除后（v6，2026-09-13）移除该字段。v7 在表尾追加
-`fastUnlock`（config `fast_unlock`）；两种模式下绑定序列相同（bindingIndex
-仍严格 0 → 1 → 2，父端 `AuthExchangeValidator` 契约不变）。
+`fastUnlock`（config `fast_unlock`，0/1，对应 5/3 帧）。v9（2026-10-24）
+将该尾随字段原位改型为 `unlockFrames`（config `unlock_frames`，I32 白名单
+{5,3,2}）：解锁档位从两档扩为三档并调整默认——config 侧缺 `unlock_frames`
+键时按遗留 `fast_unlock` 翻译（true→3、false→5），再缺才用默认 3，在用
+安装的已记录选择不静默变档。三档下绑定序列均为严格 0 → … → N−1（N =
+档位期望绑定数：5 帧档与 3 帧档为 3，2 帧档为 2），父端
+`AuthExchangeValidator` 按 worker 配置的期望数校验；线上 `bindingIndex`
+绝对上限仍为 2。
 
 `MatchProbe` 的 payload 为（v4 起附带范数，v5 起附带姿态角）：
 
 ```text
-uint32 bindingIndex       // 线上严格为 0 → 1 → 2；日志显示为 1/3 → 2/3 → 3/3
+uint32 bindingIndex       // 线上严格为 0 → … → N−1（N=档位期望绑定数，2 或 3）；
+                          // 绝对上限 2；日志显示为 1/N → … → N/N
 uint32 embeddingCount     // 必须恰好 128
 float  embedding[128]
 float  preNorm            // 归一化前的识别器输出范数（质量信号，必须有限且 >0）
@@ -104,16 +112,16 @@ spawn suspended → assign Job → resume
   子加载四模型；默认不打开相机
   子 Ready(0)
   父 StartAuth(requestId)
-  子按需打开相机并运行 PAD N/N（默认 5 帧；fastUnlock=1 时 3 帧）
+  子按需打开相机并运行 PAD N/N（unlockFrames：严格 5 帧 / 标准 3 帧（默认）/ 极速 2 帧）
   子 MatchProbe(0) ↔ 父 decision
-  子 MatchProbe(1) ↔ 父 decision
-  子 MatchProbe(2) ↔ 父 decision
+  [子 MatchProbe(1) ↔ 父 decision]
+  [子 MatchProbe(2) ↔ 父 decision]   ← 仅 3-probe 档位（严格/标准）
   子 terminal(requestId)
   父关闭/终止 Job并确认进程退出
-  父仅在成功且三次 identity 为同一 SID 后解密一次密码
+  父仅在成功且全部 N 次 identity 为同一 SID 后解密一次密码
 ```
 
-父端对一个认证请求维护独立 `AuthExchangeValidator`：所有活动消息必须使用当前 request ID；binding 不得重复、跳号或缺失；只有三个 probe 都被接受后 `AuthSucceeded` 才合法。任何不同 SID 由父端返回 `MatchReject`。成功后若 SID 为空、数据库已重载或记录消失，最终凭据加载仍 fail-closed。
+父端对一个认证请求维护独立 `AuthExchangeValidator`：所有活动消息必须使用当前 request ID；binding 不得重复、跳号或缺失；期望绑定数由 worker 配置的档位决定（极速 2 帧档为 2，其余为 3，非法值按 3 钳制），只有全部期望 probe 都被接受后 `AuthSucceeded` 才合法。任何不同 SID 由父端返回 `MatchReject`。成功后若 SID 为空、数据库已重载或记录消失，最终凭据加载仍 fail-closed。
 
 worker 每次最多处理一个 `StartAuth`。成功、失败或超时终态写入管道后进程立即退出，进程退出是 DirectShow、ORT Session、线程池和 Windows 堆高水位的确定性回收边界。
 

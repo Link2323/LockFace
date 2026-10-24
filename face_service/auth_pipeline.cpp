@@ -187,7 +187,7 @@ AuthLoopStop AuthPipeline::RunLivenessLoop(AuthLoopState& state,
                                            const SensorKnobs& sensorKnobs,
                                            const std::function<bool()>& interrupted,
                                            auth_diagnostics::NormLog& normLog) {
-    const int totalChecks = AntiSpoofCheckCount(m_config.fastUnlock);
+    const int totalChecks = AntiSpoofCheckCount(m_config.unlockFrames);
     AuthFrame next = std::move(prepared.seed);    // warmup SCRFD pre-run seed, if fresh
     while (state.totalChecked < totalChecks) {
         if (const auto stop = CheckLoopGates(state, interrupted)) return *stop;
@@ -235,14 +235,14 @@ AuthLoopStop AuthPipeline::RunLivenessLoop(AuthLoopState& state,
             return AuthLoopStop::Attack;
         }
 
-        // Default plan: anchor frames are the first bound frame (locks
+        // Strict 5-frame plan: anchor frames are the first bound frame (locks
         // the SID) and the last counted frame (tail anchor), with the
-        // counted-3 consensus frame between them — bindings land on
-        // counted frames 1/3/5. Fast unlock binds EVERY counted frame,
-        // so 3 frames carry all 3 bindings (required by the pass
-        // condition in ResolveOutcome and by the parent's 3-probe
-        // exchange validator) and the IoU-only path never runs.
-        const bool isAnchor = m_config.fastUnlock || state.bindingCount == 0 ||
+        // counted-3 consensus frame between them — bindings land on counted
+        // frames 1/3/5. The 3- and 2-frame tiers bind EVERY counted frame,
+        // so the tier's frames carry all bindings (required by the pass
+        // condition in ResolveOutcome and by the parent's probe-exchange
+        // validator) and the IoU-only path never runs.
+        const bool isAnchor = m_config.unlockFrames != 5 || state.bindingCount == 0 ||
                               state.totalChecked == totalChecks - 1;
         const bool isConsensusFrame = state.totalChecked == 2;
 
@@ -419,9 +419,11 @@ BindingDisposition AuthPipeline::AttemptBinding(AuthLoopState& state,
         state.sawUnknownFace = true;
         if (state.timing.OnIdentityRetry(std::chrono::steady_clock::now())) {
             FACELOGIN_INFO(L"Identity matching failed continuously for 2s — "
-                           L"failing fast (bindings=%u/3, counted=%d, "
+                           L"failing fast (bindings=%u/%d, counted=%d, "
                            L"width=%ld px, face luma=%.0f)",
-                           state.bindingCount, state.totalChecked, faceRect.width(),
+                           state.bindingCount,
+                           BindingCountRequired(m_config.unlockFrames),
+                           state.totalChecked, faceRect.width(),
                            FaceRegionLuma(cur.frame, faceRect));
             return BindingDisposition::RetryTimedOut;
         }
@@ -471,12 +473,15 @@ std::optional<AuthLoopStop> AuthPipeline::CountPadFrame(
 // the most specific honest failure message.
 AuthPipelineResult AuthPipeline::ResolveOutcome(AuthLoopStop stop,
                                                 const AuthLoopState& state) const {
-    const int totalChecks = AntiSpoofCheckCount(m_config.fastUnlock);
+    const int totalChecks = AntiSpoofCheckCount(m_config.unlockFrames);
     const int passRequired = AntiSpoofPassRequired(totalChecks);
+    const auto requiredBindings =
+        static_cast<unsigned int>(BindingCountRequired(m_config.unlockFrames));
     AuthPipelineResult result;
     const bool livenessPassed = stop == AuthLoopStop::CountingComplete &&
         state.totalChecked == totalChecks &&
-        state.timing.PassCount() >= passRequired && state.bindingCount == 3;
+        state.timing.PassCount() >= passRequired &&
+        state.bindingCount == requiredBindings;
     if (livenessPassed) {
         FACELOGIN_INFO(L"Liveness passed — tail anchor bound, authentication evidence "
                        L"complete (width=%ld px, face luma=%.0f)",
@@ -485,10 +490,10 @@ AuthPipelineResult AuthPipeline::ResolveOutcome(AuthLoopStop stop,
         return result;
     }
 
-    FACELOGIN_WARN(L"Authentication evidence incomplete: identity=%u/3, "
+    FACELOGIN_WARN(L"Authentication evidence incomplete: identity=%u/%u, "
                    L"PAD=%d/%d passed (need %d)",
-                   state.bindingCount, state.timing.PassCount(), state.totalChecked,
-                   passRequired);
+                   state.bindingCount, requiredBindings, state.timing.PassCount(),
+                   state.totalChecked, passRequired);
     if (stop == AuthLoopStop::PadInferenceError) {
         result.errorMessage = L"活体检测模块异常，请使用密码登录";
     } else if (stop == AuthLoopStop::IdentityRejected) {
@@ -497,7 +502,8 @@ AuthPipelineResult AuthPipeline::ResolveOutcome(AuthLoopStop stop,
         result.errorMessage = L"未检测到人脸";
     } else if (stop == AuthLoopStop::IdentityRetryTimedOut ||
                (state.totalChecked == 0 && state.sawUnknownFace) ||
-               (state.timing.IdentityRetryPending() && state.bindingCount < 3 &&
+               (state.timing.IdentityRetryPending() &&
+                state.bindingCount < requiredBindings &&
                 state.timing.PassCount() == state.totalChecked)) {
         result.errorMessage = state.bindingCount == 0
             ? L"未识别到已注册人脸，请使用密码登录"

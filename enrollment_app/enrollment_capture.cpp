@@ -115,10 +115,11 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
                    angleIndex);
 
     if (antiSpoof.IsInitialized()) {
-        // Enrollment keeps the calibrated five-frame gate regardless of
-        // the fast_unlock preference: that switch trades liveness
-        // evidence for speed at unlock time only.
-        int totalChecks = AntiSpoofCheckCount(/*fastUnlock=*/false);
+        // Enrollment keeps the calibrated five-frame gate regardless of the
+        // unlock tier: those tiers trade liveness evidence for speed at
+        // unlock time only, never at enrollment time.
+        constexpr int kEnrollmentFrames = 5;
+        int totalChecks = AntiSpoofCheckCount(kEnrollmentFrames);
         int passRequired = AntiSpoofPassRequired(totalChecks);
         FACELOGIN_INFO(L"Enrollment anti-spoof: threshold=%.3f → %d checks, %d required",
                        threshold, totalChecks, passRequired);

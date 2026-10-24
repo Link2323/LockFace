@@ -11,7 +11,11 @@
 namespace facelogin::auth_worker {
 
 inline constexpr uint32_t kProtocolMagic = 0x4B574C46; // "FLWK"
-// v8: pinned SFace 128-D probes; mixed R50/SFace binaries fail version checks.
+// v9: WorkerConfig.fastUnlock (I32 0/1) became unlockFrames (I32 5/3/2) at
+// the same trailing position — three unlock tiers (strict 5 / standard 3 /
+// ultra-fast 2, AppConfig unlock_frames; binding probes = tier count except
+// the 5-frame tier binds 1/3/5). v8: pinned SFace 128-D probes; mixed
+// R50/SFace binaries fail version checks.
 // v7: WorkerConfig gained the trailing fastUnlock flag (fast unlock mode:
 // 3 counted PAD frames, every frame binds — AppConfig fast_unlock). v6:
 // WorkerConfig dropped the lowLightEnhance flag (recognizer-side
@@ -20,7 +24,7 @@ inline constexpr uint32_t kProtocolMagic = 0x4B574C46; // "FLWK"
 // two trailing floats — the frame's yaw/pitch pose estimates (progressive-
 // learning pose-cone gate, docs/work/in-progress/progressive-learning-v2.md §3). v4
 // appended the pre-normalization recognizer norm.
-inline constexpr uint16_t kProtocolVersion = 8;
+inline constexpr uint16_t kProtocolVersion = 9;
 inline constexpr uint32_t kMaxPayloadBytes = 16 * 1024;
 inline constexpr uint32_t kEmbeddingDimension = static_cast<uint32_t>(kRecognizerDimension);
 // The recognizer L2-normalizes every production embedding before it crosses
@@ -76,26 +80,33 @@ struct Message {
 // Pure parent-side state machine for one authentication exchange. Keeping the
 // request-id and binding-order checks here makes the fail-closed rules directly
 // unit-testable instead of duplicating ad-hoc counters in the supervisor.
+// expectedBindings comes from the tier the worker was spawned with (3 for the
+// 5- and 3-frame tiers, 2 for the ultra-fast tier); any invalid value clamps
+// to 3 — the stricter direction.
 class AuthExchangeValidator {
 public:
-    explicit AuthExchangeValidator(uint64_t requestId) : m_requestId(requestId) {}
+    AuthExchangeValidator(uint64_t requestId, unsigned int expectedBindings = 3)
+        : m_requestId(requestId),
+          m_expectedBindings(expectedBindings == 2 ? 2 : 3) {}
 
     bool HasExpectedRequestId(uint64_t requestId) const {
         return requestId == m_requestId;
     }
     bool IsExpectedProbe(unsigned int bindingIndex) const {
-        return m_acceptedBindings < 3 && bindingIndex == m_acceptedBindings;
+        return m_acceptedBindings < m_expectedBindings &&
+               bindingIndex == m_acceptedBindings;
     }
     bool AcceptProbe(unsigned int bindingIndex) {
         if (!IsExpectedProbe(bindingIndex)) return false;
         ++m_acceptedBindings;
         return true;
     }
-    bool CanSucceed() const { return m_acceptedBindings == 3; }
+    bool CanSucceed() const { return m_acceptedBindings == m_expectedBindings; }
     unsigned int AcceptedBindings() const { return m_acceptedBindings; }
 
 private:
     uint64_t m_requestId = 0;
+    unsigned int m_expectedBindings = 3;
     unsigned int m_acceptedBindings = 0;
 };
 
@@ -164,9 +175,10 @@ struct WorkerConfig {
     float antiSpoofThreshold = 0.28f;
     int authTimeoutSeconds = ipc::AUTH_TIMEOUT_SECONDS;
     std::wstring cameraDevice;
-    // v7 trailing field. Fast unlock: 3 counted PAD frames, every frame
-    // binds identity. Wire format: I32, must be 0 or 1.
-    bool fastUnlock = false;
+    // v7 trailing field, re-typed in place at v9. Unlock tier: counted PAD
+    // frames — 5 strict (binds 1/3/5), 3 standard (every frame binds),
+    // 2 ultra-fast (every frame binds). Wire format: I32, one of {5,3,2}.
+    int unlockFrames = 3;
 };
 
 // Success-path timing is returned with the terminal message so the worker can
