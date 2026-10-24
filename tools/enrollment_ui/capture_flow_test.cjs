@@ -33,6 +33,19 @@ function fixture() {
   return { flow: context.createCaptureFlow(timers), pending };
 }
 
+// preview.js paints frames on 2D contexts; the calls are no-ops here but the
+// methods must exist or the synchronous onload chain throws before the
+// cam-loading overlay logic runs.
+function canvasContext() {
+  const ctx = {};
+  for (const m of ['setTransform', 'fillRect', 'save', 'restore', 'drawImage',
+                   'clearRect', 'beginPath', 'moveTo', 'lineTo', 'arcTo',
+                   'quadraticCurveTo', 'closePath', 'stroke', 'fill', 'arc',
+                   'fillText']) ctx[m] = () => {};
+  ctx.measureText = () => ({ width: 10 });
+  return ctx;
+}
+
 // Full-page harness: mock timers/DOM/host, evaluate every module file in
 // build order, and expose the pieces tests need to poke at.
 function page(overrides) {
@@ -57,7 +70,7 @@ function page(overrides) {
           contains(c) { return set.has(c); }
         };
       })(),
-      addEventListener() {}, querySelector: () => null
+      addEventListener() {}, querySelector: () => null, getContext: () => canvasContext()
     });
     return elements.get(key);
   }
@@ -80,7 +93,18 @@ function page(overrides) {
   const context = vm.createContext({
     ...timers, window: { ...timers, chrome: { webview: { hostObjects: { sync: { host } } } } },
     document: { getElementById: element, querySelectorAll: () => [], addEventListener() {} },
-    Image: function() {}, console
+    // preview.js delivers frames to the canvas by assigning img.src and
+    // waiting for onload; fire it synchronously so frame arrival — and the
+    // cam-loading overlay handoff tied to it — is observable in tests.
+    Image: function() {
+      this.naturalWidth = 640; this.naturalHeight = 480; this.complete = true;
+      let src = '';
+      Object.defineProperty(this, 'src', {
+        get() { return src; },
+        set(v) { src = v; if (typeof this.onload === 'function') this.onload(); }
+      });
+    },
+    console
   });
   for (const file of PAGE_SOURCES) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../../enrollment_app/js', file), 'utf8'), context);
@@ -263,6 +287,55 @@ for (const action of ['decline', 'withdraw']) {
     assert.equal(p.app.captureCtl.isActive(), false);
   });
 }
+
+// The overlay handoff: cam-loading is only dismissed by the FIRST frame of a
+// viewing session. A withdraw re-shows the overlay; the re-grant must re-arm
+// the handoff or the stale "camera ready" from the first session leaves
+// "正在启动摄像头" stuck over working video (real-machine report on 5F0ECB5A).
+test('re-granting consent after a withdrawal clears the starting-camera overlay', () => {
+  const rec = { noticeVersion: '1.0', record: null };
+  let frame = 0;
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    AcceptPrivacyConsent() { rec.record = { version: '1.0', time: '2026-01-02T03:04:05+08:00' }; return true; },
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    StartPreview: () => true,
+    StopPreview() {},
+    GetLatestFrameAndFaces: () => 'data:image/jpeg;base64,F' + (frame++) + '\x1e[]'
+  } });
+  // Drain each pending timer exactly once. The mock keeps fired entries, so a
+  // plain values() loop would re-run stale timers on a later drain — the first
+  // session's 350ms cam-loading hide firing a second time at the re-grant is
+  // exactly what masked this bug in an earlier version of this test.
+  const flush = () => {
+    for (const [key, fn] of [...p.timeouts.entries()]) {
+      if (p.timeouts.delete(key)) fn();
+    }
+  };
+
+  // First session: accept the gate; the first frame marks the camera ready
+  // and the deferred hide settles the startup overlay.
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  flush();
+  assert.equal(p.app.previewCtl.isViewing(), true);
+  assert.equal(p.element('cam-loading').style.display, 'none');
+
+  // Withdraw: camera and loop down, overlay back up in the blocked state.
+  p.app.consent.withdraw();
+  assert.equal(p.app.previewCtl.isViewing(), false);
+  assert.equal(p.element('cam-loading').style.display, 'flex');
+
+  // Re-grant through the pill's dialog, exactly the reported path.
+  p.context.onConsentStatus();
+  p.context.onModalMid();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  assert.equal(p.app.previewCtl.isViewing(), true);
+  assert.equal(p.element('cam-loading').style.display, 'flex'); // hide is deferred
+  flush();
+  assert.equal(p.element('cam-loading').style.display, 'none'); // was stuck here
+});
 
 test('page cancellation and retry cannot start an old sequence angle', () => {
   const started = [];

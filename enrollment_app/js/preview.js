@@ -207,6 +207,17 @@ function createPreview(deps) {
     }
   }
 
+  // Both (re)start entries go through this so every new viewing session re-arms
+  // the cam-loading dismiss: the overlay can come back mid-session (consent
+  // withdraw → re-grant re-shows it as "正在启动摄像头"), and a camReady left
+  // over from the previous session would keep the first new frame from
+  // clearing it — live video stuck behind the spinner forever.
+  function beginLoop() {
+    camReady = false;
+    viewing = true;
+    renderFrame();
+  }
+
   // Start the cam-screen live preview and kick the frame loop. Every restart
   // site (tab return, save/append/cancel flows, camera switch, boot) shares
   // this and the same banner wording for the failure shapes. viewing is set
@@ -215,7 +226,7 @@ function createPreview(deps) {
   function restartPreview() {
     if (!consentGranted) return false;
     try {
-      if (H.StartPreview()) { viewing = true; renderFrame(); return true; }
+      if (H.StartPreview()) { beginLoop(); return true; }
       showBanner('cam', '预览启动失败：请检查摄像头占用、权限、驱动和模型文件。', 'error', 10000);
     } catch(e) { showBanner('cam', '预览启动失败: ' + e.message, 'error', 10000); }
     return false;
@@ -230,8 +241,7 @@ function createPreview(deps) {
   }
   function startLoop() {
     if (!consentGranted) return;
-    viewing = true;
-    renderFrame();
+    beginLoop();
   }
 
   return {
