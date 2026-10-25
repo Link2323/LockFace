@@ -15,6 +15,7 @@ set(ENROLLMENT_JS_SOURCES
     js/account_refresh.js
     js/enroll_save.js
     js/logs.js
+    js/theme.js
     js/app_main.js)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/styles.css")

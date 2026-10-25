@@ -15,6 +15,21 @@
     <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1.5 1.5 9 9m0-9-9 9"/></svg>
   </button>
 </div>
+<button type="button" class="window-button theme-button" id="theme-button" aria-label="显示模式"
+        aria-haspopup="menu" aria-expanded="false" title="显示模式" onclick="toggleThemeMenu(event)">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+</button>
+<div class="theme-menu" id="theme-menu" role="menu" aria-label="显示模式" onclick="event.stopPropagation()">
+  <button type="button" class="theme-row" id="theme-row-light" role="menuitem" onclick="onThemePick('light')">
+    <span class="theme-check">✓</span>浅色模式
+  </button>
+  <button type="button" class="theme-row" id="theme-row-dark" role="menuitem" onclick="onThemePick('dark')">
+    <span class="theme-check">✓</span>深色模式
+  </button>
+  <button type="button" class="theme-row" id="theme-row-system" role="menuitem" onclick="onThemePick('system')">
+    <span class="theme-check">✓</span>跟随系统
+  </button>
+</div>
 
 <!-- ================================================================== -->
 <!-- Camera Screen                                                       -->

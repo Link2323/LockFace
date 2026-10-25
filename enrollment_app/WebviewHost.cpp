@@ -26,14 +26,67 @@ static void AdjustAppWindowRect(RECT& rect, DWORD style, UINT dpi, bool customFr
     if (customFrame) rect.top = clientTop - MulDiv(1, dpi, USER_DEFAULT_SCREEN_DPI);
 }
 
+// Per-user LockFace registry key (HKCU\SOFTWARE\LockFace). Hosts the privacy
+// consent record (below) and the appearance preference (here).
+static const wchar_t* kUserPrefsKeyPath = L"SOFTWARE\\LockFace";
+static const wchar_t* kThemeModeName = L"ThemeMode";
+
+enum class ThemePref { System, Light, Dark };
+
+// The appearance menu persists its choice here; a missing or unrecognized
+// value means "follow the Windows app mode".
+static ThemePref ReadThemePref() {
+    wchar_t buf[8] = {};
+    DWORD size = sizeof(buf), type = 0;
+    ThemePref pref = ThemePref::System;
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0, KEY_READ, &key)
+            != ERROR_SUCCESS) {
+        return pref;
+    }
+    const LSTATUS st = RegQueryValueExW(key, kThemeModeName, nullptr, &type,
+                                        reinterpret_cast<LPBYTE>(buf), &size);
+    RegCloseKey(key);
+    if (st == ERROR_SUCCESS && type == REG_SZ) {
+        if (wcscmp(buf, L"light") == 0) pref = ThemePref::Light;
+        else if (wcscmp(buf, L"dark") == 0) pref = ThemePref::Dark;
+    }
+    return pref;
+}
+
+static bool WriteThemeMode(const std::wstring& mode) {
+    HKEY key = nullptr;
+    const LSTATUS st = RegCreateKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0,
+                                       nullptr, 0, KEY_WRITE, nullptr, &key, nullptr);
+    if (st != ERROR_SUCCESS) {
+        FACELOGIN_WARN(L"Theme preference write failed: HKCU key create err=%ld", st);
+        return false;
+    }
+    const LSTATUS put = RegSetValueExW(key, kThemeModeName, 0, REG_SZ,
+                                       reinterpret_cast<const BYTE*>(mode.c_str()),
+                                       static_cast<DWORD>((mode.size() + 1) * sizeof(wchar_t)));
+    RegCloseKey(key);
+    if (put != ERROR_SUCCESS) FACELOGIN_WARN(L"Theme preference write failed err=%ld", put);
+    return put == ERROR_SUCCESS;
+}
+
 static COLORREF AppBackgroundColor() {
-    DWORD light = 1;
-    DWORD size = sizeof(light);
-    const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
+    bool dark;
+    switch (ReadThemePref()) {
+    case ThemePref::Light: dark = false; break;
+    case ThemePref::Dark:  dark = true;  break;
+    default: {
+        DWORD light = 1;
+        DWORD size = sizeof(light);
+        dark = RegGetValueW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size) == ERROR_SUCCESS &&
+            light == 0;
+        break;
+    }
+    }
     // Match styles.css: Codex's neutral gray-900 application surface.
-    return status == ERROR_SUCCESS && light == 0 ? RGB(24, 24, 24) : RGB(255, 255, 255);
+    return dark ? RGB(24, 24, 24) : RGB(255, 255, 255);
 }
 
 static void ApplyWindowTheme(HWND hWnd, ICoreWebView2Controller* controller) {
@@ -607,7 +660,28 @@ void WebviewHost::EnableCustomFrame() {
     X(AcceptPrivacyConsent, 40, if (res) *res = MakeBool(RecordPrivacyConsent())) \
     X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(ClearPrivacyConsent())) \
     X(MinimizeWindow, 42, PostMessageW(m_hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0)) \
-    X(CloseWindow, 43, PostMessageW(m_hWnd, WM_CLOSE, 0, 0))
+    X(CloseWindow, 43, PostMessageW(m_hWnd, WM_CLOSE, 0, 0)) \
+    X(GetThemeMode, 44, { \
+        switch (ReadThemePref()) { \
+        case ThemePref::Light: if (res) *res = MakeStr("light"); break; \
+        case ThemePref::Dark:  if (res) *res = MakeStr("dark");  break; \
+        default:               if (res) *res = MakeStr("system"); break; \
+        } \
+    }) \
+    X(SetThemeMode, 45, { \
+        /* Single BSTR argument: "system" | "light" | "dark". Persisted */ \
+        /* under kUserPrefsKeyPath, then the window dressing (DWM caption, */ \
+        /* WebView2 default background) re-derives from the same record. */ \
+        std::wstring mode = (p->cArgs >= 1 && p->rgvarg[0].vt == VT_BSTR) \
+            ? std::wstring(p->rgvarg[0].bstrVal) : L""; \
+        bool ok = (mode == L"system" || mode == L"light" || mode == L"dark") && \
+                  WriteThemeMode(mode); \
+        if (ok) { \
+            WebviewHost* self = (WebviewHost*)GetWindowLongPtrW(m_hWnd, GWLP_USERDATA); \
+            ApplyWindowTheme(m_hWnd, self ? self->m_controller : nullptr); \
+        } \
+        if (res) *res = MakeBool(ok); \
+    })
 
 struct HostMethodEntry { const wchar_t* name; DISPID id; };
 static constexpr HostMethodEntry kHostMethods[] = {
@@ -700,7 +774,6 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
 // 版本：x.y line of the shipped PRIVACY.txt, and reopens on a notice revision,
 // a missing record, or an explicit withdrawal from the settings screen.
 
-static const wchar_t* kConsentKeyPath = L"SOFTWARE\\LockFace";
 static const wchar_t* kConsentVersionName = L"ConsentVersion";
 static const wchar_t* kConsentTimeName    = L"ConsentTime";
 
@@ -757,7 +830,7 @@ static std::wstring NowRfc3339Local() {
 
 static bool ReadConsentRecord(std::wstring* version, std::wstring* time) {
     HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, KEY_READ, &key)
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0, KEY_READ, &key)
             != ERROR_SUCCESS) {
         return false;
     }
@@ -787,7 +860,7 @@ static bool RecordPrivacyConsent() {
     }
     const std::wstring now = NowRfc3339Local();
     HKEY key = nullptr;
-    LSTATUS st = RegCreateKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, nullptr,
+    LSTATUS st = RegCreateKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0, nullptr,
                                  0, KEY_WRITE, nullptr, &key, nullptr);
     if (st != ERROR_SUCCESS) {
         FACELOGIN_WARN(L"Privacy consent not recorded: HKCU key create failed err=%ld", st);
@@ -808,7 +881,7 @@ static bool RecordPrivacyConsent() {
 
 static bool ClearPrivacyConsent() {
     HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kConsentKeyPath, 0, KEY_SET_VALUE, &key)
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0, KEY_SET_VALUE, &key)
             != ERROR_SUCCESS) {
         return true;  // nothing recorded — already withdrawn
     }

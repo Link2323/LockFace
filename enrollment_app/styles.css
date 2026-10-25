@@ -1,6 +1,10 @@
-/* Shared palette: WebView2 follows the Windows application color scheme. */
+/* Shared palette. The appearance menu (title-bar gear) writes its choice
+   through the host; theme.js resolves it and pins <html data-theme> to
+   "light" or "dark" before first paint — "system" resolves through
+   prefers-color-scheme and keeps live-tracking OS changes, so light is the
+   attribute-less default and dark is selected by the attribute. */
 :root{
-  color-scheme:light dark;
+  color-scheme:light;
   --footer-height:28px;
   /* Codex uses the platform UI stack. Explicit Chinese fallback keeps forms
      and body copy on the same sans-serif face on Windows. */
@@ -16,20 +20,19 @@
   --callout-border:#fde68a;--callout-bg:#fffbeb;--callout-text:#92400e;
   --primary-spinner-track:rgba(255,255,255,.3);
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    /* Codex app palette: gray-fixed-900 surface, gray-fixed-800 raised
-       controls, gray-fixed-150 foreground; secondary text is 70% white. */
-    --surface:#181818;--strong:#ededed;--text:#dfdfdf;--label:#cdcdcd;
-    --chrome:#212121;--card:#232323;
-    --body:#b9b9b9;--muted:#bababa;--subtle:#8c8c8c;
-    --control-border:#414141;--border:#303030;--soft:#282828;--field:#282828;
-    --warning:#fbbf24;--warning-border:#856428;--warning-dot:#fbbf24;
-    --warning-accent:#fbbf24;--error-bg:#3b2228;--error:#fca5a5;
-    --success-bg:#19352b;--success:#86efac;--success-dot:#34d399;
-    --callout-border:#715627;--callout-bg:#332c1e;--callout-text:#fcd68a;
-    --primary-spinner-track:rgba(24,24,24,.3);
-  }
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  /* Codex app palette: gray-fixed-900 surface, gray-fixed-800 raised
+     controls, gray-fixed-150 foreground; secondary text is 70% white. */
+  --surface:#181818;--strong:#ededed;--text:#dfdfdf;--label:#cdcdcd;
+  --chrome:#212121;--card:#232323;
+  --body:#b9b9b9;--muted:#bababa;--subtle:#8c8c8c;
+  --control-border:#414141;--border:#303030;--soft:#282828;--field:#282828;
+  --warning:#fbbf24;--warning-border:#856428;--warning-dot:#fbbf24;
+  --warning-accent:#fbbf24;--error-bg:#3b2228;--error:#fca5a5;
+  --success-bg:#19352b;--success:#86efac;--success-dot:#34d399;
+  --callout-border:#715627;--callout-bg:#332c1e;--callout-text:#fcd68a;
+  --primary-spinner-track:rgba(24,24,24,.3);
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -76,7 +79,27 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .window-button:hover{background:var(--soft)}
 .window-button.window-close:hover{background:#c42b1c;color:#fff}
 .window-button:focus-visible{outline:2px solid var(--muted);outline-offset:-3px}
-.custom-frame .header{-webkit-app-region:drag;app-region:drag;padding-right:92px}
+.custom-frame .header{-webkit-app-region:drag;app-region:drag;padding-right:136px}
+
+/* ========== Appearance menu (title-bar gear) ========== */
+/* Sits left of the min/close pair on the same caption strip; hidden with the
+   integrated chrome like .window-controls. The menu drops below the gear and
+   closes on outside click / Esc (theme.js owns the state). */
+.theme-button{display:none}
+.custom-frame .theme-button{position:fixed;top:0;right:92px;z-index:250;
+  display:flex;width:40px;-webkit-app-region:no-drag;app-region:no-drag}
+.theme-button svg{width:15px;height:15px;stroke-width:1.4}
+.theme-menu{position:fixed;top:40px;right:94px;z-index:260;display:none;min-width:150px;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 10px 30px rgba(0,0,0,.12);padding:4px}
+.theme-menu.open{display:block}
+.theme-row{display:flex;align-items:center;gap:8px;width:100%;border:0;outline:none;
+  background:transparent;padding:7px 10px;border-radius:6px;font-size:14px;
+  color:var(--text);cursor:pointer;text-align:left;transition:background-color .15s}
+.theme-row:hover,.theme-row:focus-visible{background:var(--soft)}
+.theme-row .theme-check{visibility:hidden;color:var(--strong)}
+.theme-row.on{color:var(--strong);font-weight:500}
+.theme-row.on .theme-check{visibility:visible}
 
 /* ========== Header ========== */
 /* Compensate for the title glyphs' line-box inset, with a slightly tighter

@@ -55,6 +55,7 @@ function buildEnrollmentApp(deps) {
                                        withBusy: ui.withBusy,
                                        syncSelects: deps.syncSelects});
   var logs = createLogsModule({host: H, escapeHtml: ui.escapeHtml});
+  var theme = createThemeCtl({host: H});
 
   nav.onEnter('settings', settings.load);
   nav.onEnter('faces', faces.load);
@@ -73,7 +74,8 @@ function buildEnrollmentApp(deps) {
     enrollSave: enrollSave,
     captureUi: captureUi,
     settings: settings,
-    logs: logs
+    logs: logs,
+    theme: theme
   };
 }
 
@@ -117,7 +119,9 @@ var switchTab = consoleApp.nav.switchTab,
     openPrivacyNotice = consoleApp.consent.openPrivacyNotice,
     onModalOk = consoleApp.ui.onModalOk,
     onModalCancel = consoleApp.ui.onModalCancel,
-    onModalMid = consoleApp.ui.onModalMid;
+    onModalMid = consoleApp.ui.onModalMid,
+    toggleThemeMenu = consoleApp.theme.toggle,
+    onThemePick = consoleApp.theme.pick;
 
 consoleApp.ui.bindEnterKey('fld-pass', 'btn-save', consoleApp.enrollSave.onSave);
 consoleApp.ui.bindEnterKey('fld-face-label', 'btn-save', consoleApp.enrollSave.onSave);
@@ -129,8 +133,13 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
   var nav = consoleApp.nav, ui = consoleApp.ui;
   var previewCtl = consoleApp.previewCtl, captureCtl = consoleApp.captureCtl;
   var logs = consoleApp.logs, settings = consoleApp.settings;
+  var theme = consoleApp.theme;
   var accountRefresh = consoleApp.accountRefresh;
   var consent = consoleApp.consent;
+
+  // First synchronous action: the data-theme attribute must land before the
+  // first paint so an explicit dark preference never flashes light.
+  theme.init();
 
   customSelect.enhanceAll();
 

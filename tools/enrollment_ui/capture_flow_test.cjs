@@ -61,7 +61,7 @@ function page(overrides) {
   function element(key) {
     if (!elements.has(key)) elements.set(key, {
       checked: true, style: {}, disabled: false, value: '', textContent: '',
-      children: [],
+      children: [], attrs: {},
       classList: (() => {
         const set = new Set();
         return {
@@ -71,6 +71,10 @@ function page(overrides) {
           contains(c) { return set.has(c); }
         };
       })(),
+      setAttribute(n, v) { this.attrs[n] = String(v); },
+      getAttribute(n) { return n in this.attrs ? this.attrs[n] : null; },
+      removeAttribute(n) { delete this.attrs[n]; },
+      contains() { return false; },
       addEventListener() {}, querySelector: () => null, getContext: () => canvasContext()
     });
     return elements.get(key);
@@ -93,7 +97,8 @@ function page(overrides) {
   }, overrides.host);
   const context = vm.createContext({
     ...timers, window: { ...timers, chrome: { webview: { hostObjects: { sync: { host } } } } },
-    document: { getElementById: element, querySelectorAll: () => [], addEventListener() {} },
+    document: { getElementById: element, documentElement: element('html'),
+                querySelectorAll: () => [], addEventListener() {} },
     // preview.js delivers frames to the canvas by assigning img.src and
     // waiting for onload; fire it synchronously so frame arrival — and the
     // cam-loading overlay handoff tied to it — is observable in tests.
@@ -457,4 +462,32 @@ test('modal ok hands the input value to the callback and closes the dialog', () 
   p.app.ui.onModalOk();
   assert.equal(got, 'hello');
   assert.ok(!p.element('modal-overlay').classList.contains('active'));
+});
+
+// The mock has no matchMedia, so "system" resolves to light; the attribute
+// always reflects the resolved theme.
+test('theme defaults to system; picks pin the page and persist through the host', () => {
+  const wrote = [];
+  const p = page({ host: {
+    GetThemeMode: () => 'system',
+    SetThemeMode(m) { wrote.push(m); return true; }
+  }});
+  const root = p.element('html');
+  assert.equal(root.getAttribute('data-theme'), 'light');
+  assert.ok(p.element('theme-row-system').classList.contains('on'));
+  p.context.onThemePick('dark');
+  assert.deepEqual(wrote, ['dark']);
+  assert.equal(root.getAttribute('data-theme'), 'dark');
+  assert.ok(p.element('theme-row-dark').classList.contains('on'));
+  p.context.onThemePick('light');
+  assert.equal(root.getAttribute('data-theme'), 'light');
+  p.context.onThemePick('system');
+  assert.equal(root.getAttribute('data-theme'), 'light');
+  assert.deepEqual(wrote, ['dark', 'light', 'system']);
+});
+
+test('a persisted dark preference applies at startup', () => {
+  const p = page({ host: { GetThemeMode: () => 'dark' } });
+  assert.equal(p.element('html').getAttribute('data-theme'), 'dark');
+  assert.ok(p.element('theme-row-dark').classList.contains('on'));
 });

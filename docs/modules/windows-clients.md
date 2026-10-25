@@ -123,7 +123,7 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 - JS 桥接的 dispId 清单以 `WebviewHost.cpp` 为准，不在文档复制。
 - 日志页四个日志来源直接读文件；"学习状态"视图是唯一走公共管道的查询（`LEARNING_STATUS`，响应为单条 JSON 内存快照，服务重启清零），客户端按 10s 节流——公共管道单实例，不得演变成高频轮询。
 - 禁用右键菜单和开发者工具。
-- Console 外观跟随 Windows 应用颜色模式，页面通过 `prefers-color-scheme` 自动切换深浅色，采用 Codex 中性灰色阶（深色背景 `#181818`）；C++ 读取 `AppsUseLightTheme`，同步设置 DWM 标题栏背景与文字、WebView2 默认背景和启动填充，运行中修改系统主题无需重启。
+- Console 外观由标题栏齿轮的显示模式菜单控制：浅色 / 深色 / 跟随系统，默认跟随系统；选择经 `SetThemeMode` 写入 `HKCU\SOFTWARE\LockFace\ThemeMode`（缺省或非法值视为跟随系统）。页面由 `js/theme.js` 在首帧前把解析结果钉到 `<html data-theme>`（跟随系统经 `prefers-color-scheme`/matchMedia 解析并持续跟随），CSS 深色变量挂在 `data-theme="dark"` 上，采用 Codex 中性灰色阶（深色背景 `#181818`）；C++ 读同一偏好决定 DWM 标题栏背景与文字、WebView2 默认背景和启动填充（跟随系统时读 `AppsUseLightTheme`），运行中修改系统主题无需重启。
 - 支持 `ICoreWebView2Settings9` 拖动区域的运行时使用一体式顶部：隐藏原生标题栏，保留页面品牌区，以 `app-region: drag` 支持原生拖动和右键系统菜单；右上角最小化、关闭按钮经宿主投递窗口消息，保留系统缩放边框和阴影，禁止最大化。旧运行时保留原生标题栏并隐藏页面窗口按钮。页脚只显示版本和许可入口。
 - 所有页面共用 630 CSS px 的固定客户区高度（默认宽度 680、可调范围 420–680 CSS px），为 640×360 横屏预览及采集进度留足空间。预览仍完整等比显示，画面和人脸框共用同一映射，不裁切源画面。
 - `WM_WTSSESSION_CHANGE` 在锁屏时释放摄像头，解锁后仅当锁屏瞬间预览在跑（录入页可见）才恢复——JS 层切到人脸/设置/日志页即关相机，无条件恢复会让相机亮在无预览的页面背后。
