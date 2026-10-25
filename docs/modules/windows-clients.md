@@ -125,6 +125,7 @@ CLSID：`{C728CF60-ACEC-4680-9E93-43FBE403729C}`。
 - 禁用右键菜单和开发者工具。
 - Console 外观跟随 Windows 应用颜色模式，页面通过 `prefers-color-scheme` 自动切换深浅色，采用 Codex 中性灰色阶（深色背景 `#181818`）；C++ 读取 `AppsUseLightTheme`，同步设置 DWM 标题栏背景与文字、WebView2 默认背景和启动填充，运行中修改系统主题无需重启。
 - 支持 `ICoreWebView2Settings9` 拖动区域的运行时使用一体式顶部：隐藏原生标题栏，保留页面品牌区，以 `app-region: drag` 支持原生拖动和右键系统菜单；右上角最小化、关闭按钮经宿主投递窗口消息，保留系统缩放边框和阴影，禁止最大化。旧运行时保留原生标题栏并隐藏页面窗口按钮。页脚只显示版本和许可入口。
+- 所有页面共用 630 CSS px 的固定客户区高度（默认宽度 680、可调范围 420–680 CSS px），为 640×360 横屏预览及采集进度留足空间。预览仍完整等比显示，画面和人脸框共用同一映射，不裁切源画面。
 - `WM_WTSSESSION_CHANGE` 在锁屏时释放摄像头，解锁后仅当锁屏瞬间预览在跑（录入页可见）才恢复——JS 层切到人脸/设置/日志页即关相机，无条件恢复会让相机亮在无预览的页面背后。
 - 帧缓存由 `EnrollmentWizard::m_frameCacheMutex` 保护。
 - 用户数据目录固定为 `%LOCALAPPDATA%\LockFace\WebView2`（`WebviewHost.cpp` WM_CREATE 显式传入并递归创建；实际值与创建失败 HRESULT 均写 console.log(原名 enrollment.log)）。创建环境前会删除本进程的 `WEBVIEW2_USER_DATA_FOLDER` 环境变量：官方 loader 对该变量只检查存在性、不检查空值，宿主（如 Wails 安装器经 go-webview2 `preventEnvAndRegistryOverrides` 置空）遗留的空值会静默覆盖代码传参、回退到 exe 旁默认路径——在 Program Files 的 ACL 下 browser 子进程写不进去，controller 创建 19 秒后 E_ABORT。

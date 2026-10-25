@@ -18,6 +18,7 @@
 #pragma comment(lib, "advapi32.lib")
 
 static const wchar_t* WND_CLASS = L"LockFaceWv2Wnd";
+static constexpr int CLIENT_HEIGHT_CSS = 630;
 
 static void AdjustAppWindowRect(RECT& rect, DWORD style, UINT dpi, bool customFrame) {
     const LONG clientTop = rect.top;
@@ -236,12 +237,9 @@ int WebviewHost::Run() {
     int scrW = GetSystemMetrics(SM_CXSCREEN), scrH = GetSystemMetrics(SM_CYSCREEN);
 
     // Get the monitor DPI so we can convert CSS pixels to physical pixels.
-    // CSS layout needs ~600 CSS px vertically: the viewport no longer stretches
-    // to absorb spare height (that read as black/blur bands), so the window is
-    // sized to the cam page's measured capture-state height instead — header
-    // 82 + tabs 27 + 16:9 viewport 360 + checkbox 18 + button 39 + progress
-    // 13 + footer 31 + bottom padding 12 ≈ 596, +4 slack. Other screens
-    // (settings/logs/faces) scroll internally and fit fine at this height.
+    // Allow a full 640x360 preview together with the current brand/navigation,
+    // consent controls, capture progress and action row. A shorter client area
+    // flex-shrinks the viewport and introduces side bands in a 16:9 frame.
     HDC hdc = GetDC(nullptr);
     int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
     ReleaseDC(nullptr, hdc);
@@ -253,7 +251,7 @@ int WebviewHost::Run() {
     //          the capture button, no viewport stretch, no scrollbars)
     int clientWCss = 680;
 
-    int clientHCss = 600;  // cam page capture-state height (596 measured) + 4
+    int clientHCss = CLIENT_HEIGHT_CSS;
 
     // Convert to physical pixels for the window manager
     int clientW = static_cast<int>(clientWCss * dpiScale);
@@ -381,19 +379,17 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_GETMINMAXINFO: {
-        // The layout is designed for one size (client 680x600 CSS px) and has
-        // no responsive fallback: a shorter window clips the capture/save
-        // buttons below the non-scrolling screens (pwd page content is 575px
-        // tall), a taller one leaves dead space between the button and the
-        // footer. Clamp the draggable range around the design height instead.
+        // Keep the same client height on every page, including enough room
+        // for capture progress without shrinking the 16:9 preview. Width can
+        // vary from 420 to 680 CSS px; page bodies scroll where necessary.
         // Track sizes are physical px — apply the monitor DPI scale the same
         // way Run() does for the initial size, so this stays correct if the
         // user changes display scaling while the app is open.
         const UINT dpi = GetDpiForWindow(hWnd);
         float dpiScale = dpi / 96.0f;
         DWORD style = static_cast<DWORD>(GetWindowLongW(hWnd, GWL_STYLE));
-        RECT rcMin = {0, 0, static_cast<int>(420 * dpiScale), static_cast<int>(600 * dpiScale)};
-        RECT rcMax = {0, 0, static_cast<int>(680 * dpiScale), static_cast<int>(600 * dpiScale)};
+        RECT rcMin = {0, 0, static_cast<int>(420 * dpiScale), static_cast<int>(CLIENT_HEIGHT_CSS * dpiScale)};
+        RECT rcMax = {0, 0, static_cast<int>(680 * dpiScale), static_cast<int>(CLIENT_HEIGHT_CSS * dpiScale)};
         AdjustAppWindowRect(rcMin, style, dpi, m_customFrame);
         AdjustAppWindowRect(rcMax, style, dpi, m_customFrame);
         MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lp);
