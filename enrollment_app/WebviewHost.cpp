@@ -54,6 +54,11 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
     if (!self) return E_FAIL;
     ctrl->AddRef();
     self->m_controller = ctrl;
+    // Created hidden: the controller's composition surface has no frame until
+    // the browser paints the first document, and over this already-visible
+    // window that surface reads as black between the white startup fill and
+    // the content. NavCompletedCallback reveals it with content ready.
+    ctrl->put_IsVisible(FALSE);
     ctrl->get_CoreWebView2(&self->m_webview);
 
     // Register host object
@@ -126,7 +131,26 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
 
     self->m_webview->NavigateToString(facelogin::Utf8ToWstr(htmlContent).c_str());
 
+    NavCompletedCallback* navCb = new NavCompletedCallback(hWnd);
+    EventRegistrationToken navToken;
+    self->m_webview->add_NavigationCompleted(navCb, &navToken);
+    navCb->Release();  // the registration holds the owning reference
+
     self->ResizeWebView(hWnd);
+    return S_OK;
+}
+
+// ==========================================================================
+// NavCompletedCallback
+// ==========================================================================
+
+STDMETHODIMP NavCompletedCallback::Invoke(ICoreWebView2*,
+                                          ICoreWebView2NavigationCompletedEventArgs*) {
+    WebviewHost* self = (WebviewHost*)GetWindowLongPtrW(m_hWnd, GWLP_USERDATA);
+    if (self && self->m_controller) {
+        self->m_controller->put_IsVisible(TRUE);
+        self->ResizeWebView(m_hWnd);
+    }
     return S_OK;
 }
 
@@ -158,6 +182,11 @@ int WebviewHost::Run() {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hIcon   = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_ENROLLMENT_ICON));
     wc.hIconSm = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_ENROLLMENT_ICON));
+    // The window shows before WebView2's async init produces its first frame,
+    // and with no class brush the client area is never erased — it reads as
+    // black until the controller composes. Fill with the page body color
+    // (#fff, same as the caption) so the startup gap reads as the page.
+    wc.hbrBackground = CreateSolidBrush(RGB(255, 255, 255));
     wc.lpszClassName = WND_CLASS;
     RegisterClassExW(&wc);
 

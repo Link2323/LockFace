@@ -315,9 +315,13 @@ test('re-granting consent after a withdrawal clears the starting-camera overlay'
   };
 
   // First session: accept the gate; the first frame marks the camera ready
-  // and the deferred hide settles the startup overlay.
+  // and the deferred hide settles the startup overlay. The camera start is
+  // itself deferred (app_main pushes StartPreview past the page reveal), so
+  // it runs while draining one flush and only then registers the 350ms
+  // overlay hide — a second flush settles it.
   p.element('consent-agree').checked = true;
   p.context.onConsentAccept();
+  flush();
   flush();
   assert.equal(p.app.previewCtl.isViewing(), true);
   assert.equal(p.element('cam-loading').style.display, 'none');

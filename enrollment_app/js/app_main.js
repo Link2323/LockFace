@@ -131,7 +131,17 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
   // The startup prompts are deferred with it so they cannot cover the consent
   // dialog or race its overlay.
   consent.init(function() {
-    previewCtl.restartPreview();
+    // StartPreview is a synchronous host call — opening the device plus
+    // loading the four ONNX sessions can hold the renderer for seconds.
+    // Defer it past page load + reveal so the UI comes up first; the
+    // cam-loading overlay shown by markCameraPending stands in ("正在启动
+    // 摄像头...") until the first frame arrives. The tab guard keeps a user
+    // who switched away within the delay from powering the camera on
+    // behind another screen. The prompt timers below keep their head start
+    // so they still land before the camera takes over.
+    setTimeout(function() {
+      if (nav.tab() === 'cam') previewCtl.restartPreview();
+    }, 450);
 
     // If the account was converted from MSA→local with a stale record, surface
     // the refresh prompt at startup (before the camera preview takes over).

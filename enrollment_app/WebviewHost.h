@@ -60,6 +60,30 @@ private:
     ULONG m_ref;
 };
 
+// Fires once the first NavigateToString document finishes loading; reveals
+// the controller that CtrlCallback created hidden.
+class NavCompletedCallback : public ICoreWebView2NavigationCompletedEventHandler {
+public:
+    explicit NavCompletedCallback(HWND hWnd) : m_hWnd(hWnd), m_ref(1) {}
+    HWND m_hWnd;
+
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppv) {
+        if (riid == IID_IUnknown || riid == __uuidof(ICoreWebView2NavigationCompletedEventHandler)) {
+            *ppv = this; AddRef(); return S_OK;
+        }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    STDMETHOD_(ULONG, AddRef)()  { return InterlockedIncrement(&m_ref); }
+    STDMETHOD_(ULONG, Release)() {
+        ULONG c = InterlockedDecrement(&m_ref);
+        if (c == 0) delete this;
+        return c;
+    }
+    STDMETHOD(Invoke)(ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) override;
+private:
+    ULONG m_ref;
+};
+
 // Main window + WebView2 host
 class WebviewHost {
 public:
