@@ -129,7 +129,7 @@ std::string ConfigToJson(const AppConfig& cfg) {
     ss << "  "; jsonWriteString(ss, "learning_distance_gate"); ss << ": " << cfg.learning_distance_gate << ",\n";
     ss << "  "; jsonWriteString(ss, "learning_norm_floor"); ss << ": " << cfg.learning_norm_floor << ",\n";
     ss << "  "; jsonWriteString(ss, "learning_min_interval_sec"); ss << ": " << cfg.learning_min_interval_sec << ",\n";
-    ss << "  "; jsonWriteString(ss, "fast_unlock"); ss << ": " << (cfg.fast_unlock ? "true" : "false") << ",\n";
+    ss << "  "; jsonWriteString(ss, "unlock_frames"); ss << ": " << cfg.unlock_frames << ",\n";
     ss << "  "; jsonWriteString(ss, "recognizer_model"); ss << ": ";
     jsonWriteString(ss, "opencv-sface-2021dec"); ss << "\n";
     ss << "}\n";
@@ -216,7 +216,25 @@ AppConfig ConfigFromJson(const std::string& json) {
                        cfg.learning_min_interval_sec);
         cfg.learning_min_interval_sec = 60;
     }
-    cfg.fast_unlock = (jsonGetString(json, "fast_unlock") == "true");
+    // Unlock tier: whitelist {5,3,2}. The legacy fast_unlock bool is honored
+    // when unlock_frames is absent — true→3 (standard), false→5 (strict) — so
+    // an install that recorded either setting keeps its effective tier; only
+    // a config with neither key lands on the new default 3. An old binary
+    // reading a new config sees no fast_unlock key and falls back to its own
+    // default (5) — the strict direction.
+    const std::string unlockFrames = jsonGetString(json, "unlock_frames");
+    if (!unlockFrames.empty()) {
+        if (unlockFrames == "5" || unlockFrames == "3" || unlockFrames == "2") {
+            cfg.unlock_frames = std::stoi(unlockFrames);
+        } else {
+            FACELOGIN_WARN(L"Invalid unlock_frames=%hs in config, enforcing default 3",
+                           unlockFrames.c_str());
+        }
+    } else {
+        const std::string legacyFastUnlock = jsonGetString(json, "fast_unlock");
+        if (!legacyFastUnlock.empty())
+            cfg.unlock_frames = (legacyFastUnlock == "true") ? 3 : 5;
+    }
     cfg.camera_rotation = rotation;
     auto cam = jsonGetString(json, "camera_device");
     if (!cam.empty()) cfg.camera_device = cam;
@@ -246,9 +264,9 @@ AppConfig LoadConfig(const std::wstring& dataDir) {
     file.close();
 
     AppConfig cfg = ConfigFromJson(buf.str());
-    FACELOGIN_INFO(L"Loaded config.json: thr=%.2f antiSpoof=%.3f camera=%hs rotation=%d",
+    FACELOGIN_INFO(L"Loaded config.json: thr=%.2f antiSpoof=%.3f camera=%hs rotation=%d frames=%d",
                   cfg.match_threshold, cfg.anti_spoof_threshold, cfg.camera_device.c_str(),
-                  cfg.camera_rotation);
+                  cfg.camera_rotation, cfg.unlock_frames);
     return cfg;
 }
 

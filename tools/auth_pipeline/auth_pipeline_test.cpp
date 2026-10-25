@@ -75,7 +75,7 @@ namespace {
 using namespace facelogin;
 using Clock = std::chrono::steady_clock;
 
-AuthPipelineResult Run(bool fastUnlock,
+AuthPipelineResult Run(int unlockFrames,
                        const decltype(AuthPipelineCallbacks::verifyBinding)& binding,
                        const std::function<bool()>& cancelled = [] { return false; },
                        const std::function<bool()>& frozen = [] { return false; },
@@ -101,17 +101,17 @@ AuthPipelineResult Run(bool fastUnlock,
     callbacks.reportStatus = [](const std::wstring&) {};
     callbacks.verifyBinding = binding;
     AuthPipelineConfig config;
-    config.fastUnlock = fastUnlock;
+    config.unlockFrames = unlockFrames;
     config.authTimeoutSeconds = timeoutSeconds;
     if (setup) setup(callbacks, config);
     return AuthPipeline(detector, recognizer, pad, config, std::move(callbacks)).Run();
 }
 
-void TestPersistentMissAfterPartialEvidence(bool fastUnlock, unsigned int accepted) {
+void TestPersistentMissAfterPartialEvidence(int unlockFrames, unsigned int accepted) {
     g_padScore = 1.0f;
     unsigned int accepts = 0, retries = 0;
     const auto start = Clock::now();
-    const auto result = Run(fastUnlock,
+    const auto result = Run(unlockFrames,
         [&](const std::vector<float>&, unsigned int index, float, float, float) {
             Check(index == accepts, "Retry preserves the pending binding index");
             if (accepts < accepted) {
@@ -129,14 +129,14 @@ void TestPersistentMissAfterPartialEvidence(bool fastUnlock, unsigned int accept
           "persistent identity misses fail near 2s instead of waiting 8s");
     Check(result.errorMessage == L"人脸匹配持续失败，请调整位置或光照后重试",
           "partial identity failure is not reported as a PAD rejection");
-    std::printf("Partial evidence (%s, %u bindings): %.3f s\n",
-                fastUnlock ? "fast" : "default", accepted, elapsed);
+    std::printf("Partial evidence (%d frames, %u bindings): %.3f s\n",
+                unlockFrames, accepted, elapsed);
 }
 
-void TestTransientMissRecovers(bool fastUnlock) {
+void TestTransientMissRecovers(int unlockFrames) {
     g_padScore = 1.0f;
     unsigned int accepts = 0, retries = 0;
-    const auto result = Run(fastUnlock,
+    const auto result = Run(unlockFrames,
         [&](const std::vector<float>&, unsigned int index, float, float, float) {
             Check(index == accepts, "recovery keeps binding indices ordered");
             if (index == 1 && retries++ < 3) {
@@ -145,25 +145,67 @@ void TestTransientMissRecovers(bool fastUnlock) {
             ++accepts;
             return BindingDecision{BindingDecisionKind::Accept, {}};
         });
-    Check(result.outcome == AuthOutcome::Succeeded && accepts == 3,
-          "transient identity misses recover only after all three bindings");
+    Check(result.outcome == AuthOutcome::Succeeded &&
+              accepts == static_cast<unsigned int>(BindingCountRequired(unlockFrames)),
+          "transient identity misses recover only after every binding the tier requires");
 }
 
 void TestPadFailureRemainsPadFailure() {
     g_padScore = 0.0f;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [](const std::vector<float>&, unsigned int, float, float, float) {
             return BindingDecision{BindingDecisionKind::Accept, {}};
         });
     Check(result.outcome == AuthOutcome::Failed && result.errorMessage == L"未通过活体检测，请使用真实人脸",
           "matching identity cannot bypass failing PAD scores");
+    const auto ultra = Run(2,
+        [](const std::vector<float>&, unsigned int, float, float, float) {
+            return BindingDecision{BindingDecisionKind::Accept, {}};
+        });
+    Check(ultra.outcome == AuthOutcome::Failed && ultra.errorMessage == L"未通过活体检测，请使用真实人脸",
+          "ultra tier matching identity cannot bypass failing PAD scores");
+}
+
+// The ultra-fast tier counts two PAD frames and binds both. The evidence
+// chain must survive the shorter plan: ordered indices 0→1, two distinct
+// frames, and the same ≥60 ms pacing guard between counted frames.
+void TestUltraFastTierEvidence() {
+    g_padScore = 1.0f;
+    unsigned long long sequence = 0;
+    unsigned int bindings = 0;
+    std::vector<int> markers;
+    std::vector<Clock::time_point> grabs;
+    const auto result = Run(2,
+        [&](const std::vector<float>&, unsigned int index, float, float, float) {
+            Check(index == bindings, "ultra tier binding indices are ordered 0 then 1");
+            ++bindings;
+            markers.push_back(g_lastEmbeddingMarker);
+            return BindingDecision{BindingDecisionKind::Accept, {}};
+        }, [] { return false; }, [] { return false; }, ipc::AUTH_TIMEOUT_SECONDS,
+        [] { return false; }, [&](AuthPipelineCallbacks& callbacks, AuthPipelineConfig&) {
+            callbacks.grabFrame = [&](FrameImage& frame, unsigned long long& seq) {
+                frame = FrameImage(160, 160);
+                for (size_t i = 0; i < frame.size(); ++i) frame[i] = RgbPixel(80, 80, 80);
+                seq = ++sequence;
+                frame(0, 0) = RgbPixel(static_cast<unsigned char>(seq), 80, 80);
+                grabs.push_back(Clock::now());
+                return true;
+            };
+        });
+    Check(result.outcome == AuthOutcome::Succeeded && bindings == 2,
+          "ultra tier succeeds with exactly two bindings");
+    Check(markers.size() == 2 && markers[0] < markers[1],
+          "ultra tier binds two distinct frames");
+    if (markers.size() == 2 && markers[0] >= 1 && markers[1] <= static_cast<int>(grabs.size()))
+        Check(grabs[markers[1] - 1] - grabs[markers[0] - 1] >= std::chrono::milliseconds(60),
+              "ultra tier keeps at least 60ms between counted frames");
 }
 
 void TestRecoveryResetsClockInPipeline() {
     g_padScore = 1.0f;
     unsigned int accepts = 0, retryIndex = 0;
     Clock::time_point retryStart{};
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int index, float, float, float) {
             if (index != 0) {
                 if (retryIndex != index) {
@@ -183,7 +225,7 @@ void TestRecoveryResetsClockInPipeline() {
 
 void TestIdentityRejectRemainsTerminal() {
     g_padScore = 1.0f;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [](const std::vector<float>&, unsigned int index, float, float, float) {
             return index == 0
                 ? BindingDecision{BindingDecisionKind::Accept, {}}
@@ -195,7 +237,7 @@ void TestIdentityRejectRemainsTerminal() {
 
 void TestInvalidPadRemainsTerminal() {
     g_padScore = -1.0f;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [](const std::vector<float>&, unsigned int, float, float, float) {
             return BindingDecision{BindingDecisionKind::Accept, {}};
         });
@@ -206,7 +248,7 @@ void TestInvalidPadRemainsTerminal() {
 void TestCancelDuringIdentityRetry() {
     g_padScore = 1.0f;
     const auto start = Clock::now();
-    const auto result = Run(true,
+    const auto result = Run(3,
         [](const std::vector<float>&, unsigned int index, float, float, float) {
             return BindingDecision{index == 0 ? BindingDecisionKind::Accept
                                              : BindingDecisionKind::Retry, {}};
@@ -222,7 +264,7 @@ void TestPacingSkipsStaleFramesAndRetainsRetryAnchor() {
     const std::vector<unsigned long long> sequences{1, 2, 2, 1, 3, 3, 4};
     size_t grabs = 0;
     std::vector<int> bindings;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             bindings.push_back(g_lastEmbeddingMarker);
             return BindingDecision{bindings.size() == 2 ? BindingDecisionKind::Retry
@@ -247,7 +289,7 @@ void TestFrozenCameraHonorsTimeout() {
     g_padScore = 1.0f;
     unsigned int accepts = 0;
     const auto start = Clock::now();
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++accepts;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -265,7 +307,7 @@ void TestFrozenCameraHonorsDisconnect() {
     g_padScore = 1.0f;
     unsigned int accepts = 0;
     const auto start = Clock::now();
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++accepts;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -280,7 +322,7 @@ void TestFrozenCameraHonorsDisconnect() {
 
 void TestPreparationConsumesAuthBudget() {
     unsigned int bindings = 0;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++bindings;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -301,7 +343,7 @@ void TestPreparationConsumesAuthBudget() {
 
 void TestExpiredHostDeadlineNeverBinds() {
     unsigned int bindings = 0;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++bindings;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -325,7 +367,7 @@ void TestNoFaceDarkRecovery(bool lateEntry = false, bool padPass = true,
     unsigned int writes = 0, bindings = 0;
     unsigned long long sequence = 0;
     const auto start = Clock::now();
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++bindings;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -384,7 +426,7 @@ void TestBrightFallbackFinishesBeforeBinding() {
     unsigned long long sequence = 0;
     unsigned int bindings = 0;
     g_padScore = 1.0f;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++bindings;
             Check(exposureWrites.size() == 2 && gain < 63,
@@ -454,7 +496,7 @@ void TestInterruptedTuneRecovery(TuneRecoveryScene scene = TuneRecoveryScene::St
         unsigned long long sequence = 0;
         unsigned int bindings = 0;
         const size_t startWrites = writes.size();
-        const auto result = Run(true,
+        const auto result = Run(3,
             [&](const std::vector<float>&, unsigned int, float, float, float) {
                 ++bindings;
                 return BindingDecision{scene == TuneRecoveryScene::IdentityReject
@@ -512,7 +554,7 @@ enum class SeedScene { Manual, Auto, UnknownMode, Drift, Dark, Bright,
                        Expired, ControlWrite, PadFailure, IdentityReject, Cancel, Duplicate };
 
 void TestManualWarmupSeed(SeedScene scene = SeedScene::Manual, int rotation = 0,
-                          bool fastUnlock = true) {
+                          int unlockFrames = 3) {
     g_detectCalls = 0;
     g_padScore = scene == SeedScene::PadFailure ? 0.0f : 1.0f;
     unsigned long long sequence = 0;
@@ -522,7 +564,7 @@ void TestManualWarmupSeed(SeedScene scene = SeedScene::Manual, int rotation = 0,
     bool duplicateReturned = false;
     std::vector<int> markers;
     std::vector<Clock::time_point> grabs;
-    const auto result = Run(fastUnlock,
+    const auto result = Run(unlockFrames,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             if (bindings++ == 0) firstMarker = g_lastEmbeddingMarker;
             markers.push_back(g_lastEmbeddingMarker);
@@ -588,9 +630,13 @@ void TestManualWarmupSeed(SeedScene scene = SeedScene::Manual, int rotation = 0,
             Check(result.outcome == AuthOutcome::Failed && bindings == 1 && result.errorMessage == L"test identity rejection",
                   "reused seed cannot bypass identity rejection");
         } else if (scene == SeedScene::PadFailure) {
-            Check(result.outcome == AuthOutcome::Failed && bindings == 3, "reused seed cannot bypass failed PAD");
+            Check(result.outcome == AuthOutcome::Failed &&
+                      bindings == static_cast<unsigned int>(BindingCountRequired(unlockFrames)),
+                  "reused seed cannot bypass failed PAD");
         } else {
-            Check(result.outcome == AuthOutcome::Succeeded && bindings == 3, "warmup seed preserves all three identity bindings");
+            Check(result.outcome == AuthOutcome::Succeeded &&
+                      bindings == static_cast<unsigned int>(BindingCountRequired(unlockFrames)),
+                  "warmup seed preserves every identity binding the tier requires");
         }
         for (size_t i = 1; i < markers.size(); ++i) {
             Check(markers[i] > markers[i - 1], "reused seed bindings use increasing distinct frames");
@@ -599,8 +645,8 @@ void TestManualWarmupSeed(SeedScene scene = SeedScene::Manual, int rotation = 0,
         }
     }
     g_padScore = 1.0f;
-    std::printf("Warmup seed scene=%d rotation=%d fast=%d: first=%d, bindings=%u, success=%d\n",
-                static_cast<int>(scene), rotation, fastUnlock, firstMarker, bindings, result.outcome == AuthOutcome::Succeeded);
+    std::printf("Warmup seed scene=%d rotation=%d frames=%d: first=%d, bindings=%u, success=%d\n",
+                static_cast<int>(scene), rotation, unlockFrames, firstMarker, bindings, result.outcome == AuthOutcome::Succeeded);
 }
 
 // Exit while SCRFD still owns its input. Preparation must join before Run
@@ -609,7 +655,7 @@ void TestPendingWarmupExit(bool expireDeadline) {
     g_detectCalls = 0;
     g_detectionDelayMs = 100;
     unsigned int bindings = 0;
-    const auto result = Run(true,
+    const auto result = Run(3,
         [&](const std::vector<float>&, unsigned int, float, float, float) {
             ++bindings;
             return BindingDecision{BindingDecisionKind::Accept, {}};
@@ -636,7 +682,8 @@ void TestWarmupSeeds() {
         TestManualWarmupSeed(scene);
     TestManualWarmupSeed(SeedScene::Manual, 90);
     TestManualWarmupSeed(SeedScene::Drift, 90);
-    TestManualWarmupSeed(SeedScene::Manual, 0, false);
+    TestManualWarmupSeed(SeedScene::Manual, 0, 5);
+    TestManualWarmupSeed(SeedScene::Manual, 0, 2);
 }
 } // namespace
 
@@ -664,13 +711,16 @@ int main(int argc, char** argv) {
     TestNoFaceDarkRecovery(false, false);
     TestNoFaceDarkRecovery(false, true, 1);
     TestNoFaceDarkRecovery(false, true, ipc::AUTH_TIMEOUT_SECONDS, true);
-    TestPersistentMissAfterPartialEvidence(true, 1);
-    TestPersistentMissAfterPartialEvidence(true, 2);
-    TestPersistentMissAfterPartialEvidence(false, 2);
-    TestTransientMissRecovers(true);
-    TestTransientMissRecovers(false);
+    TestPersistentMissAfterPartialEvidence(3, 1);
+    TestPersistentMissAfterPartialEvidence(3, 2);
+    TestPersistentMissAfterPartialEvidence(5, 2);
+    TestPersistentMissAfterPartialEvidence(2, 1);
+    TestTransientMissRecovers(3);
+    TestTransientMissRecovers(5);
+    TestTransientMissRecovers(2);
     TestRecoveryResetsClockInPipeline();
     TestPadFailureRemainsPadFailure();
+    TestUltraFastTierEvidence();
     TestIdentityRejectRemainsTerminal();
     TestInvalidPadRemainsTerminal();
     TestCancelDuringIdentityRetry();

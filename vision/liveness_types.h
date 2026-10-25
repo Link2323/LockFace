@@ -5,14 +5,25 @@
 namespace facelogin {
 
 // Calibration and validation use independent five-frame attempts. The
-// default (secure) policy mirrors that exactly: five valid frames, and
-// every frame must pass. Fast unlock (config fast_unlock=true) counts
-// three frames with every frame binding identity — a user-facing
-// speed/security trade-off, NOT a calibration result
-// (docs/work/completed/threshold-calibration.md is five-frame; the 3-frame
-// mode was not recalibrated and keeps the same per-frame 0.281 threshold).
-inline int AntiSpoofCheckCount(bool fastUnlock) {
-    return fastUnlock ? 3 : 5;
+// strict tier (unlock_frames=5) mirrors that exactly: five valid frames,
+// every frame must pass, identity binds counted frames 1/3/5. The standard
+// tier (3) counts three frames with every frame binding identity — the
+// user-facing default since 2026-10-24, previously the opt-in fast-unlock
+// mode. The ultra-fast tier (2) counts two frames, every frame binding.
+// Both reduced tiers are user-facing speed/security trade-offs, NOT
+// calibration results (docs/work/completed/threshold-calibration.md is
+// five-frame; neither 3- nor 2-frame mode was recalibrated and both keep
+// the same per-frame 0.281 threshold). An attack must pass every counted
+// frame, so per-frame false-accept q yields q^5 / q^3 / q^2.
+inline int AntiSpoofCheckCount(int unlockFrames) {
+    return (unlockFrames == 5 || unlockFrames == 2) ? unlockFrames : 3;
+}
+
+// Identity bindings the parent must accept before a round can succeed:
+// the 5-frame tier binds counted frames 1/3/5 (three probes), the reduced
+// tiers bind every counted frame.
+inline int BindingCountRequired(int unlockFrames) {
+    return unlockFrames == 2 ? 2 : 3;
 }
 
 inline int AntiSpoofPassRequired(int checkCount) {

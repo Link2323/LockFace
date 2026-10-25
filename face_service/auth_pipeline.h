@@ -17,7 +17,6 @@ namespace facelogin {
 
 struct AuthFrame;
 class AuthFrameStream;
-namespace auth_diagnostics { struct NormLog; }
 
 // The inference-only authentication loop.  It owns no camera, credential
 // store, named pipe, or Windows password.  Those resources deliberately live
@@ -47,16 +46,13 @@ struct AuthPipelineCallbacks {
     // Sensor exposure/gain controls for the face-priority exposure tune
     // (face_gain_tune.h). Empty functions = unsupported knob → skipped.
     SensorKnobs sensorKnobs;
-    // Optional diagnostic-only snapshot: a single driver read returns both
-    // exposure value and mode. False means neither output is valid. Hosts
-    // without it keep the separate SensorKnobs reads. Never used for tuning.
-    std::function<bool(long& valueOut, bool& manualOut)> readExposureState;
     std::function<void(const std::wstring&)> reportStatus;
 
     // Called for each identity-binding frame (counted frames 1/3/5 in the
-    // default plan; every counted frame in fast-unlock mode). The callback
-    // must preserve the first-identity / same-identity invariant and must
-    // not release a password. Retry means the current frame is not counted for PAD.
+    // strict 5-frame plan; every counted frame in the 3- and 2-frame tiers).
+    // The callback must preserve the first-identity / same-identity
+    // invariant and must not release a password. Retry means the current
+    // frame is not counted for PAD.
     // preNorm is the embedding's L2 norm before normalization (quality
     // signal; the embedding itself arrives unit-length so the raw norm is
     // unrecoverable downstream). yawDeg/pitchDeg are the weak-perspective
@@ -74,10 +70,11 @@ struct AuthPipelineConfig {
     float antiSpoofThreshold = 0.28f;
     int authTimeoutSeconds = ipc::AUTH_TIMEOUT_SECONDS;
     int cameraRotation = 0;
-    // Fast unlock: 3 counted frames, every frame binds identity (the
-    // default 5-frame plan binds counted frames 1/3/5). Security
-    // trade-off documented on AppConfig::fast_unlock.
-    bool fastUnlock = false;
+    // Unlock tier (AppConfig unlock_frames): counted PAD frames. 3 standard
+    // — the default, every counted frame binds identity; 2 ultra-fast —
+    // every frame binds; 5 strict — binds counted frames 1/3/5. Security
+    // trade-off documented on AppConfig::unlock_frames.
+    int unlockFrames = 3;
     // Absolute path of the persisted last-good exposure/gain combo
     // (camera_tune.state in the data dir, face_gain_tune.h). Empty disables
     // persistence and replay.
@@ -166,7 +163,6 @@ struct AuthLoopState {
 };
 
 struct PreparedAuthFrames;
-namespace auth_diagnostics { struct ExposureTimingProfile; }
 
 class AuthPipeline {
 public:
@@ -180,7 +176,6 @@ public:
 
 private:
     bool PrepareFrames(PreparedAuthFrames& prepared,
-                       auth_diagnostics::ExposureTimingProfile& exposureTiming,
                        const SensorKnobs& sensorKnobs,
                        const std::function<bool()>& interrupted,
                        const decltype(AuthPipelineCallbacks::grabFrame)& grabFrame);
@@ -195,15 +190,13 @@ private:
                                  AuthFrameStream& frames,
                                  PreparedAuthFrames& prepared,
                                  const SensorKnobs& sensorKnobs,
-                                 const std::function<bool()>& interrupted,
-                                 auth_diagnostics::NormLog& normLog);
+                                 const std::function<bool()>& interrupted);
     PreCountCorrection CorrectExposureBeforeFirstCount(
         AuthLoopState& state, PreparedAuthFrames& prepared, const AuthFrame& cur,
         const SensorKnobs& sensorKnobs, const std::function<bool()>& interrupted);
     BindingDisposition AttemptBinding(AuthLoopState& state, const AuthFrame& cur,
                                       const FaceRect& faceRect,
-                                      std::future<float>& scoreFuture,
-                                      auth_diagnostics::NormLog& normLog);
+                                      std::future<float>& scoreFuture);
     std::optional<AuthLoopStop> PrefetchNextFrame(
         AuthLoopState& state, AuthFrameStream& frames, AuthFrame& next,
         std::future<float>& scoreFuture, int totalChecks,

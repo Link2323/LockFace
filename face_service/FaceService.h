@@ -56,9 +56,13 @@ private:
     // roundBest (optional) accumulates the best-distance accepted binding
     // frame of the round as a progressive-learning candidate (best wins);
     // yawDeg/pitchDeg ride along as the candidate's pose for the cone gate.
+    // expectedBindings is the tier's probe count (BindingCountRequired),
+    // snapshotted by the caller at round start — log denominators only; the
+    // wire-level sequence stays enforced by AuthExchangeValidator.
     BindingDecision VerifyIdentityBinding(
         const std::vector<float>& embedding, unsigned int bindingIndex,
         float preNorm, float yawDeg, float pitchDeg,
+        unsigned int expectedBindings,
         std::optional<CredentialStore::IdentityMatch>& lockedIdentity,
         std::wstring& initialSid,
         float* identityMissDistance = nullptr,

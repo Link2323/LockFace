@@ -101,11 +101,6 @@ void Logger::Log(LogLevel level, const wchar_t* format, ...) {
                   st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
                   levelStr, GetCurrentThreadId(), buffer);
 
-    // Output to debugger
-    if (m_debugOutput) {
-        OutputDebugStringW(finalMsg);
-    }
-
     // Write to file; only error lines pay the synchronous flush
     WriteToFile(finalMsg, level >= LogLevel::Error);
 

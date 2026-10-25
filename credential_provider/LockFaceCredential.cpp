@@ -2,6 +2,7 @@
 #include "LockFaceProvider.h"
 #include "dll_lifetime.h"
 #include "input_trigger_policy.h"
+#include "waiting_prompt_policy.h"
 #include "resource.h"
 #include "native_logon.h"
 #include "../common/account_identity.h"
@@ -131,6 +132,20 @@ void RawInputSink::Unregister() noexcept {
     }
 }
 
+// SetSelected may run behind the wallpaper. Only an input-active desktop
+// with a foreground window owned by our LogonUI host can arm the idle hint.
+// Unknown/transitioning foreground state keeps the hint blank.
+static bool IsCredentialViewActive() noexcept {
+    BOOL receivesInput = FALSE;
+    if (!GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), UOI_IO,
+                                   &receivesInput, sizeof(receivesInput), nullptr) ||
+        !receivesInput) return false;
+    const HWND foreground = GetForegroundWindow();
+    DWORD processId = 0;
+    return foreground && GetWindowThreadProcessId(foreground, &processId) != 0 &&
+        processId == GetCurrentProcessId();
+}
+
 unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
     std::unique_ptr<WorkerContext> context(static_cast<WorkerContext*>(pParam));
     LockFaceCredential* pCred = context->credential;
@@ -138,7 +153,6 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
     using facelogin::credential_provider::InputTriggerKind;
 
     constexpr DWORD kPollIntervalMs = 10;
-    constexpr DWORD kMouseSelectionSettleMs = 100;
     constexpr int kFirstVk = 0x01;
     constexpr int kLastVk = 0xFE;
     constexpr int kMouseButtons[] = {
@@ -186,6 +200,23 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
 
     bool shouldTrigger = false;
     InputTriggerKind triggerKind = InputTriggerKind::None;
+
+    // Time spent behind the wallpaper must never pre-arm the prompt. Give
+    // the foreground credential view a quiet interval to receive the
+    // dismissal key's BREAK before deciding an additional press is needed.
+    facelogin::credential_provider::WaitingPromptPolicy waitingPrompt;
+    bool promptVisible = false;
+    auto heldInputMayStillTrigger = [&]() noexcept {
+        for (int vk = kFirstVk; vk <= kLastVk; ++vk) {
+            if ((GetAsyncKeyState(vk) & 0x8000) == 0) continue;
+            if (vk != InputTriggerPolicy::kVkL &&
+                !InputTriggerPolicy::IsWindowsKey(static_cast<std::uint16_t>(vk))) {
+                return true;  // ordinary key or mouse button still held
+            }
+        }
+        return false;
+    };
+
     while (WaitForSingleObject(context->stop, 0) != WAIT_OBJECT_0) {
         MSG msg = {};
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -224,6 +255,13 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
             break;
         }
 
+        const bool showPrompt = !failureRetryRound && waitingPrompt.Update(
+            GetTickCount64(), IsCredentialViewActive(), heldInputMayStillTrigger());
+        if (showPrompt != promptVisible) {
+            promptVisible = showPrompt;
+            pCred->QueueEvent(EventKind::WaitingPrompt, context->generation, showPrompt);
+        }
+
         DWORD wait = MsgWaitForMultipleObjectsEx(
             1, &context->stop, kPollIntervalMs, QS_ALLINPUT,
             MWMO_ALERTABLE | MWMO_INPUTAVAILABLE);
@@ -235,32 +273,47 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
     t_inputTriggerPolicy = nullptr;
     rawSink.Unregister();  // idempotent no-op if registration failed
 
-    // A mouse click can target another sign-in option. LogonUI dispatches the
-    // tile switch at the end of that click and calls SetDeselected, which
-    // signals m_hInputStop. Give that UI transition one short cancellable
-    // window before opening the authentication pipe. Keyboard presses retain
-    // their immediate path.
-    if (shouldTrigger && triggerKind == InputTriggerKind::MouseButton &&
-        WaitForSingleObject(context->stop, kMouseSelectionSettleMs) ==
-            WAIT_OBJECT_0) {
-        shouldTrigger = false;
-    }
-
-    // Deselect/UnAdvise wins a race with the qualifying edge: once the stop
-    // event is signaled this watcher must not open a new pipe while its owner
-    // is joining the thread and tearing the selected tile down.
-    if (shouldTrigger &&
-        WaitForSingleObject(context->stop, 0) != WAIT_OBJECT_0) {
-        pCred->QueueEvent(EventKind::Input, context->generation, true);
-    }
+    if (shouldTrigger) pCred->QueueInputAfterSelection(*context, triggerKind);
 
     pCred->m_inputThreadRunning = false;
     pCred->Release();
     return 0;
 }
 
-// Idle prompt shown on the Waiting tile — one constant so the deselect reset
-// and GetStringValue can never drift apart.
+void LockFaceCredential::QueueInputAfterSelection(
+    const WorkerContext& context,
+    facelogin::credential_provider::InputTriggerKind triggerKind) {
+    // A mouse click can target another sign-in option. LogonUI dispatches the
+    // tile switch at the end of that click and calls SetDeselected, which
+    // signals m_hInputStop. Give that UI transition one short cancellable
+    // window before opening the authentication pipe. Keyboard presses retain
+    // their immediate path.
+    // Keep a cancellable 50 ms window; the prior 100 ms also delayed every
+    // intentional face click. Real LogonUI tile-switch timing still requires
+    // lock-screen verification; the queued event is generation-checked too.
+    constexpr DWORD kMouseSelectionSettleMs = 50;
+#ifdef FACELOGIN_CONCURRENCY_TESTS
+    if (m_testBarrier) m_testBarrier(4);
+#endif
+    if (triggerKind == facelogin::credential_provider::InputTriggerKind::MouseButton &&
+        WaitForSingleObject(context.stop, kMouseSelectionSettleMs) != WAIT_TIMEOUT) {
+        return;
+    }
+
+    // Deselect/UnAdvise wins a race with the qualifying edge: once the stop
+    // event is signaled this watcher must not open a new pipe while its owner
+    // is joining the thread and tearing the selected tile down.
+    if (WaitForSingleObject(context.stop, 0) == WAIT_TIMEOUT) {
+        QueueEvent(EventKind::Input, context.generation, true);
+    }
+}
+
+// Idle prompt for the Waiting tile. Event-driven, never the enumeration
+// default: a plain first press dismisses the wallpaper and triggers straight
+// into "正在识别...", so a prompt pre-rendered during the reveal animation
+// would flash. The input watcher queues EventKind::WaitingPrompt once the
+// foreground credential view is quiet (InputDetectionThreadProc); only that event ever
+// puts this text on the tile.
 static const wchar_t kWaitingPrompt[] = L"按下任意按键以开始人脸识别";
 
 // ============================================================================
@@ -404,6 +457,18 @@ void LockFaceCredential::DispatchEvent() {
         if (facelogin::credential_provider::IsRetryableFailure(m_state)) StartExplicitRetry();
         else if (m_state == State::Waiting) StartAuth();
         break;
+    case EventKind::WaitingPrompt:
+        // Show/hide transitions are level-driven by the watcher, which
+        // re-evaluates the credential view every poll: a view that deactivates
+        // after a show was queued produces its matching hide within one poll
+        // cycle. The STA must not re-veto here — a vetoed show would leave
+        // the watcher's visible-state mirror true and lose the prompt for the
+        // rest of the round.
+        if (m_selected && m_state == State::Waiting) {
+            SetStatusText(event->success ? kWaitingPrompt : L"");
+            NotifyStatusText();
+        }
+        break;
     case EventKind::Status:
         OnPipeStatus(event->message);
         break;
@@ -442,7 +507,10 @@ void LockFaceCredential::StopBackgroundWork() {
     if (m_state != State::Ready) {
         facelogin::SecureClearWString(m_password);
         ClearPackedCredentials();
-        if (m_state == State::Authenticating) m_state = State::Waiting;
+        if (m_state == State::Authenticating) {
+            m_state = State::Waiting;
+            SetStatusText(L"");  // Waiting renders blank until its prompt event
+        }
     }
     m_authDeadline.store({});
 }
@@ -604,7 +672,11 @@ STDMETHODIMP LockFaceCredential::SetDeselected() {
     AssertOwner();
     StopBackgroundWork();
     if (m_state == State::Waiting) {
-        SetStatusText(kWaitingPrompt);
+        // Blank, not the prompt: re-selecting this tile can trigger from the
+        // selecting key's release edge, and a pre-shown prompt would flash
+        // before "正在识别...". The prompt returns via the re-armed watcher
+        // once the re-selected round goes quiet.
+        SetStatusText(L"");
         NotifyStatusText();
     }
     return S_OK;
@@ -675,21 +747,26 @@ STDMETHODIMP LockFaceCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
     case kFieldStatus:
         switch (m_state) {
         case State::Waiting:
-            return SHStrDupW(kWaitingPrompt, ppwsz);
+            // Blank until the watcher's quiet-round signal arrives (see
+            // kWaitingPrompt); every Waiting entry resets m_statusText empty.
+            return SHStrDupW(SnapshotStatusText().c_str(), ppwsz);
         case State::Ready:
-            return SHStrDupW(L"人脸识别成功，正在解锁...", ppwsz);
         case State::Authenticating:
         case State::Failed:
         case State::Error: {
             // Surface the specific service-provided text when one exists
             // (live "正在识别...", failure reasons like "未检测到人脸",
             // service errors like "人脸登录服务不可用"); otherwise the
-            // per-state generic fallback. State and text are both STA-owned.
+            // per-state generic fallback. Ready deliberately falls through
+            // with the same "正在识别..." text: no success banner, and
+            // keeping what is already on the tile avoids a visible jump
+            // before LogonUI switches to its own welcome animation.
+            // State and text are both STA-owned.
             const std::wstring snapshot = SnapshotStatusText();
             if (!snapshot.empty()) {
                 return SHStrDupW(snapshot.c_str(), ppwsz);
             }
-            return SHStrDupW(m_state == State::Authenticating
+            return SHStrDupW(m_state == State::Authenticating || m_state == State::Ready
                                  ? L"正在识别..."
                                  : m_state == State::Failed
                                        ? L"人脸识别失败"
@@ -1273,13 +1350,9 @@ void LockFaceCredential::OnPipeResponse(bool success, const std::wstring& messag
             facelogin::SecureClearWString(m_password);
             m_password.swap(result.password);
             m_state = State::Ready;
-            // Push the success text immediately so the tile does not keep
-            // showing the last in-flight status ("正在识别...") during
-            // the re-enumeration gap before LogonUI calls GetStringValue.
-            SetStatusText(L"人脸识别成功，正在解锁...");
-            const auto generation = m_generation;
-            NotifyStatusText();
-            if (generation != m_generation) return;
+            // Leave the in-flight status ("正在识别...") untouched: no
+            // success banner, and keeping the current text avoids a visible
+            // jump before LogonUI switches to its own welcome animation.
             // Ask LogonUI to call GetSerialization again right away
             if (facelogin::credential_provider::ShouldReenumerateAfterTerminal(m_state)) {
                 TriggerReEnumeration();

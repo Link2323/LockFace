@@ -56,7 +56,6 @@ EnrollmentWizard::EnrollmentWizard() {
     MoveFileW((m_dataDir + L"\\log\\enrollment.log").c_str(), logPath.c_str());
     Logger::Instance().SetLogFile(logPath);
     Logger::Instance().SetMinLevel(LogLevel::Info);
-    Logger::Instance().SetEnableDebugOutput(true);
 
     FACELOGIN_INFO(L"=== Enrollment Wizard started ===");
 

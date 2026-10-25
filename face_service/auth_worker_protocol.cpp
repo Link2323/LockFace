@@ -226,7 +226,7 @@ std::vector<uint8_t> EncodeConfig(const WorkerConfig& config) {
     writer.WriteFloat(config.antiSpoofThreshold);
     writer.WriteI32(config.authTimeoutSeconds);
     writer.WriteWString(config.cameraDevice);
-    writer.WriteI32(config.fastUnlock ? 1 : 0);
+    writer.WriteI32(config.unlockFrames);
     return writer.Data();
 }
 
@@ -234,10 +234,10 @@ bool DecodeConfig(const std::vector<uint8_t>& payload, WorkerConfig& config) {
     PayloadReader reader(payload);
     int32_t rotation = 0;
     int32_t timeout = 0;
-    int32_t fastUnlock = 0;
+    int32_t unlockFrames = 0;
     if (!reader.ReadI32(rotation) ||
         !reader.ReadFloat(config.antiSpoofThreshold) || !reader.ReadI32(timeout) ||
-        !reader.ReadWString(config.cameraDevice) || !reader.ReadI32(fastUnlock) ||
+        !reader.ReadWString(config.cameraDevice) || !reader.ReadI32(unlockFrames) ||
         !reader.Done()) {
         return false;
     }
@@ -245,12 +245,12 @@ bool DecodeConfig(const std::vector<uint8_t>& payload, WorkerConfig& config) {
         !std::isfinite(config.antiSpoofThreshold) ||
         config.antiSpoofThreshold < 0.15f || config.antiSpoofThreshold > 0.50f ||
         timeout < 1 || timeout > 60 ||
-        (fastUnlock != 0 && fastUnlock != 1)) {
+        (unlockFrames != 5 && unlockFrames != 3 && unlockFrames != 2)) {
         return false;
     }
     config.cameraRotation = rotation;
     config.authTimeoutSeconds = timeout;
-    config.fastUnlock = (fastUnlock != 0);
+    config.unlockFrames = unlockFrames;
     return true;
 }
 
@@ -287,6 +287,9 @@ bool DecodeMatchProbe(const std::vector<uint8_t>& payload,
                       float& yawDeg,
                       float& pitchDeg) {
     PayloadReader reader(payload);
+    // Absolute cap across every tier: the largest binding index any tier can
+    // emit is 2 (three probes). The per-tier sequence is enforced by
+    // AuthExchangeValidator, which knows the expected count.
     uint32_t rawIndex = 0;
     if (!reader.ReadU32(rawIndex) || rawIndex > 2 ||
         !reader.ReadFloatVector(embedding, kEmbeddingDimension) ||

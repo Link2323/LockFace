@@ -124,7 +124,7 @@ private:
     // All auth state, strings, packed credentials, event interfaces and thread
     // handles belong to the creating STA. Workers only publish value messages
     // through m_cs; they never call COM or mutate the tile's state.
-    enum class EventKind { Input, Status, Response, ConnectFailure };
+    enum class EventKind { Input, Status, Response, ConnectFailure, WaitingPrompt };
     struct PendingEvent {
         EventKind kind;
         std::uint64_t generation;
@@ -140,6 +140,8 @@ private:
         facelogin::credential_provider::InputDetectionRound round;
         const wchar_t* pipeName = nullptr; // tests only; normal rounds use ipc::PIPE_NAME
     };
+    void QueueInputAfterSelection(const WorkerContext& context,
+        facelogin::credential_provider::InputTriggerKind triggerKind);
     bool EnsureDispatcher();
     static LRESULT CALLBACK DispatchWndProc(HWND, UINT, WPARAM, LPARAM);
     void QueueEvent(EventKind kind, std::uint64_t generation, bool success,

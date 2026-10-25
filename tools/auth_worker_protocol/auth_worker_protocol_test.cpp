@@ -29,13 +29,13 @@ std::vector<float> UnitEmbedding() {
 
 std::vector<uint8_t> MakeConfigPayload(int32_t rotation,
                                        float threshold, int32_t timeout,
-                                       int32_t fastUnlock = 0) {
+                                       int32_t unlockFrames = 3) {
     facelogin::auth_worker::PayloadWriter writer;
     writer.WriteI32(rotation);
     writer.WriteFloat(threshold);
     writer.WriteI32(timeout);
     writer.WriteWString(L"camera-path");
-    writer.WriteI32(fastUnlock);
+    writer.WriteI32(unlockFrames);
     return writer.Data();
 }
 
@@ -46,7 +46,7 @@ void TestConfigRoundTrip() {
     input.antiSpoofThreshold = 0.381f;
     input.authTimeoutSeconds = 23;
     input.cameraDevice = L"\\\\?\\usb#test-camera";
-    input.fastUnlock = true;
+    input.unlockFrames = 2;
 
     WorkerConfig output;
     const auto encoded = EncodeConfig(input);
@@ -55,7 +55,7 @@ void TestConfigRoundTrip() {
           std::fabs(output.antiSpoofThreshold - input.antiSpoofThreshold) < 0.0001f &&
           output.authTimeoutSeconds == input.authTimeoutSeconds &&
           output.cameraDevice == input.cameraDevice &&
-          output.fastUnlock == input.fastUnlock,
+          output.unlockFrames == input.unlockFrames,
           "worker configuration round trip preserves every field");
 
     Check(!DecodeConfig(MakeConfigPayload(45, 0.281f, 15), output),
@@ -68,11 +68,17 @@ void TestConfigRoundTrip() {
           "lower-bound PAD threshold 0.15 is accepted");
     Check(!DecodeConfig(MakeConfigPayload(0, 0.281f, 61), output),
           "above-range auth timeout is rejected");
-    Check(!DecodeConfig(MakeConfigPayload(0, 0.281f, 15, 2), output),
-          "non-binary fastUnlock flag is rejected");
-    Check(DecodeConfig(MakeConfigPayload(0, 0.281f, 15, 1), output) &&
-          output.fastUnlock,
-          "fastUnlock=1 decodes to fast mode");
+    for (const int32_t frames : {5, 3, 2}) {
+        Check(DecodeConfig(MakeConfigPayload(0, 0.281f, 15, frames), output) &&
+              output.unlockFrames == frames,
+              "every unlock tier value 5/3/2 round trips");
+    }
+    Check(!DecodeConfig(MakeConfigPayload(0, 0.281f, 15, 4), output),
+          "off-whitelist unlock tier 4 is rejected");
+    Check(!DecodeConfig(MakeConfigPayload(0, 0.281f, 15, 0), output),
+          "legacy binary fastUnlock 0 is rejected after the v9 re-type");
+    Check(!DecodeConfig(MakeConfigPayload(0, 0.281f, 15, 1), output),
+          "legacy binary fastUnlock 1 is rejected after the v9 re-type");
 
     auto truncated = encoded;
     truncated.pop_back();
@@ -240,10 +246,20 @@ void TestAuthExchangeSequence() {
     Check(!state.AcceptProbe(0), "accepted binding cannot be duplicated");
     Check(!state.IsExpectedProbe(2), "skipped binding index is rejected");
     Check(state.AcceptProbe(1), "second binding follows first");
-    Check(!state.CanSucceed(), "two bindings cannot complete auth");
+    Check(!state.CanSucceed(), "two bindings cannot complete three-probe auth");
     Check(state.AcceptProbe(2), "third binding follows second");
     Check(state.CanSucceed(), "exactly three bindings permit success");
     Check(!state.AcceptProbe(2), "terminal binding cannot be duplicated");
+
+    // Ultra-fast tier: two probes are the complete exchange — a third index
+    // is a protocol anomaly, and an invalid expected count clamps to three.
+    AuthExchangeValidator ultra(42, 2);
+    Check(ultra.AcceptProbe(0) && ultra.AcceptProbe(1),
+          "ultra tier accepts its two ordered probes");
+    Check(ultra.CanSucceed(), "two bindings complete two-probe auth");
+    Check(!ultra.AcceptProbe(2), "third probe exceeds the ultra tier sequence");
+    AuthExchangeValidator clamped(42, 7);
+    Check(!clamped.AcceptProbe(2), "invalid expected count clamps to the strict three");
 }
 
 struct RawChannel {

@@ -53,15 +53,16 @@ struct AppConfig {
     float          learning_norm_floor    = 19.1f;
     // Minimum wall-clock spacing between accepted updates. Clamped [10, 3600].
     int            learning_min_interval_sec = 60;
-    // Fast unlock mode (2026-09-13): the liveness loop counts 3 frames
-    // instead of the calibrated 5, and every counted frame performs identity
-    // binding (the 5-frame plan binds counted frames 1/3/5). Saves two
-    // pacing slots (~120 ms dev / ~250-370 ms 1360P) at a quantified
-    // security cost: an attack must pass all counted frames, so per-frame
-    // false-accept q yields q^3 instead of q^5, and the binding span
-    // shrinks ~240 ms -> ~120 ms. Default false = the 5-frame calibrated
-    // policy; 0.281 stays the per-frame PAD threshold in both modes.
-    bool           fast_unlock            = false;
+    // Unlock tier (2026-10-24): counted PAD frames for the auth loop.
+    // 3 = standard (default, every counted frame binds identity), 5 = strict
+    // (the calibrated policy, binds counted frames 1/3/5), 2 = ultra-fast
+    // (experimental, every frame binds). An attack must pass every counted
+    // frame, so a per-frame false-accept q yields q^3 / q^5 / q^2; only the
+    // 5-frame tier is calibrated (threshold-calibration.md), 3- and 2-frame
+    // tiers keep the 0.281 per-frame PAD threshold. The legacy bool key
+    // fast_unlock (2026-09-13) is honored on read when this key is absent:
+    // true→3, false→5 — a recorded choice never silently shifts tier.
+    int            unlock_frames          = 3;
 };
 
 AppConfig LoadConfig(const std::wstring& dataDir);

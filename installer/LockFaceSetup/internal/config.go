@@ -33,7 +33,10 @@ func EnsureConfigDefaults(configPath string) error {
 		"learning_distance_gate":    0.65,
 		"learning_norm_floor":       19.1,
 		"learning_min_interval_sec": 60,
-		"fast_unlock":               false,
+		// Unlock tier: 3 standard (default), 5 strict, 2 ultra-fast — must
+		// stay in lock-step with the C++ reader's whitelist {5,3,2}
+		// (cross_language_consistency_test pins the key set).
+		"unlock_frames": 3,
 	}
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

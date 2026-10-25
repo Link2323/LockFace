@@ -183,28 +183,6 @@ DWORD WINAPI FaceService::HandlerEx(DWORD control, DWORD eventType,
     }
 }
 
-// Progressive-learning instrumentation: static norm of every stored template
-// at load/reload, plus the slot's nominal pose (a format-V5 field; records
-// without a pose target carry the invalid sentinel = "no cone"). Enrollment
-// averages 5 unit-length samples
-// without renormalizing, so the stored norm (<1) tracks how spread the
-// enrollment frames were; changes over time reveal template drift. The
-// nominal angle tells the field logs whether the pose-cone gate is armed for
-// this slot.
-static void LogTemplateNorms(const CredentialStore& store, const wchar_t* when) {
-    for (const auto& u : store.GetUsers()) {
-        for (const auto& f : u.faces) {
-            const wchar_t* cone = IsValidNominalAngle(f.nominalYaw)
-                ? L"cone on" : L"no cone";
-            FACELOGIN_INFO(L"Template stats [%s]: user=%s face#%u(%s) dim=%zu "
-                           L"norm=%.4f nominalYaw=%.0f nominalPitch=%.0f (%s)",
-                           when, u.username.c_str(), f.id, f.label.c_str(),
-                           f.embedding.size(), L2Norm(f.embedding),
-                           f.nominalYaw, f.nominalPitch, cone);
-        }
-    }
-}
-
 // Persist template-learning updates. Runs only on the learner thread or at
 // service shutdown. The first flush of a local day refreshes users.dat.bak —
 // the rollback copy of last resort; failure only logs (learning is
@@ -372,7 +350,6 @@ bool FaceService::Initialize() {
         return false;
     }
     FACELOGIN_INFO(L"Loaded %zu registered user(s)", m_store->GetUserCount());
-    LogTemplateNorms(*m_store, L"load");
 
     // Progressive template learning (docs/work/in-progress/progressive-learning-v2.md §3).
     // The learner thread owns all post-auth EMA work; the hooks below
@@ -458,7 +435,7 @@ std::shared_ptr<AuthWorkerClient> FaceService::LoadAuthenticationWorker(
     workerConfig.antiSpoofThreshold = appConfig.anti_spoof_threshold;
     workerConfig.authTimeoutSeconds = ipc::AUTH_TIMEOUT_SECONDS;
     workerConfig.cameraDevice = Utf8ToWstr(appConfig.camera_device);
-    workerConfig.fastUnlock = appConfig.fast_unlock;
+    workerConfig.unlockFrames = appConfig.unlock_frames;
 
     auto worker = std::make_shared<AuthWorkerClient>(std::move(workerConfig));
     if (!worker->Start(errorMessage)) return {};
@@ -531,7 +508,6 @@ void FaceService::Run() {
                 }
                 m_pipeServer->Disconnect();
                 FACELOGIN_INFO(L"Database reloaded");
-                LogTemplateNorms(*m_store, L"reload");
             } else {
                 if (!SendControlResponse(ipc::MSG_CONFIG_RELOAD_ERROR)) {
                     FACELOGIN_WARN(L"RELOAD_DB: failure response delivery failed");
@@ -623,6 +599,7 @@ void FaceService::RequestStop() {
 BindingDecision FaceService::VerifyIdentityBinding(
     const std::vector<float>& embedding, unsigned int bindingIndex,
     float preNorm, float yawDeg, float pitchDeg,
+    unsigned int expectedBindings,
     std::optional<CredentialStore::IdentityMatch>& lockedIdentity,
     std::wstring& initialSid, float* identityMissDistance,
     LearningSample* roundBest) const {
@@ -687,8 +664,9 @@ BindingDecision FaceService::VerifyIdentityBinding(
         }
         initialSid = identity->sid;
         lockedIdentity = std::move(identity);
-        FACELOGIN_INFO(L"Identity locked: %s (distance=%.4f) [1/3]",
-                       lockedIdentity->username.c_str(), lockedIdentity->distance);
+        FACELOGIN_INFO(L"Identity locked: %s (distance=%.4f) [1/%u]",
+                       lockedIdentity->username.c_str(), lockedIdentity->distance,
+                       expectedBindings);
         return BindingDecision{BindingDecisionKind::Accept, {}};
     }
 
@@ -705,8 +683,8 @@ BindingDecision FaceService::VerifyIdentityBinding(
     const std::wstring sidTail = lastDash == std::wstring::npos
                                      ? initialSid
                                      : initialSid.substr(lastDash + 1);
-    FACELOGIN_INFO(L"Identity confirmed: sid=…-%s [%u/3]", sidTail.c_str(),
-                   bindingIndex + 1);
+    FACELOGIN_INFO(L"Identity confirmed: sid=…-%s [%u/%u]", sidTail.c_str(),
+                   bindingIndex + 1, expectedBindings);
     return BindingDecision{BindingDecisionKind::Accept, {}};
 }
 
@@ -763,6 +741,11 @@ bool FaceService::ProcessAuthRequest() {
     AuthWorkerResult workerResult;
     float identityMissDistance = -1.0f;
     LearningSample roundBest;   // best frame of the round, learning candidate
+    // Tier snapshot at round start: the acquired worker was spawned with
+    // this generation's config, and a mid-round reload must not shift log
+    // denominators under an in-flight exchange.
+    const unsigned int expectedBindings =
+        static_cast<unsigned int>(BindingCountRequired(m_config.unlock_frames));
     // Outlives the residency-use scope below: the success path reaps the
     // worker only after AUTH_SUCCESS has been delivered to the CP.
     std::shared_ptr<AuthWorkerClient> worker;
@@ -793,11 +776,12 @@ bool FaceService::ProcessAuthRequest() {
                 return !m_running || m_pipeServer->IsClientDisconnected();
             };
             callbacks.verifyBinding = [this, &lockedIdentity, &initialSid,
-                                       &identityMissDistance, &roundBest](
+                                       &identityMissDistance, &roundBest,
+                                       expectedBindings](
                 const std::vector<float>& embedding, unsigned int bindingIndex,
                 float preNorm, float yawDeg, float pitchDeg) {
                 return VerifyIdentityBinding(embedding, bindingIndex, preNorm,
-                                             yawDeg, pitchDeg,
+                                             yawDeg, pitchDeg, expectedBindings,
                                              lockedIdentity, initialSid,
                                              &identityMissDistance, &roundBest);
             };
@@ -906,8 +890,9 @@ bool FaceService::ProcessAuthRequest() {
 
     FACELOGIN_INFO(L"Credentials sent for %s\\%s", domain.c_str(),
                    credential->username.c_str());
-    FACELOGIN_INFO(L"Identity binding complete: user=%s, distance=%.4f, same_sid=3/3",
-                   credential->username.c_str(), lockedIdentity->distance);
+    FACELOGIN_INFO(L"Identity binding complete: user=%s, distance=%.4f, same_sid=%u/%u",
+                   credential->username.c_str(), lockedIdentity->distance,
+                   expectedBindings, expectedBindings);
     if (workerResult.hasTiming) {
         FACELOGIN_INFO(L"Authentication worker timing: camera_init=%.1f ms, pipeline=%.1f ms, total=%.1f ms; supervisor=%.1f ms, cleanup=%.1f ms",
                        workerResult.timing.cameraInitMs,

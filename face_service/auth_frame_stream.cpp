@@ -52,12 +52,6 @@ bool AuthFrameStream::Grab(AuthFrame& out) {
 }
 
 void AuthFrameStream::AdvanceAnchor(const AuthFrame& frame) {
-    if (m_haveLastCounted) {
-        const double intervalMs = std::chrono::duration<double, std::milli>(
-            frame.grabWall - m_lastCountedWall).count();
-        if (!m_minIntervalMs || intervalMs < *m_minIntervalMs)
-            m_minIntervalMs = intervalMs;
-    }
     m_lastCountedWall = frame.grabWall;
     m_lastCountedSeq = frame.seq;
     m_haveLastCounted = true;

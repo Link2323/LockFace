@@ -24,7 +24,6 @@ struct PreparedAuthFrames {
     float lastFaceLuma = -1.0f;
     bool usingAutoExposure = false;
     bool darkRecoveryAttempted = false;
-    std::chrono::steady_clock::time_point gateAt{};
 };
 
 } // namespace facelogin

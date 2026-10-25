@@ -9,9 +9,7 @@
 
 namespace facelogin {
 
-// Simple file/console logger for debugging.
-// In production (credential provider), messages go to a log file.
-// In test/CLI programs, messages go to stdout or DebugOutput.
+// Shared file logger with an in-memory ring buffer for the UI log viewer.
 // Log files are UTF-8 without BOM (directly readable by grep/git bash/PowerShell).
 
 enum class LogLevel {
@@ -27,7 +25,6 @@ public:
 
     void SetLogFile(const std::wstring& path);
     void SetMinLevel(LogLevel level);
-    void SetEnableDebugOutput(bool enable) { m_debugOutput = enable; }
 
     void Log(LogLevel level, const wchar_t* format, ...);
     void Debug(const wchar_t* format, ...);
@@ -53,7 +50,6 @@ private:
     HANDLE m_hFile = INVALID_HANDLE_VALUE;
     std::wstring m_logPath;        // current log file path (for rotation)
     LogLevel m_minLevel = LogLevel::Info;
-    bool m_debugOutput = false;
     CRITICAL_SECTION m_cs{};
     bool m_csInitialized = false;
 

@@ -202,12 +202,16 @@
     <div class="set-group">
       <h3>识别与安全</h3>
       <div class="field">
-        <label class="switch-row">
-          <input type="checkbox" id="cfg-fastunlock" class="switch-input">
-          <span class="switch-track"></span>
-          <span>快速解锁</span>
-        </label>
-        <p class="dim">解锁更快，但反欺诈检测次数变少。可在安全条件下启用。</p>
+        <div class="label-row">
+          <label>解锁档位</label>
+          <span class="hint">活体检测计帧数</span>
+        </div>
+        <select id="cfg-unlockframes">
+          <option value="3">标准（3 帧）</option>
+          <option value="5">严格（5 帧）</option>
+          <option value="2">极速（2 帧）· 实验性</option>
+        </select>
+        <p class="dim">档位越快活体检测次数越少，防照片攻击的证据也越少。严格 5 帧为标定策略；极速 2 帧建议仅在受控环境使用。</p>
       </div>
 
       <div class="field">

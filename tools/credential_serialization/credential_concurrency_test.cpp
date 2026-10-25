@@ -1,6 +1,8 @@
 #include "../../credential_provider/LockFaceCredential.h"
 #include "../../credential_provider/LockFaceProvider.h"
 #include "../../credential_provider/resource.h"
+#include "../../credential_provider/waiting_prompt_policy.h"
+#include "../../credential_provider/input_trigger_policy.h"
 #include <thread>
 #include <iostream>
 #include <atomic>
@@ -70,6 +72,24 @@ struct CredentialConcurrencyTestAccess {
     }
     static bool Stopped(LockFaceCredential& c) {
         return !c.m_hAuthThread && !c.m_hAuthStop && !c.m_hInputThread && !c.m_hInputStop;
+    }
+    static std::uint64_t PrepareInput(LockFaceCredential& c) {
+        const auto generation = Arm(c);
+        c.m_state = State::Waiting;
+        c.m_selected = true;
+        return generation;
+    }
+    static void InputCandidate(LockFaceCredential& c, HANDLE stop,
+                               std::uint64_t generation,
+                               facelogin::credential_provider::InputTriggerKind kind) {
+        const LockFaceCredential::WorkerContext context{
+            &c, stop, generation, {},
+            facelogin::credential_provider::InputDetectionRound::InitialLock};
+        c.QueueInputAfterSelection(context, kind);
+    }
+    static bool HasOneInput(LockFaceCredential& c) {
+        return c.m_pendingEvents.size() == 1 &&
+            c.m_pendingEvents.front()->kind == Kind::Input;
     }
     static void Attach(LockFaceProvider& p, LockFaceCredential* c) {
         p.m_pCredential = c; // transfers the construction reference
@@ -213,7 +233,9 @@ static void DispatchAndReentry() {
           "publishing never mutates state or calls COM");
     provider->onChange = [&] { credential->UnAdvise(); credential->UnadviseProvider(); };
     Pump();
-    Check(Access::Complete(*credential.Get()) && tile->strings == 2 && provider->changes == 1,
+    // One status notification only: the success handoff deliberately pushes
+    // no banner and keeps the in-flight "正在识别..." text.
+    Check(Access::Complete(*credential.Get()) && tile->strings == 1 && provider->changes == 1,
           "coherent success and reentrant re-enumeration preserve Ready handoff");
     credential->Advise(tile.Get());
     BOOL autoLogon = FALSE;
@@ -359,9 +381,89 @@ static void WatcherTeardown() {
     Check(after <= before + 2, "100 watcher teardown rounds do not leak handles");
     std::cout << "PASS worker cancel/success and 100 watcher ownership rounds\n";
 }
+static void WaitingPromptTiming() {
+    using namespace facelogin::credential_provider;
+    WaitingPromptPolicy prompt;
+    Check(!prompt.Update(0, false, false), "wallpaper starts without a prompt");
+    Check(!prompt.Update(5000, false, false), "wallpaper dwell never pre-renders a prompt");
+    Check(!prompt.Update(5010, true, false), "revealing credentials starts a fresh grace period");
+    Check(!prompt.Update(5100, true, true), "held dismissal key keeps the tile blank");
+    Check(!prompt.Update(6000, true, true), "long-held dismissal key never flashes a prompt");
+    Check(!prompt.Update(6010, true, false), "release gets time to deliver its raw input edge");
+    Check(prompt.Update(6310, true, false), "idle credential view asks for the additional press");
+    Check(!prompt.Update(6400, false, false), "leaving credential view hides the prompt");
+    Check(!prompt.Update(9000, true, false), "returning to credentials restarts the grace period");
+    Check(prompt.Update(9300, true, false), "two-press path retains its instruction");
+
+    // The watcher checks the input policy before publishing any prompt. A
+    // wallpaper-swallowed MAKE must still go straight from blank to auth.
+    WaitingPromptPolicy onePress;
+    InputTriggerPolicy keyboard(InputDetectionRound::InitialLock);
+    Check(!onePress.Update(5000, false, false), "ordinary key starts after long wallpaper dwell");
+    Check(!onePress.Update(5010, true, true), "ordinary dismissal key is held during reveal");
+    Check(keyboard.ObserveKey('A', false) && keyboard.triggered(),
+          "orphan ordinary BREAK starts auth before prompt evaluation");
+
+    WaitingPromptPolicy twoPresses;
+    InputTriggerPolicy specialKey(InputDetectionRound::InitialLock);
+    Check(!specialKey.ObserveKey('L', false), "ambiguous initial L still requires another press");
+    Check(!twoPresses.Update(5000, true, false) && twoPresses.Update(5300, true, false),
+          "drained L gets a hint only after the credential view is quiet");
+}
+
+static void MouseSelectionCancellation() {
+    using facelogin::credential_provider::InputTriggerKind;
+    auto credential = Make<LockFaceCredential>();
+    credential->Advise(nullptr);
+    auto generation = Access::PrepareInput(*credential.Get());
+    Event cancelled;
+    cancelled.Set();
+    Access::InputCandidate(*credential.Get(), cancelled.handle, generation,
+                           InputTriggerKind::MouseButton);
+    Check(Access::Empty(*credential.Get()), "cancelled mouse candidate never queues input");
+
+    Event stop, paused, resume;
+    Access::Barrier(*credential.Get(), [&](int point) {
+        if (point == 4) { paused.Set(); Wait(resume.handle); }
+    });
+    std::thread worker([&] {
+        Access::InputCandidate(*credential.Get(), stop.handle, generation,
+                               InputTriggerKind::MouseButton);
+    });
+    Wait(paused.handle);
+    // The same stop event observed by the selection wait is manual-reset:
+    // cancellation before/during that wait must survive the final zero wait.
+    stop.Set();
+    resume.Set();
+    worker.join();
+    Access::Barrier(*credential.Get(), {});
+    Check(Access::Empty(*credential.Get()), "mouse selection wait retains cancellation signal");
+
+    Event active;
+    Access::InputCandidate(*credential.Get(), active.handle, generation,
+                           InputTriggerKind::MouseButton);
+    Check(Access::HasOneInput(*credential.Get()), "selected mouse candidate queues exactly one input");
+    credential->SetDeselected();
+    Pump();
+    Check(Access::Empty(*credential.Get()) && Access::Stopped(*credential.Get()) &&
+          Access::GetState(*credential.Get()) == State::Waiting,
+          "deselect after mouse publication drops queued input without starting authentication");
+
+    credential->Advise(nullptr);
+    generation = Access::PrepareInput(*credential.Get());
+    Access::InputCandidate(*credential.Get(), active.handle, generation,
+                           InputTriggerKind::Keyboard);
+    Check(Access::HasOneInput(*credential.Get()), "keyboard candidate retains direct input publication");
+    credential->UnAdvise();
+    Pump();
+    std::cout << "PASS mouse selection cancellation and queued-input teardown\n";
+}
+
 int main() {
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
     ComFactoryOwnership();
+    WaitingPromptTiming();
+    MouseSelectionCancellation();
     PublicationTeardownInterleavings();
     DispatchAndReentry();
     RealWorker(false);
