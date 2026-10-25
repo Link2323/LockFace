@@ -341,8 +341,7 @@
       为使人脸登录继续生效，需要刷新已保存的账号信息（人脸数据将保留），
       并更新本地密码。请输入当前 Windows 登录密码。
     </p>
-    <input type="password" id="refresh-pass" placeholder="输入当前 Windows 登录密码"
-           style="width:100%;border:1px solid #e5e7eb;padding:8px 12px;font-size:13px;outline:none;background:#f9fafb;color:#1f2937;margin-bottom:8px">
+    <input type="password" id="refresh-pass" placeholder="输入当前 Windows 登录密码">
     <button class="btn btn-primary" id="refresh-confirm" onclick="onRefreshConfirm()">
       <span class="spinner" id="refresh-spinner"></span>
       刷新并保留人脸

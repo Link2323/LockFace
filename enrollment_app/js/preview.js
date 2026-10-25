@@ -185,7 +185,7 @@ function createPreview(deps) {
       // instead of exposing the raw "+12.3° / 目标 +30°" numbers.
       if (hint) {
         ctx.save();
-        ctx.font = '600 13px "Segoe UI", "Microsoft YaHei", sans-serif';
+        ctx.font = '600 14px "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
         var tw = ctx.measureText(hint).width;
         var padX = 12, pillH = 26, dotR = 4, dotGap = 8;
         var pillW = padX * 2 + dotR * 2 + dotGap + tw;
@@ -193,7 +193,7 @@ function createPreview(deps) {
         var py = by - pillH - 10;
         if (py < 8) py = 8;   // box near the top edge — pin the pill to the top
         roundedRectPath(ctx, px, py, pillW, pillH, 13);
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+        ctx.fillStyle = 'rgba(24, 24, 24, 0.82)';
         ctx.fill();
         ctx.beginPath();
         ctx.arc(px + padX + dotR, py + pillH / 2, dotR, 0, Math.PI * 2);

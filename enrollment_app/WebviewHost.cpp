@@ -19,6 +19,36 @@
 
 static const wchar_t* WND_CLASS = L"LockFaceWv2Wnd";
 
+static COLORREF AppBackgroundColor() {
+    DWORD light = 1;
+    DWORD size = sizeof(light);
+    const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
+    // Match styles.css: Codex's neutral gray-900 application surface.
+    return status == ERROR_SUCCESS && light == 0 ? RGB(24, 24, 24) : RGB(255, 255, 255);
+}
+
+static void ApplyWindowTheme(HWND hWnd, ICoreWebView2Controller* controller) {
+    const COLORREF background = AppBackgroundColor();
+    const BOOL dark = background != RGB(255, 255, 255);
+    // Unsupported DWM attributes are ignored on older Windows versions.
+    DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+    DwmSetWindowAttribute(hWnd, DWMWA_CAPTION_COLOR, &background, sizeof(background));
+    const COLORREF text = dark ? RGB(223, 223, 223) : RGB(26, 28, 31);
+    DwmSetWindowAttribute(hWnd, DWMWA_TEXT_COLOR, &text, sizeof(text));
+    if (controller) {
+        ICoreWebView2Controller2* c2 = nullptr;
+        if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&c2)))) {
+            const COREWEBVIEW2_COLOR color = {
+                255, GetRValue(background), GetGValue(background), GetBValue(background)};
+            c2->put_DefaultBackgroundColor(color);
+            c2->Release();
+        }
+    }
+    InvalidateRect(hWnd, nullptr, TRUE);
+}
+
 // ==========================================================================
 // EnvCallback
 // ==========================================================================
@@ -95,13 +125,7 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
         settings->Release();
     }
 
-    // Background: light theme
-    COREWEBVIEW2_COLOR bg = {255, 248, 250, 252};
-    ICoreWebView2Controller2* c2 = nullptr;
-    if (SUCCEEDED(ctrl->QueryInterface(IID_PPV_ARGS(&c2)))) {
-        c2->put_DefaultBackgroundColor(bg);
-        c2->Release();
-    }
+    ApplyWindowTheme(hWnd, ctrl);
 
     // Load HTML from embedded resource (compiled into EXE)
     HRSRC hRes = FindResourceW(nullptr, MAKEINTRESOURCEW(IDR_INDEX_HTML), RT_RCDATA);
@@ -163,7 +187,8 @@ WebviewHost::WebviewHost(HINSTANCE hInst, facelogin::EnrollmentWizard* w)
     // Fallback HTML in case file can't be read
     m_html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><style>"
         "body{display:flex;align-items:center;justify-content:center;"
-        "height:100vh;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a}"
+        "height:100vh;font-family:Segoe UI,sans-serif;color-scheme:light dark;"
+        "background:Canvas;color:CanvasText}"
         "h1{font-size:18px;font-weight:500}"
         "</style></head><body><h1>index.html not found — please ensure it is next to the .exe</h1></body></html>";
 }
@@ -182,11 +207,8 @@ int WebviewHost::Run() {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hIcon   = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_ENROLLMENT_ICON));
     wc.hIconSm = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_ENROLLMENT_ICON));
-    // The window shows before WebView2's async init produces its first frame,
-    // and with no class brush the client area is never erased — it reads as
-    // black until the controller composes. Fill with the page body color
-    // (#fff, same as the caption) so the startup gap reads as the page.
-    wc.hbrBackground = CreateSolidBrush(RGB(255, 255, 255));
+    // WM_ERASEBKGND fills the startup gap with the current application theme.
+    wc.hbrBackground = nullptr;
     wc.lpszClassName = WND_CLASS;
     RegisterClassExW(&wc);
 
@@ -229,12 +251,7 @@ int WebviewHost::Run() {
         nullptr, nullptr, m_hInstance, this);
     if (!m_hWnd) return 1;
 
-    // Win11: paint the caption the same white as the page background so the
-    // title bar and the content read as one surface. Pre-22000 Windows reject
-    // the attribute — ignore the result and keep the system caption.
-    COLORREF captionColor = RGB(255, 255, 255);
-    DwmSetWindowAttribute(m_hWnd, DWMWA_CAPTION_COLOR,
-                          &captionColor, sizeof(captionColor));
+    ApplyWindowTheme(m_hWnd, m_controller);
 
     ShowWindow(m_hWnd, SW_SHOW);
     UpdateWindow(m_hWnd);
@@ -265,6 +282,19 @@ LRESULT CALLBACK WebviewHost::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 
 LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_ERASEBKGND: {
+        RECT rect;
+        GetClientRect(hWnd, &rect);
+        HDC dc = reinterpret_cast<HDC>(wp);
+        const COLORREF previous = SetDCBrushColor(dc, AppBackgroundColor());
+        FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        SetDCBrushColor(dc, previous);
+        return 1;
+    }
+    case WM_SETTINGCHANGE:
+    case WM_THEMECHANGED:
+        ApplyWindowTheme(hWnd, m_controller);
+        break;
     case WM_CREATE: {
         // Set the window icon (large + small) from the embedded resource
         HICON hIcon = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_ENROLLMENT_ICON));
