@@ -1,6 +1,8 @@
 #include "../../credential_provider/LockFaceCredential.h"
 #include "../../credential_provider/LockFaceProvider.h"
 #include "../../credential_provider/resource.h"
+#include "../../credential_provider/waiting_prompt_policy.h"
+#include "../../credential_provider/input_trigger_policy.h"
 #include <thread>
 #include <iostream>
 #include <atomic>
@@ -213,7 +215,9 @@ static void DispatchAndReentry() {
           "publishing never mutates state or calls COM");
     provider->onChange = [&] { credential->UnAdvise(); credential->UnadviseProvider(); };
     Pump();
-    Check(Access::Complete(*credential.Get()) && tile->strings == 2 && provider->changes == 1,
+    // One status notification only: the success handoff deliberately pushes
+    // no banner and keeps the in-flight "正在识别..." text.
+    Check(Access::Complete(*credential.Get()) && tile->strings == 1 && provider->changes == 1,
           "coherent success and reentrant re-enumeration preserve Ready handoff");
     credential->Advise(tile.Get());
     BOOL autoLogon = FALSE;
@@ -359,9 +363,40 @@ static void WatcherTeardown() {
     Check(after <= before + 2, "100 watcher teardown rounds do not leak handles");
     std::cout << "PASS worker cancel/success and 100 watcher ownership rounds\n";
 }
+static void WaitingPromptTiming() {
+    using namespace facelogin::credential_provider;
+    WaitingPromptPolicy prompt;
+    Check(!prompt.Update(0, false, false), "wallpaper starts without a prompt");
+    Check(!prompt.Update(5000, false, false), "wallpaper dwell never pre-renders a prompt");
+    Check(!prompt.Update(5010, true, false), "revealing credentials starts a fresh grace period");
+    Check(!prompt.Update(5100, true, true), "held dismissal key keeps the tile blank");
+    Check(!prompt.Update(6000, true, true), "long-held dismissal key never flashes a prompt");
+    Check(!prompt.Update(6010, true, false), "release gets time to deliver its raw input edge");
+    Check(prompt.Update(6310, true, false), "idle credential view asks for the additional press");
+    Check(!prompt.Update(6400, false, false), "leaving credential view hides the prompt");
+    Check(!prompt.Update(9000, true, false), "returning to credentials restarts the grace period");
+    Check(prompt.Update(9300, true, false), "two-press path retains its instruction");
+
+    // The watcher checks the input policy before publishing any prompt. A
+    // wallpaper-swallowed MAKE must still go straight from blank to auth.
+    WaitingPromptPolicy onePress;
+    InputTriggerPolicy keyboard(InputDetectionRound::InitialLock);
+    Check(!onePress.Update(5000, false, false), "ordinary key starts after long wallpaper dwell");
+    Check(!onePress.Update(5010, true, true), "ordinary dismissal key is held during reveal");
+    Check(keyboard.ObserveKey('A', false) && keyboard.triggered(),
+          "orphan ordinary BREAK starts auth before prompt evaluation");
+
+    WaitingPromptPolicy twoPresses;
+    InputTriggerPolicy specialKey(InputDetectionRound::InitialLock);
+    Check(!specialKey.ObserveKey('L', false), "ambiguous initial L still requires another press");
+    Check(!twoPresses.Update(5000, true, false) && twoPresses.Update(5300, true, false),
+          "drained L gets a hint only after the credential view is quiet");
+}
+
 int main() {
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
     ComFactoryOwnership();
+    WaitingPromptTiming();
     PublicationTeardownInterleavings();
     DispatchAndReentry();
     RealWorker(false);

@@ -124,7 +124,7 @@ private:
     // All auth state, strings, packed credentials, event interfaces and thread
     // handles belong to the creating STA. Workers only publish value messages
     // through m_cs; they never call COM or mutate the tile's state.
-    enum class EventKind { Input, Status, Response, ConnectFailure };
+    enum class EventKind { Input, Status, Response, ConnectFailure, WaitingPrompt };
     struct PendingEvent {
         EventKind kind;
         std::uint64_t generation;

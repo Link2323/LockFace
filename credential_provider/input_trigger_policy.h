@@ -124,17 +124,20 @@ public:
 
     InputTriggerKind triggerKind() const noexcept { return m_triggerKind; }
 
-private:
+    // Shared with the Win32 watcher, which must predict whether a currently
+    // held input can still qualify on its release edge (it suppresses the
+    // delayed idle prompt while one can).
     static constexpr std::uint16_t kVkL = 0x4C;
     static constexpr std::uint16_t kVkLWin = 0x5B;
     static constexpr std::uint16_t kVkRWin = 0x5C;
 
-    static constexpr bool IsValidVk(std::uint16_t vk) noexcept {
-        return vk > 0 && vk < 0xFF;
-    }
-
     static constexpr bool IsWindowsKey(std::uint16_t vk) noexcept {
         return vk == kVkLWin || vk == kVkRWin;
+    }
+
+private:
+    static constexpr bool IsValidVk(std::uint16_t vk) noexcept {
+        return vk > 0 && vk < 0xFF;
     }
 
     InputDetectionRound m_round;
