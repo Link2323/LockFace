@@ -1,5 +1,4 @@
 #include "auth_pipeline.h"
-#include "auth_pipeline_diagnostics.h"
 #include "auth_frame_preparation.h"
 #include "auth_frame_stream.h"
 
@@ -15,10 +14,6 @@
 #include <utility>
 
 namespace facelogin {
-using auth_diagnostics::ElapsedMs;
-using auth_diagnostics::ExposureTimingProfile;
-using auth_diagnostics::NormLog;
-using auth_diagnostics::ProfileSensorKnobs;
 
 // Pacing between discarded auth frames (no face, bad grab, retry). This is
 // the legacy 30 ms grab-loop pace and counts against the shared 5 s auth
@@ -27,8 +22,8 @@ static constexpr auto kDiscardRetryPace = std::chrono::milliseconds(30);
 
 // Mean luma over the face bbox — the capture condition that dominates
 // identity-match distance (dark chips shift embeddings; the exposure
-// governor, face_gain_tune.h, owns keeping this in band). Diagnostic
-// only, computed once per outcome-relevant frame.
+// governor, face_gain_tune.h, owns keeping this in band). Used for
+// exposure recovery, failed-round tune progress and outcome logging.
 static float FaceRegionLuma(const FrameImage& frame, const FaceRect& r) {
     return FaceBoxLuma(frame, static_cast<float>(r.left()),
                        static_cast<float>(r.top()),
@@ -95,35 +90,16 @@ AuthPipelineResult AuthPipeline::Run() {
     if (interrupted()) return result;
 
     try {
-        ExposureTimingProfile exposureTiming;
-        const SensorKnobs sensorKnobs = ProfileSensorKnobs(m_callbacks.sensorKnobs, exposureTiming);
-        NormLog normLog;
-
-        const auto pipelineStart = std::chrono::steady_clock::now();
-        bool firstFrameLogged = false;
-        const auto grabFrame = [this, pipelineStart, &firstFrameLogged](
-                                   FrameImage& frame, unsigned long long& frameSequence) {
-            const bool grabbed = m_callbacks.grabFrame(frame, frameSequence);
-            if (grabbed && !firstFrameLogged) {
-                firstFrameLogged = true;
-                FACELOGIN_INFO(L"Auth pipeline first valid frame %.1f ms after camera ready",
-                    std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - pipelineStart).count());
-            }
-            return grabbed;
-        };
+        const SensorKnobs& sensorKnobs = m_callbacks.sensorKnobs;
+        const auto& grabFrame = m_callbacks.grabFrame;
 
         PreparedAuthFrames prepared;
-        if (!PrepareFrames(prepared, exposureTiming, sensorKnobs, interrupted, grabFrame)) {
+        if (!PrepareFrames(prepared, sensorKnobs, interrupted, grabFrame)) {
             PersistFailedRoundTuneProgress(prepared);
             return result;
         }
 
-        const auto statusAt = std::chrono::steady_clock::now();
         m_callbacks.reportStatus(L"正在识别...");
-        exposureTiming.statusMs = ElapsedMs(statusAt);
-        exposureTiming.gateToLoopMs = ElapsedMs(prepared.gateAt);
-        exposureTiming.phase = ExposureTimingProfile::Loop;
         // No per-round echo of the PAD threshold/check counts here: the
         // active config (threshold included) is logged once per load by
         // LoadConfig, and "need N" appears in the failure line.
@@ -138,17 +114,13 @@ AuthPipelineResult AuthPipeline::Run() {
         });
 
         const AuthLoopStop stop = RunLivenessLoop(state, frames, prepared, sensorKnobs,
-                                                  interrupted, normLog);
+                                                  interrupted);
         if (stop == AuthLoopStop::ClientDisconnected) result.outcome = AuthOutcome::Cancelled;
         if (stop == AuthLoopStop::Interrupted || stop == AuthLoopStop::ClientDisconnected) {
             PersistFailedRoundTuneProgress(prepared);
             return result;
         }
 
-        if (const auto minInterval = frames.MinimumIntervalMs()) {
-            FACELOGIN_INFO(L"Anti-spoof frame pacing: min grab interval %.1f ms over %d counted frames (guard 60 ms)",
-                           *minInterval, state.totalChecked);
-        }
         AuthPipelineResult final = ResolveOutcome(stop, state);
         if (final.outcome != AuthOutcome::Succeeded) PersistFailedRoundTuneProgress(prepared);
         return final;
@@ -185,8 +157,7 @@ AuthLoopStop AuthPipeline::RunLivenessLoop(AuthLoopState& state,
                                            AuthFrameStream& frames,
                                            PreparedAuthFrames& prepared,
                                            const SensorKnobs& sensorKnobs,
-                                           const std::function<bool()>& interrupted,
-                                           auth_diagnostics::NormLog& normLog) {
+                                           const std::function<bool()>& interrupted) {
     const int totalChecks = AntiSpoofCheckCount(m_config.unlockFrames);
     AuthFrame next = std::move(prepared.seed);    // warmup SCRFD pre-run seed, if fresh
     while (state.totalChecked < totalChecks) {
@@ -251,7 +222,7 @@ AuthLoopStop AuthPipeline::RunLivenessLoop(AuthLoopState& state,
         });
 
         if (isAnchor || isConsensusFrame) {
-            switch (AttemptBinding(state, cur, faceRect, scoreFuture, normLog)) {
+            switch (AttemptBinding(state, cur, faceRect, scoreFuture)) {
             case BindingDisposition::Bound:
                 break;
             case BindingDisposition::Discard:
@@ -393,8 +364,7 @@ PreCountCorrection AuthPipeline::CorrectExposureBeforeFirstCount(
 BindingDisposition AuthPipeline::AttemptBinding(AuthLoopState& state,
                                                 const AuthFrame& cur,
                                                 const FaceRect& faceRect,
-                                                std::future<float>& scoreFuture,
-                                                auth_diagnostics::NormLog& normLog) {
+                                                std::future<float>& scoreFuture) {
     float preNorm = 0.0f;
     auto embedding = m_recognizer.ComputeEmbedding(cur.frame, cur.det->kps,
                                                    &preNorm);
@@ -403,7 +373,6 @@ BindingDisposition AuthPipeline::AttemptBinding(AuthLoopState& state,
         std::this_thread::sleep_for(kDiscardRetryPace);
         return BindingDisposition::Discard;
     }
-    normLog.add(preNorm, cur.seq);
 
     const BindingDecision decision =
         m_callbacks.verifyBinding(embedding, state.bindingCount, preNorm,

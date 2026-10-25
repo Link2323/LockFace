@@ -12,7 +12,6 @@
 #include "../common/model_hashes.h"
 #include "../common/sha256_util.h"
 
-#include <psapi.h>
 #include <sddl.h>
 
 #include <atomic>
@@ -20,8 +19,6 @@
 #include <memory>
 #include <utility>
 #include <vector>
-
-#pragma comment(lib, "psapi.lib")
 
 namespace facelogin {
 namespace {
@@ -68,77 +65,34 @@ std::unique_ptr<WorkerModels> LoadModels(const std::wstring& modelsDir,
     auto models = std::make_unique<WorkerModels>();
     failure = ModelLoadFailure::Load;
 
-    // Aggregate once after loading: per-call logging can distort short stages.
-    // Keep integrity checks and session construction in their established order.
-    const auto loadStart = std::chrono::steady_clock::now();
-    double detectorHashMs = 0.0, detectorInitMs = 0.0;
-    double recognizerHashMs = 0.0, recognizerInitMs = 0.0;
-    double padHashMs = 0.0, padInitMs = 0.0;
-    const auto measure = [](double& elapsedMs, auto&& operation) {
-        const auto start = std::chrono::steady_clock::now();
-        const bool ok = operation();
-        elapsedMs = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - start).count();
-        return ok;
-    };
-
     const std::wstring detectorPath = modelsDir + L"\\det_10g_gnkps.onnx";
-    if (!measure(detectorHashMs, [&] {
-            return VerifyModelIntegrity(detectorPath, model_hashes::kDetector, L"SCRFD detector");
-        })) {
+    if (!VerifyModelIntegrity(detectorPath, model_hashes::kDetector, L"SCRFD detector")) {
         failure = ModelLoadFailure::DetectorIntegrity;
         return {};
     }
     models->detector = std::make_unique<OnnxDetector>();
-    if (!measure(detectorInitMs, [&] { return models->detector->Initialize(detectorPath); })) return {};
+    if (!models->detector->Initialize(detectorPath)) return {};
 
     const std::wstring recognizerPath = modelsDir + L"\\face_recognition_sface_2021dec.onnx";
-    if (!measure(recognizerHashMs, [&] {
-            return VerifyModelIntegrity(recognizerPath, model_hashes::kRecognizer,
-                                        L"OpenCV SFace recognizer");
-        })) {
+    if (!VerifyModelIntegrity(recognizerPath, model_hashes::kRecognizer,
+                              L"OpenCV SFace recognizer")) {
         failure = ModelLoadFailure::RecognizerIntegrity;
         return {};
     }
     models->recognizer = std::make_unique<OnnxRecognizer>();
-    if (!measure(recognizerInitMs, [&] { return models->recognizer->Initialize(recognizerPath); })) return {};
+    if (!models->recognizer->Initialize(recognizerPath)) return {};
 
     const std::wstring v2Path = modelsDir + L"\\MiniFASNetV2.onnx";
     const std::wstring v1SePath = modelsDir + L"\\MiniFASNetV1SE.onnx";
-    if (!measure(padHashMs, [&] {
-            return VerifyModelIntegrity(v2Path, model_hashes::kMiniFasV2, L"MiniFASNetV2 (PAD)") &&
-                   VerifyModelIntegrity(v1SePath, model_hashes::kMiniFasV1Se, L"MiniFASNetV1SE (PAD)");
-        })) {
+    if (!VerifyModelIntegrity(v2Path, model_hashes::kMiniFasV2, L"MiniFASNetV2 (PAD)") ||
+        !VerifyModelIntegrity(v1SePath, model_hashes::kMiniFasV1Se, L"MiniFASNetV1SE (PAD)")) {
         failure = ModelLoadFailure::PadIntegrity;
         return {};
     }
     models->antiSpoof = std::make_unique<OnnxAntiSpoof>();
-    if (!measure(padInitMs, [&] { return models->antiSpoof->Initialize(v2Path, v1SePath); })) return {};
+    if (!models->antiSpoof->Initialize(v2Path, v1SePath)) return {};
     failure = ModelLoadFailure::None;
-    FACELOGIN_INFO(L"Auth worker model load: detector_hash=%.1f ms, detector_init=%.1f ms, "
-                   L"recognizer_hash=%.1f ms, recognizer_init=%.1f ms, "
-                   L"pad_hash=%.1f ms, pad_init=%.1f ms, total=%.1f ms",
-                   detectorHashMs, detectorInitMs, recognizerHashMs, recognizerInitMs,
-                   padHashMs, padInitMs, std::chrono::duration<double, std::milli>(
-                       std::chrono::steady_clock::now() - loadStart).count());
     return models;
-}
-
-void LogWorkerResources(const wchar_t* stage) {
-    DWORD handles = 0;
-    PROCESS_MEMORY_COUNTERS_EX counters{};
-    counters.cb = sizeof(counters);
-    GetProcessHandleCount(GetCurrentProcess(), &handles);
-    constexpr double kMiB = 1024.0 * 1024.0;
-    if (GetProcessMemoryInfo(GetCurrentProcess(),
-            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
-        FACELOGIN_INFO(L"Auth worker %s (handles=%lu, private=%.1f MiB, working_set=%.1f MiB)",
-                       stage, handles,
-                       static_cast<double>(counters.PrivateUsage) / kMiB,
-                       static_cast<double>(counters.WorkingSetSize) / kMiB);
-    } else {
-        FACELOGIN_INFO(L"Auth worker %s (handles=%lu)", stage, handles);
-    }
 }
 
 bool ReadExpected(Channel& channel, Message& message, DWORD timeoutMs,
@@ -172,36 +126,17 @@ bool PreloadWorker(const WorkerConfig& config, const std::wstring& dataDir,
                    std::unique_ptr<WorkerModels>& models,
                    std::unique_ptr<WebcamCaptureDS>& camera,
                    ModelLoadFailure& failure) {
-    const auto preloadStart = std::chrono::steady_clock::now();
-    DWORD sessionId = 0;
-    const bool haveSessionId = ProcessIdToSessionId(GetCurrentProcessId(), &sessionId) != FALSE;
-    PROCESS_POWER_THROTTLING_STATE power{};
-    power.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-    const bool havePowerState = GetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling,
-                                                      &power, sizeof(power)) != FALSE;
-    FACELOGIN_INFO(L"Auth worker preload policy: session=%lu (known=%d), "
-                   L"power_control=0x%lx, power_state=0x%lx (known=%d)",
-                   sessionId, haveSessionId, power.ControlMask,
-                   power.StateMask, havePowerState);
-
     models = LoadModels(dataDir + L"\\models", failure);
     if (!models || !models->detector || !models->recognizer || !models->antiSpoof)
         return false;
     // Pay ORT's first-run cost (arena/thread-pool/per-shape planning) during
     // preload, not on the first authenticated frame.
     WarmupInference(*models->detector, *models->recognizer, *models->antiSpoof);
-    const auto warmupDoneAt = std::chrono::steady_clock::now();
 
     camera = std::make_unique<WebcamCaptureDS>();
     if (!camera->Preload(config.cameraDevice)) {
         FACELOGIN_WARN(L"Camera preload failed — full initialization at AUTH_START");
     }
-    const auto skeletonDoneAt = std::chrono::steady_clock::now();
-    FACELOGIN_INFO(L"Auth worker preload timing: models_and_warmup=%.1f ms, "
-                   L"camera_skeleton=%.1f ms, total=%.1f ms",
-                   std::chrono::duration<double, std::milli>(warmupDoneAt - preloadStart).count(),
-                   std::chrono::duration<double, std::milli>(skeletonDoneAt - warmupDoneAt).count(),
-                   std::chrono::duration<double, std::milli>(skeletonDoneAt - preloadStart).count());
     return true;
 }
 
@@ -329,9 +264,6 @@ AuthPipelineCallbacks WireAuthCallbacks(WebcamCaptureDS& camera, Channel& channe
         long value = 0;
         return camera.GetExposure(&value, &manual);
     };
-    callbacks.readExposureState = [&camera](long& value, bool& manual) {
-        return camera.GetExposure(&value, &manual);
-    };
     callbacks.sensorKnobs.gainRange = [&camera](long& mn, long& mx, long& st) {
         return camera.GetGainRange(&mn, &mx, &st);
     };
@@ -441,15 +373,12 @@ int RunAuthenticationWorker(HANDLE parentToWorker, HANDLE workerToParent) {
         camera->Pause();
         camera->Shutdown();
         cameraReady = false;
-        LogWorkerResources(L"camera released");
+        FACELOGIN_INFO(L"Auth worker camera released");
     };
 
     // READY means only runtime/model preload. Camera device ACTIVATION is
     // hard-deferred until the one allowed AUTH_START (enumeration and the
-    // graph skeleton are preloaded above without touching the device). The
-    // ready-time resource snapshot is logged by the parent (ModelWorkerLoop)
-    // from outside this process; the camera release/failure snapshots below
-    // have no parent-side equivalent and stay here.
+    // graph skeleton are preloaded above without touching the device).
     if (!channel.Write(MessageType::Ready, 0)) return ERROR_BROKEN_PIPE;
 
     // The idle command loop picks AUTH_START up via PeekNamedPipe+Sleep(5)
@@ -490,7 +419,7 @@ int RunAuthenticationWorker(HANDLE parentToWorker, HANDLE workerToParent) {
     if (!initializeCamera()) {
         channel.Write(MessageType::AuthFailed, command.requestId,
                       auth_worker::EncodeWString(L"摄像头不可用"));
-        LogWorkerResources(L"camera initialization failed");
+        FACELOGIN_ERROR(L"Auth worker camera initialization failed");
         return ERROR_DEVICE_NOT_AVAILABLE;
     }
     const auto cameraReadyAt = std::chrono::steady_clock::now();

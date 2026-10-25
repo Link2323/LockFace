@@ -183,28 +183,6 @@ DWORD WINAPI FaceService::HandlerEx(DWORD control, DWORD eventType,
     }
 }
 
-// Progressive-learning instrumentation: static norm of every stored template
-// at load/reload, plus the slot's nominal pose (a format-V5 field; records
-// without a pose target carry the invalid sentinel = "no cone"). Enrollment
-// averages 5 unit-length samples
-// without renormalizing, so the stored norm (<1) tracks how spread the
-// enrollment frames were; changes over time reveal template drift. The
-// nominal angle tells the field logs whether the pose-cone gate is armed for
-// this slot.
-static void LogTemplateNorms(const CredentialStore& store, const wchar_t* when) {
-    for (const auto& u : store.GetUsers()) {
-        for (const auto& f : u.faces) {
-            const wchar_t* cone = IsValidNominalAngle(f.nominalYaw)
-                ? L"cone on" : L"no cone";
-            FACELOGIN_INFO(L"Template stats [%s]: user=%s face#%u(%s) dim=%zu "
-                           L"norm=%.4f nominalYaw=%.0f nominalPitch=%.0f (%s)",
-                           when, u.username.c_str(), f.id, f.label.c_str(),
-                           f.embedding.size(), L2Norm(f.embedding),
-                           f.nominalYaw, f.nominalPitch, cone);
-        }
-    }
-}
-
 // Persist template-learning updates. Runs only on the learner thread or at
 // service shutdown. The first flush of a local day refreshes users.dat.bak —
 // the rollback copy of last resort; failure only logs (learning is
@@ -372,7 +350,6 @@ bool FaceService::Initialize() {
         return false;
     }
     FACELOGIN_INFO(L"Loaded %zu registered user(s)", m_store->GetUserCount());
-    LogTemplateNorms(*m_store, L"load");
 
     // Progressive template learning (docs/work/in-progress/progressive-learning-v2.md §3).
     // The learner thread owns all post-auth EMA work; the hooks below
@@ -531,7 +508,6 @@ void FaceService::Run() {
                 }
                 m_pipeServer->Disconnect();
                 FACELOGIN_INFO(L"Database reloaded");
-                LogTemplateNorms(*m_store, L"reload");
             } else {
                 if (!SendControlResponse(ipc::MSG_CONFIG_RELOAD_ERROR)) {
                     FACELOGIN_WARN(L"RELOAD_DB: failure response delivery failed");

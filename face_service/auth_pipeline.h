@@ -17,7 +17,6 @@ namespace facelogin {
 
 struct AuthFrame;
 class AuthFrameStream;
-namespace auth_diagnostics { struct NormLog; }
 
 // The inference-only authentication loop.  It owns no camera, credential
 // store, named pipe, or Windows password.  Those resources deliberately live
@@ -47,10 +46,6 @@ struct AuthPipelineCallbacks {
     // Sensor exposure/gain controls for the face-priority exposure tune
     // (face_gain_tune.h). Empty functions = unsupported knob → skipped.
     SensorKnobs sensorKnobs;
-    // Optional diagnostic-only snapshot: a single driver read returns both
-    // exposure value and mode. False means neither output is valid. Hosts
-    // without it keep the separate SensorKnobs reads. Never used for tuning.
-    std::function<bool(long& valueOut, bool& manualOut)> readExposureState;
     std::function<void(const std::wstring&)> reportStatus;
 
     // Called for each identity-binding frame (counted frames 1/3/5 in the
@@ -168,7 +163,6 @@ struct AuthLoopState {
 };
 
 struct PreparedAuthFrames;
-namespace auth_diagnostics { struct ExposureTimingProfile; }
 
 class AuthPipeline {
 public:
@@ -182,7 +176,6 @@ public:
 
 private:
     bool PrepareFrames(PreparedAuthFrames& prepared,
-                       auth_diagnostics::ExposureTimingProfile& exposureTiming,
                        const SensorKnobs& sensorKnobs,
                        const std::function<bool()>& interrupted,
                        const decltype(AuthPipelineCallbacks::grabFrame)& grabFrame);
@@ -197,15 +190,13 @@ private:
                                  AuthFrameStream& frames,
                                  PreparedAuthFrames& prepared,
                                  const SensorKnobs& sensorKnobs,
-                                 const std::function<bool()>& interrupted,
-                                 auth_diagnostics::NormLog& normLog);
+                                 const std::function<bool()>& interrupted);
     PreCountCorrection CorrectExposureBeforeFirstCount(
         AuthLoopState& state, PreparedAuthFrames& prepared, const AuthFrame& cur,
         const SensorKnobs& sensorKnobs, const std::function<bool()>& interrupted);
     BindingDisposition AttemptBinding(AuthLoopState& state, const AuthFrame& cur,
                                       const FaceRect& faceRect,
-                                      std::future<float>& scoreFuture,
-                                      auth_diagnostics::NormLog& normLog);
+                                      std::future<float>& scoreFuture);
     std::optional<AuthLoopStop> PrefetchNextFrame(
         AuthLoopState& state, AuthFrameStream& frames, AuthFrame& next,
         std::future<float>& scoreFuture, int totalChecks,

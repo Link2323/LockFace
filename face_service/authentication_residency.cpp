@@ -1,5 +1,4 @@
 #include "authentication_residency.h"
-#include "process_resource_usage.h"
 #include "../common/logger.h"
 
 #include <chrono>
@@ -241,10 +240,7 @@ void AuthenticationResidency::Run() {
         const double loadMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - loadStart).count();
         if (published) {
-            const auto usage = CurrentProcessResourceUsage();
-            FACELOGIN_INFO(L"Authentication worker ready in %.0f ms (parent handles=%lu, private=%.1f MiB, working_set=%.1f MiB, threads=%lu)",
-                           loadMs, usage.handles, usage.privateMiB,
-                           usage.workingSetMiB, usage.threads);
+            FACELOGIN_INFO(L"Authentication worker ready in %.0f ms", loadMs);
         } else {
             loadedWorker.reset();
             FACELOGIN_INFO(L"Authentication worker load not published (wanted=%d, %.0f ms)",

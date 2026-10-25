@@ -2,7 +2,6 @@
 
 #include "auth_frame.h"
 #include <functional>
-#include <optional>
 
 namespace facelogin {
 
@@ -19,7 +18,6 @@ public:
     // state ownership. The stop predicate is rechecked during stale-frame waits.
     bool Grab(AuthFrame& out);
     void AdvanceAnchor(const AuthFrame& frame);
-    std::optional<double> MinimumIntervalMs() const { return m_minIntervalMs; }
 
 private:
     OnnxDetector& m_detector;
@@ -29,7 +27,6 @@ private:
     std::chrono::steady_clock::time_point m_lastCountedWall{};
     unsigned long long m_lastCountedSeq = 0;
     bool m_haveLastCounted = false;
-    std::optional<double> m_minIntervalMs;
 };
 
 } // namespace facelogin

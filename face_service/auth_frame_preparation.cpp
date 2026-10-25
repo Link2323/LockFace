@@ -1,6 +1,6 @@
 #include "auth_pipeline.h"
 #include "auth_frame_preparation.h"
-#include "auth_pipeline_diagnostics.h"
+#include "../common/logger.h"
 #include "../vision/exposure_warmup.h"
 #include "../vision/face_align.h"
 
@@ -11,8 +11,6 @@
 #include <utility>
 
 namespace facelogin {
-using auth_diagnostics::ElapsedMs;
-using auth_diagnostics::ExposureTimingProfile;
 
 namespace {
 // Owns both the asynchronous job and its frame. Destroying the future joins
@@ -61,7 +59,6 @@ private:
 // camera/COM thread; only detection runs asynchronously. Every exit joins
 // the pending detection before its input frame or detector can be released.
 bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
-                                 ExposureTimingProfile& exposureTiming,
                                  const SensorKnobs& sensorKnobs,
                                  const std::function<bool()>& interrupted,
                                  const decltype(AuthPipelineCallbacks::grabFrame)& grabFrame) {
@@ -98,7 +95,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
     const bool stableSeedMode = usingAutoExposure ||
         (!replayWrote && sensorKnobs.exposureIsManual &&
          sensorKnobs.exposureIsManual(manualExposure) && manualExposure);
-    exposureTiming.preparationMs = ElapsedMs(replayAt);
 
     // Let auto-exposure settle before the first PAD frame. Adaptive gate
     // (see exposure_warmup.h): sample the mean luma of distinct frames
@@ -143,7 +139,8 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
         bool reuseCompleted = gateOpened && warmup.Settled() &&
             stableSeedMode && !replayWrote && hadPreviousWarm &&
             seed.valid && seed.det && seed.seq == previousWarmSeq &&
-            ElapsedMs(seed.grabWall) <= kSeedMaxAgeMs;
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - seed.grabWall).count() <= kSeedMaxAgeMs;
         if (reuseCompleted) {
             FrameImage latest = warmFrame;
             RotateFrame(latest, m_config.cameraRotation);
@@ -156,7 +153,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
                 latestLuma <= bounds.maxFaceLuma &&
                 std::fabs(latestLuma - olderLuma) <= kSeedFaceLumaDrift;
         }
-        exposureTiming.reusedCompletedSeed = reuseCompleted;
         if (!detection.Pending() && !reuseCompleted)
             detection.Start(warmFrame, seq, m_config.cameraRotation);
         if (gateOpened) {
@@ -164,34 +160,14 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    prepared.gateAt = std::chrono::steady_clock::now();
-    exposureTiming.gateReached = true;
     FACELOGIN_INFO(L"Exposure warmup: %d samples, %.0f ms%s",
                    warmup.Samples(),
                    std::chrono::duration<double, std::milli>(
                        std::chrono::steady_clock::now() - warmupStart).count(),
                    warmup.Settled() ? L" — stable" : L" — cap reached, proceeding");
 
-    // Only the log consumes this snapshot. Read on the camera's current
-    // COM thread while the outstanding SCRFD runs on its existing async
-    // thread; do not add concurrent sensor calls or reuse it for tuning.
-    auth_diagnostics::ExposureSnapshot diagnosticSnapshot;
-    const auto readDiagnosticKnobs = [&] {
-        diagnosticSnapshot.ReadOnce(sensorKnobs, m_callbacks.readExposureState, exposureTiming);
-    };
-    // If replay wrote a knob, defer the snapshot until after its existing
-    // settle/re-measure path, so the log cannot describe pre-write state.
-    if (!replayWrote && detection.Pending()) {
-        readDiagnosticKnobs();
-        exposureTiming.triggerQueriesBeforeSeedWait = true;
-    }
-
-    const auto seedWaitAt = std::chrono::steady_clock::now();
     detection.Finish(seed);
-    exposureTiming.seedWaitMs = ElapsedMs(seedWaitAt);
     if (interrupted()) return false;
-    exposureTiming.warmupSeedSeq = seed.valid ? seed.seq : 0;
-    exposureTiming.warmupSeedAgeMs = seed.valid ? ElapsedMs(seed.grabWall) : -1.0;
     if (seed.valid && std::chrono::duration<double, std::milli>(
                           std::chrono::steady_clock::now() - seed.grabWall).count()
                           > kSeedMaxAgeMs) {
@@ -207,7 +183,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
     tuneCfg.persistPath = m_config.tuneStatePath;
     if (!tuneCfg.persistPath.empty()) tuneCfg.recovery = &prepared.tuneRecovery;
     tuneCfg.writes = &prepared.tuneWrites;
-    const auto seedRefreshAt = std::chrono::steady_clock::now();
     if (!seed.valid && !interrupted()) {
         FrameImage fresh;
         unsigned long long freshSeq = 0;
@@ -218,7 +193,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
                             std::chrono::steady_clock::now()};
         }
     }
-    exposureTiming.seedRefreshMs = ElapsedMs(seedRefreshAt);
     // A just-applied replay write needs the driver's lag window (the
     // same ~0.5–1 s family as the tune settle floor) before readings
     // are trustworthy. Judging the trigger on the pre-settle reading
@@ -229,8 +203,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
     // showed the post-replug sensor is untrustworthy for several
     // seconds no matter what — delayed jump, not a smooth ramp — so the
     // window stays fixed and the first re-measure decides.)
-    exposureTiming.phase = ExposureTimingProfile::ReplaySettle;
-    const auto replaySettleAt = std::chrono::steady_clock::now();
     if (replayWrote && seed.valid && seed.det) {
         const float lumaNow = FaceBoxLuma(seed.frame, *seed.det);
         if (lumaNow >= 0.0f &&
@@ -268,27 +240,8 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
             }
         }
     }
-    exposureTiming.replaySettleMs = ElapsedMs(replaySettleAt);
-    // Post-mortem diagnostic (2026-09-19 17:45:46): a round that failed
-    // with face luma 18 / identity distance 0.989 left NO tune log at all
-    // because its trigger frame had no face to measure. One line here
-    // states the trigger decision and the knob state so "why was tuning
-    // skipped" is always answerable from the log alone.
-    exposureTiming.phase = ExposureTimingProfile::Trigger;
-    const auto triggerAt = std::chrono::steady_clock::now();
-    {
-        readDiagnosticKnobs();
-        float triggerLuma = -1.0f;
-        if (seed.valid && seed.det) triggerLuma = FaceBoxLuma(seed.frame, *seed.det);
-        prepared.triggerFaceLuma = triggerLuma;
-        FACELOGIN_INFO(L"Exposure tune trigger: %s, face luma %.0f — %s",
-                       seed.valid ? (seed.det ? L"face" : L"no face")
-                                  : L"no fresh frame",
-                       triggerLuma, diagnosticSnapshot.Text().c_str());
-    }
-    exposureTiming.triggerMs = ElapsedMs(triggerAt);
-    exposureTiming.phase = ExposureTimingProfile::Tune;
-    const auto tuneAt = std::chrono::steady_clock::now();
+    if (seed.valid && seed.det)
+        prepared.triggerFaceLuma = FaceBoxLuma(seed.frame, *seed.det);
     auto& darkRecoveryAttempted = prepared.darkRecoveryAttempted;
     if (seed.valid && seed.det) {
         const float faceLuma = FaceBoxLuma(seed.frame, *seed.det);
@@ -310,7 +263,6 @@ bool AuthPipeline::PrepareFrames(PreparedAuthFrames& prepared,
                          m_config.cameraRotation, tuneCfg);
         seed = AuthFrame{};
     }
-    exposureTiming.tuneMs = ElapsedMs(tuneAt);
     if (interrupted()) return false;
 
     return true;

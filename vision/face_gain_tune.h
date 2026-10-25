@@ -897,26 +897,10 @@ inline int TuneFaceExposure(float firstLuma,
                             const GainTuneConfig& cfg = {}) {
     unsigned long long lastSeq = 0;
     bool haveSeq = false;
-    unsigned long long firstSeq = 0;
-    unsigned int samples = 0;
-    const int steps = TuneFaceExposure(firstLuma, knobs, [&](float& luma) {
-        const bool measured = detail::GrabMeasure(grab, detector, isCancelled, cameraRotation,
-                                                  cfg, lastSeq, haveSeq, luma);
-        if (measured) {
-            if (samples == 0) firstSeq = lastSeq;
-            ++samples;
-        }
-        return measured;
+    return TuneFaceExposure(firstLuma, knobs, [&](float& luma) {
+        return detail::GrabMeasure(grab, detector, isCancelled, cameraRotation,
+                                   cfg, lastSeq, haveSeq, luma);
     }, isCancelled, cfg);
-    if (steps > 0) {
-        const auto state = ReadTuneKnobState(knobs);
-        FACELOGIN_INFO(L"Face tune measurements: %u face samples, seq %llu→%llu; "
-                       L"exposure %ld (known=%d), gain %ld (known=%d), manual=%d",
-                       samples, firstSeq, lastSeq, state.exposure, state.hasExposure,
-                       state.gain, state.hasGain,
-                       state.hasExposureMode ? (state.exposureManual ? 1 : 0) : -1);
-    }
-    return steps;
 }
 
 inline bool ConfirmPendingFaceTune(const SensorKnobs& knobs,
