@@ -1,13 +1,15 @@
 /* Shared palette: WebView2 follows the Windows application color scheme. */
 :root{
   color-scheme:light dark;
+  --footer-height:28px;
   /* Codex uses the platform UI stack. Explicit Chinese fallback keeps forms
      and body copy on the same sans-serif face on Windows. */
   --font-ui:"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
   --font-mono:"Cascadia Code","Consolas","Microsoft YaHei UI",monospace;
   --surface:#fff;--strong:#1a1c1f;--text:#1a1c1f;--label:#303030;
+  --chrome:#f3f3f3;--card:#f9f9f9;
   --body:#414141;--muted:#5d5d5d;--subtle:#767676;
-  --control-border:#cdcdcd;--border:#ededed;--soft:#f3f3f3;--field:#f9f9f9;
+  --control-border:#cdcdcd;--border:#ededed;--soft:#f3f3f3;--field:#fff;
   --warning:#b45309;--warning-border:#fcd34d;--warning-dot:#f59e0b;
   --warning-accent:#d97706;--error-bg:#fef2f2;--error:#dc2626;
   --success-bg:#f0fdf4;--success:#16a34a;--success-dot:#10b981;
@@ -19,8 +21,9 @@
     /* Codex app palette: gray-fixed-900 surface, gray-fixed-800 raised
        controls, gray-fixed-150 foreground; secondary text is 70% white. */
     --surface:#181818;--strong:#ededed;--text:#dfdfdf;--label:#cdcdcd;
+    --chrome:#212121;--card:#232323;
     --body:#b9b9b9;--muted:#bababa;--subtle:#8c8c8c;
-    --control-border:#414141;--border:#2a2a2a;--soft:#282828;--field:#212121;
+    --control-border:#414141;--border:#303030;--soft:#282828;--field:#282828;
     --warning:#fbbf24;--warning-border:#856428;--warning-dot:#fbbf24;
     --warning-accent:#fbbf24;--error-bg:#3b2228;--error:#fca5a5;
     --success-bg:#19352b;--success:#86efac;--success-dot:#34d399;
@@ -49,19 +52,41 @@ body{
 }
 button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:inherit}
 .screen{display:flex;width:100%;height:100vh;flex-direction:column;align-items:center;
+  /* Codex-style shell: lighter chrome surrounds a recessed content surface.
+     The plain footer belongs to the shell, outside the rounded content panel. */
+  background:var(--chrome);isolation:isolate;
   position:absolute;top:0;left:0;
   opacity:0;
   pointer-events:none;
   transition:opacity 0s ease}
+.screen::before{content:'';position:absolute;z-index:-1;top:102px;bottom:var(--footer-height);
+  left:8px;right:8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;pointer-events:none}
 .screen.active{opacity:1;pointer-events:auto}
 
+/* ========== Integrated window chrome ========== */
+/* Only enabled after the native host confirms WebView2 drag-region support. */
+.window-controls{display:none}
+.custom-frame .window-controls{position:fixed;top:0;right:0;z-index:250;
+  display:flex;-webkit-app-region:no-drag;app-region:no-drag}
+.window-button{display:flex;align-items:center;justify-content:center;
+  width:46px;height:36px;border:0;background:transparent;color:var(--text);
+  cursor:default;transition:background-color .15s,color .15s}
+.window-button svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1}
+.window-button:hover{background:var(--soft)}
+.window-button.window-close:hover{background:#c42b1c;color:#fff}
+.window-button:focus-visible{outline:2px solid var(--muted);outline-offset:-3px}
+.custom-frame .header{-webkit-app-region:drag;app-region:drag;padding-right:92px}
+
 /* ========== Header ========== */
-.header{width:100%;max-width:640px;padding:12px 0 8px;flex-shrink:0}
+/* Compensate for the title glyphs' line-box inset, with a slightly tighter
+   top margin for the integrated brand area. */
+.header{width:calc(100% - 40px);max-width:640px;padding:13px 0 10px;flex-shrink:0}
 .header h1{font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.3px;color:var(--strong)}
 .header p{font-size:14px;color:var(--subtle);font-weight:400}
 
 /* ========== Mode Tabs ========== */
-.tabs{width:100%;max-width:640px;display:flex;gap:24px;border-bottom:1px solid var(--soft);flex-shrink:0}
+.tabs{width:100%;max-width:640px;display:flex;gap:24px;border-bottom:1px solid transparent;flex-shrink:0}
 .tabs span{padding-bottom:8px;font-size:14px;font-weight:400;color:var(--subtle);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
 .tabs span:hover{color:var(--muted)}
 .tabs span.active{font-weight:500;color:var(--strong);border-bottom-color:var(--strong)}
@@ -70,7 +95,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 /* ========== Cam Screen ========== */
 #screen-cam{justify-content:flex-start}
 .cam-body{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;
-  width:100%;max-width:640px;padding:16px 0 0}
+  width:100%;max-width:640px;padding:16px 0 12px}
 .cam-viewport{position:relative;width:100%;aspect-ratio:16/9;min-height:180px;
   flex:0 1 auto;overflow:hidden;border-radius:8px;background:var(--border)}
 .cam-viewport canvas{position:absolute;top:0;left:0;width:100%;height:100%}
@@ -120,6 +145,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 #screen-pwd{justify-content:flex-start}
 .pwd-body{width:100%;max-width:640px;padding:16px 0 12px;flex:1;min-height:0;overflow-y:auto}
 .pwd-body h2{font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.2px;color:var(--strong);margin-bottom:12px}
+/* Page introductions sit inside the same visual inset as card contents. */
+.pwd-body > h2,.pwd-body > p.dim,.faces-head > h2,
+.faces-body > p.dim,.logs-toolbar > h2{padding-left:8px}
 .pwd-body .field{margin-bottom:10px}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .field label{font-size:13px;font-weight:500;color:var(--label)}
@@ -152,11 +180,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 /* ========== Progress ========== */
 #cap-progress{display:none;width:100%;flex-shrink:0;margin:0 0 12px}
 .progress-bar{position:relative;height:3px;background:var(--soft);border-radius:2px;overflow:hidden}
-.progress-bar .fill{position:absolute;top:0;left:0;height:100%;background:var(--strong);transition:width .3s ease-out}
+.progress-bar .fill{position:absolute;top:0;left:0;height:100%;background:var(--strong);
+  border-radius:inherit;transition:width .3s ease-out}
 
 /* ========== Banner ========== */
 .banner{display:none;align-items:center;justify-content:center;gap:8px;
-  padding:8px 16px;font-size:13px;font-weight:400;width:100%;flex-shrink:0}
+  padding:8px 16px;font-size:13px;font-weight:400;width:100%;flex-shrink:0;
+  border-radius:8px}
 .banner.error{display:flex;background:var(--error-bg);color:var(--error)}
 .banner.ok{display:flex;background:var(--success-bg);color:var(--success)}
 /* The cam banner floats over the viewport top (same pattern as the settings
@@ -183,16 +213,16 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .loading-text{font-size:13px;color:var(--muted);font-weight:400}
 
 /* ========== Settings ========== */
-/* The scroller is a full-width wrapper so the scrollbar hugs the window edge;
-   the 640px column inside stays centered. */
-#screen-settings .settings-scroll{flex:1;min-height:0;overflow-y:auto;width:100%}
-#screen-settings .settings-body{margin:0 auto;padding:16px 0 0;
-  /* The scroller's 14px classic scrollbar takes layout space on the right,
-     centering the 640px column in the remaining width — 7px left of where
-     the other pages sit. Nudge it back so all pages share one column.
-     No bottom padding: scrolled to the end, the action row lands on the
-     same bottom line as the cam/faces button rows. */
-  position:relative;left:7px}
+/* Clip once at the panel boundary. The inner scroller has square corners,
+   with top/bottom insets keeping its thumb away from the panel's curves. */
+#screen-settings .settings-viewport{flex:1;min-height:0;width:calc(100% - 16px);
+  border-radius:14px;overflow:hidden;padding:8px 0 12px}
+#screen-settings .settings-scroll{width:100%;height:100%;overflow-y:auto;scrollbar-gutter:stable}
+#screen-settings .settings-scroll::-webkit-scrollbar{width:10px}
+#screen-settings .settings-scroll::-webkit-scrollbar-thumb{background-color:var(--control-border)}
+#screen-settings .settings-scroll::-webkit-scrollbar-thumb:hover{background-color:var(--muted)}
+#screen-settings .settings-body{margin:0 0 0 12px;padding:8px 0 0;
+  position:static;overflow:visible}
 #screen-settings .settings-body .dim{color:var(--muted);font-weight:400}
 /* The save banner floats ABOVE the scroller (out of the flex flow): the page
    scrolls internally, so a banner inside the scroll content sits at the top
@@ -201,7 +231,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
    squeeze the scroller by its own height on every appearance, jolting the
    whole page. Absolute here: always visible at the top, layout untouched. */
 #screen-settings > .banner{
-  position:absolute;top:112px;left:50%;transform:translateX(-50%);
+  position:absolute;top:115px;left:50%;transform:translateX(-50%);
   width:calc(100% - 32px);max-width:640px;z-index:5;
   border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);
 }
@@ -209,7 +239,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
    Group title is the ONLY large text in the card (15px vs 13px labels) so a
    first-time reader sees three distinct modules; fields group tightly around
    their slider and keep a wider gap to the NEXT field. */
-.set-group{border:1px solid var(--border);border-radius:10px;padding:14px 16px 2px;margin-top:14px;background:var(--surface)}
+.set-group{border:1px solid var(--border);border-radius:10px;padding:14px 16px 2px;margin-top:14px;background:var(--card)}
 .set-group>h3{font-size:15px;font-weight:600;color:var(--strong);margin-bottom:12px;
   display:flex;align-items:center;gap:6px}
 .set-group .field{margin-bottom:18px}
@@ -286,7 +316,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .cselect-row-on{color:var(--strong);font-weight:600}
 
 /* ========== Logs ========== */
-#screen-logs .logs-body{width:100%;max-width:640px;flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 0 0}
+#screen-logs .logs-body{width:100%;max-width:640px;flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 0 12px}
 .logs-toolbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
 .logs-toolbar h2{font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.2px;color:var(--strong)}
 /* Toolbar controls share one compact height (the trigger via its own rule). */
@@ -304,18 +334,18 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
   background-repeat:no-repeat;background-position:right 10px center;
   padding-right:30px}
 .logs-toolbar select:focus{border-color:var(--subtle);background:var(--surface)}
-.log-viewer{flex:1;min-height:0;overflow-y:auto;background:var(--field);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.75;color:var(--label);white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;cursor:text}
+.log-viewer{flex:1;min-height:0;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.75;color:var(--label);white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;cursor:text}
 .log-viewer .log-debug{color:var(--subtle)}
 .log-viewer .log-info{color:var(--strong)}
 .log-viewer .log-warn{color:var(--warning-accent)}
 .log-viewer .log-error{color:var(--error);font-weight:500}
 
 /* ========== Faces (multi-face management) ========== */
-#screen-faces .faces-body{width:100%;max-width:640px;flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 0 0}
+#screen-faces .faces-body{width:100%;max-width:640px;flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 0 12px}
 .faces-head{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;margin-bottom:12px}
 .faces-head h2{font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.2px;color:var(--strong)}
 .face-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
-.face-item{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--field)}
+.face-item{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--card)}
 .face-item .face-name{flex:1;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .face-item .face-id{font-size:12px;color:var(--subtle);flex-shrink:0}
 .face-item .btn{width:auto;padding:5px 12px;margin-top:0;font-size:13px}
@@ -327,7 +357,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .cam-picker-overlay{position:fixed;inset:0;z-index:100;display:none;
   align-items:center;justify-content:center;background:rgba(0,0,0,.5)}
 .cam-picker-overlay.active{display:flex}
-.cam-picker{width:90%;max-width:420px;background:var(--surface);border:1px solid var(--border);
+.cam-picker{width:90%;max-width:420px;background:var(--card);border:1px solid var(--border);
   border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.15);padding:24px}
 .cam-picker h2{font-size:18px;line-height:26px;font-weight:600;letter-spacing:-0.2px;color:var(--strong);margin-bottom:6px}
 .cam-picker p.dim{font-size:13px;color:var(--subtle);line-height:1.5;margin-bottom:16px}
@@ -359,13 +389,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .app-modal .modal-actions{display:flex;gap:8px;margin-top:16px}
 .app-modal .modal-actions .btn{margin-top:0;flex:1}
 .app-modal input[type=text]{width:100%;border:1px solid var(--border);padding:8px 12px;
-  font-size:14px;outline:none;background:var(--field);color:var(--text)}
+  border-radius:8px;font-size:14px;outline:none;background:var(--field);color:var(--text)}
 .app-modal input[type=text]:focus{border-color:var(--subtle);background:var(--surface)}
 /* Demoted SID readout: diagnostic value, not a form field — one small line. */
 .sid-note{font-size:12px;color:var(--subtle);margin:-6px 0 12px;word-break:break-all}
 
 /* ========== Footer ========== */
-.footer{width:100%;max-width:640px;padding:8px 0;flex-shrink:0}
+.footer{width:100%;max-width:640px;height:var(--footer-height);padding:2px 0;flex-shrink:0}
 .footer{display:flex;align-items:center;justify-content:space-between}
 .footer p,.footer button{font-size:12px;color:var(--subtle)}
 .footer button{border:0;background:none;cursor:pointer;padding:2px 0}
@@ -407,3 +437,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 #refresh-pass{width:100%;border:1px solid var(--border);padding:8px 12px;
   border-radius:8px;font-size:14px;outline:none;background:var(--field);color:var(--text);margin-bottom:8px}
 #refresh-pass:focus{border-color:var(--subtle);background:var(--surface)}
+
+/* Keep content inside the inset panel even at the minimum window width. */
+.screen > .tabs,.screen > .cam-body,.screen > .pwd-body,.screen > .footer,
+#screen-settings .settings-body,#screen-faces .faces-body,#screen-logs .logs-body{
+  width:calc(100% - 40px)}
+/* The 10px scrollbar lives in the panel's right gutter. */
+#screen-settings .settings-body{width:calc(100% - 14px)}

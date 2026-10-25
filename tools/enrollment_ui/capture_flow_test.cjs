@@ -117,6 +117,17 @@ function page(overrides) {
   return { context, app: context.consoleApp, intervals, timeouts, elements, element, calls, state };
 }
 
+test('caption buttons dispatch minimize and close to the native host', () => {
+  const calls = [];
+  const p = page({ host: {
+    MinimizeWindow() { calls.push('minimize'); },
+    CloseWindow() { calls.push('close'); }
+  }});
+  p.context.minimizeWindow();
+  p.context.closeWindow();
+  assert.deepEqual(calls, ['minimize', 'close']);
+});
+
 test('cancelling between angles clears timers and rejects already queued work after retry', () => {
   const { flow, pending } = fixture();
   let oldPolls = 0, oldAngles = 0, newPolls = 0;

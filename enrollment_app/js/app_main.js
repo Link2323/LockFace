@@ -1,3 +1,12 @@
+// Caption actions post native messages so closing cannot destroy the WebView
+// while its synchronous host-object invocation is still on the stack.
+function minimizeWindow() {
+  window.chrome.webview.hostObjects.sync.host.MinimizeWindow();
+}
+function closeWindow() {
+  window.chrome.webview.hostObjects.sync.host.CloseWindow();
+}
+
 // ================================================================
 // Composition root + bootstrap — the only file with executable top-level
 // code. Every other module is a factory whose deps parameter declares its

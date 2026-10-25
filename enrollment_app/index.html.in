@@ -6,7 +6,15 @@
 <title>LockFace Console</title>
 <style>@ENROLLMENT_CSS@</style>
 </head>
-<body>
+<body class="__WINDOW_CHROME_CLASS__">
+<div class="window-controls" role="group" aria-label="窗口控制">
+  <button type="button" class="window-button" aria-label="最小化" title="最小化" onclick="minimizeWindow()">
+    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.5h10"/></svg>
+  </button>
+  <button type="button" class="window-button window-close" aria-label="关闭" title="关闭" onclick="closeWindow()">
+    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1.5 1.5 9 9m0-9-9 9"/></svg>
+  </button>
+</div>
 
 <!-- ================================================================== -->
 <!-- Camera Screen                                                       -->
@@ -52,7 +60,7 @@
       </button>
     </div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -93,7 +101,7 @@
       <button class="btn btn-secondary" id="btn-save-cancel" onclick="onPwdCancel()" style="flex:1">取消</button>
     </div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -123,7 +131,7 @@
       <button class="btn btn-primary" onclick="goAddFace()">添加新人脸</button>
     </div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -156,7 +164,7 @@
       <button class="btn btn-secondary" id="btn-append-cancel" onclick="onAppendCancel()" style="flex:1">取消</button>
     </div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -174,8 +182,9 @@
     <span class="tab" onclick="switchTab('logs')">日志</span>
   </div>
   <div class="banner" id="settings-banner"></div>
+  <div class="settings-viewport">
   <div class="settings-scroll">
-    <div class="pwd-body settings-body" style="width:100%;max-width:640px">
+    <div class="pwd-body settings-body">
     <h2>系统设置</h2>
     <p class="dim">保存后立即生效，无需重启。</p>
 
@@ -275,7 +284,8 @@
     </div>
     </div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  </div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -292,7 +302,7 @@
     <span class="tab" onclick="switchTab('settings')">设置</span>
     <span class="tab active">日志</span>
   </div>
-  <div class="logs-body" style="width:100%;max-width:640px">
+  <div class="logs-body">
     <div class="logs-toolbar">
       <h2>运行日志</h2>
       <div style="display:flex;gap:8px;align-items:center">
@@ -310,7 +320,7 @@
     </div>
     <div class="log-viewer" id="log-viewer"></div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->

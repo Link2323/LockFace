@@ -91,6 +91,7 @@ public:
     ~WebviewHost();
     int Run();
     void ResizeWebView(HWND hWnd);
+    void EnableCustomFrame();
 
     HINSTANCE m_hInstance;
     HWND     m_hWnd = nullptr;
@@ -100,6 +101,7 @@ public:
     ICoreWebView2*            m_webview    = nullptr;
     ICoreWebView2Environment* m_env        = nullptr;
     bool m_sessionNotifRegistered = false;
+    bool m_customFrame = false;
     // Preview state snapshot taken at WTS_SESSION_LOCK, before the camera is
     // released. The unlock restore must only bring the camera back if the UI
     // actually had it on (cam tab active) — the JS layer owns that state and
@@ -117,7 +119,8 @@ private:
 
 class HostObject : public IDispatch {
 public:
-    HostObject(facelogin::EnrollmentWizard* w) : m_wizard(w), m_refCount(1), m_lastDispId(0) {}
+    HostObject(facelogin::EnrollmentWizard* w, HWND hWnd)
+        : m_wizard(w), m_hWnd(hWnd), m_refCount(1), m_lastDispId(0) {}
 
     STDMETHOD(QueryInterface)(REFIID riid, void** ppv);
     STDMETHOD_(ULONG, AddRef)();
@@ -129,6 +132,7 @@ public:
 
 private:
     facelogin::EnrollmentWizard* m_wizard;
+    HWND m_hWnd;
     ULONG m_refCount;
     DISPID m_lastDispId;
 };

@@ -19,6 +19,12 @@
 
 static const wchar_t* WND_CLASS = L"LockFaceWv2Wnd";
 
+static void AdjustAppWindowRect(RECT& rect, DWORD style, UINT dpi, bool customFrame) {
+    const LONG clientTop = rect.top;
+    AdjustWindowRectExForDpi(&rect, style, FALSE, 0, dpi);
+    if (customFrame) rect.top = clientTop - MulDiv(1, dpi, USER_DEFAULT_SCREEN_DPI);
+}
+
 static COLORREF AppBackgroundColor() {
     DWORD light = 1;
     DWORD size = sizeof(light);
@@ -92,7 +98,7 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
     ctrl->get_CoreWebView2(&self->m_webview);
 
     // Register host object
-    HostObject* host = new HostObject(self->m_wizard);
+    HostObject* host = new HostObject(self->m_wizard, hWnd);
     VARIANT v; VariantInit(&v);
     v.vt = VT_DISPATCH;
     host->QueryInterface(IID_IDispatch, (void**)&v.pdispVal);
@@ -101,6 +107,7 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
     host->Release();
 
     // Settings
+    bool supportsCustomFrame = false;
     ICoreWebView2Settings* settings = nullptr;
     self->m_webview->get_Settings(&settings);
     if (settings) {
@@ -111,6 +118,11 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
         // capture/save buttons outside the overflow-hidden body, with no way
         // to scroll to them. Zoom has no user value here — disable it.
         settings->put_IsZoomControlEnabled(FALSE);
+        ICoreWebView2Settings9* settings9 = nullptr;
+        if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings9)))) {
+            supportsCustomFrame = SUCCEEDED(settings9->put_IsNonClientRegionSupportEnabled(TRUE));
+            settings9->Release();
+        }
         // Kill the browser accelerator set entirely: F5/Ctrl+R would reload the
         // page and reset all enrollment state mid-capture, Ctrl+P pops a print
         // dialog, F3/Ctrl+F are find keys with no find UI behind them. Keys the
@@ -153,6 +165,14 @@ STDMETHODIMP CtrlCallback::Invoke(HRESULT hr, ICoreWebView2Controller* ctrl) {
         htmlContent.replace(pos, versionPh.size(), FACELOGIN_APP_VERSION);
     }
 
+    const std::string chromePh = "__WINDOW_CHROME_CLASS__";
+    const size_t chromePos = htmlContent.find(chromePh);
+    if (chromePos != std::string::npos) {
+        // A resource-load failure uses the plain fallback page, which has no
+        // window buttons. Keep its native caption so it remains operable.
+        if (supportsCustomFrame) self->EnableCustomFrame();
+        htmlContent.replace(chromePos, chromePh.size(), self->m_customFrame ? "custom-frame" : "");
+    }
     self->m_webview->NavigateToString(facelogin::Utf8ToWstr(htmlContent).c_str());
 
     NavCompletedCallback* navCb = new NavCompletedCallback(hWnd);
@@ -241,7 +261,7 @@ int WebviewHost::Run() {
 
     RECT rc = {0, 0, clientW, clientH};
     DWORD style = WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX;
-    AdjustWindowRect(&rc, style, FALSE);
+    AdjustAppWindowRect(rc, style, static_cast<UINT>(dpiY), false);
     int actualWndW = rc.right - rc.left;
     int actualWndH = rc.bottom - rc.top;
 
@@ -282,6 +302,23 @@ LRESULT CALLBACK WebviewHost::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 
 LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_NCCALCSIZE:
+        if (m_customFrame && wp) {
+            auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lp);
+            const LONG outerTop = params->rgrc[0].top;
+            const LRESULT result = DefWindowProcW(hWnd, msg, wp, lp);
+            // Side/bottom resize borders are mostly outside DWM's visible
+            // frame. Its top resize border is visible unless reduced here.
+            params->rgrc[0].top = outerTop +
+                MulDiv(1, GetDpiForWindow(hWnd), USER_DEFAULT_SCREEN_DPI);
+            return result;
+        }
+        break;
+    case WM_SYSCOMMAND:
+        // WebView2 drag regions can request maximize on double click. This
+        // fixed-height tool deliberately has no maximize button or state.
+        if ((wp & 0xfff0) == SC_MAXIMIZE) return 0;
+        break;
     case WM_ERASEBKGND: {
         RECT rect;
         GetClientRect(hWnd, &rect);
@@ -352,14 +389,13 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         // Track sizes are physical px — apply the monitor DPI scale the same
         // way Run() does for the initial size, so this stays correct if the
         // user changes display scaling while the app is open.
-        HDC hdc = GetDC(nullptr);
-        float dpiScale = GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
-        ReleaseDC(nullptr, hdc);
+        const UINT dpi = GetDpiForWindow(hWnd);
+        float dpiScale = dpi / 96.0f;
         DWORD style = static_cast<DWORD>(GetWindowLongW(hWnd, GWL_STYLE));
         RECT rcMin = {0, 0, static_cast<int>(420 * dpiScale), static_cast<int>(600 * dpiScale)};
         RECT rcMax = {0, 0, static_cast<int>(680 * dpiScale), static_cast<int>(600 * dpiScale)};
-        AdjustWindowRect(&rcMin, style, FALSE);
-        AdjustWindowRect(&rcMax, style, FALSE);
+        AdjustAppWindowRect(rcMin, style, dpi, m_customFrame);
+        AdjustAppWindowRect(rcMax, style, dpi, m_customFrame);
         MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lp);
         mmi->ptMinTrackSize.x = rcMin.right - rcMin.left;
         mmi->ptMinTrackSize.y = rcMin.bottom - rcMin.top;
@@ -436,6 +472,25 @@ void WebviewHost::ResizeWebView(HWND hWnd) {
         RECT rc; GetClientRect(hWnd, &rc);
         m_controller->put_Bounds(rc);
     }
+}
+
+void WebviewHost::EnableCustomFrame() {
+    if (m_customFrame) return;
+    m_customFrame = true;
+    RECT rect;
+    GetClientRect(m_hWnd, &rect);
+    // Remove the caption style itself: shrinking its non-client rectangle
+    // leaves DWM painting clipped icon/caption-button fragments at the top.
+    // Keep WS_THICKFRAME, WS_SYSMENU and WS_MINIMIZEBOX for native resizing,
+    // the system menu and taskbar minimize/restore behavior.
+    const DWORD style = static_cast<DWORD>(GetWindowLongW(m_hWnd, GWL_STYLE)) & ~WS_CAPTION;
+    SetWindowLongW(m_hWnd, GWL_STYLE, static_cast<LONG>(style));
+    AdjustAppWindowRect(rect, style, GetDpiForWindow(m_hWnd), true);
+    const MARGINS margins = {1, 1, 1, 1};
+    DwmExtendFrameIntoClientArea(m_hWnd, &margins);
+    SetWindowPos(m_hWnd, nullptr, 0, 0, rect.right - rect.left,
+                 rect.bottom - rect.top,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 // ==========================================================================
@@ -554,7 +609,9 @@ void WebviewHost::ResizeWebView(HWND hWnd) {
     X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0)))) \
     X(GetPrivacyConsent, 39, if (res) *res = MakeStr(GetPrivacyConsentJson())) \
     X(AcceptPrivacyConsent, 40, if (res) *res = MakeBool(RecordPrivacyConsent())) \
-    X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(ClearPrivacyConsent()))
+    X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(ClearPrivacyConsent())) \
+    X(MinimizeWindow, 42, PostMessageW(m_hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0)) \
+    X(CloseWindow, 43, PostMessageW(m_hWnd, WM_CLOSE, 0, 0))
 
 struct HostMethodEntry { const wchar_t* name; DISPID id; };
 static constexpr HostMethodEntry kHostMethods[] = {
