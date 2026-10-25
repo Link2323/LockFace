@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
@@ -57,6 +58,31 @@ func main() {
 		title = "LockFace 卸载程序"
 	}
 
+	// Paint the caption the same white as the page background — the LockFace
+	// Console window does the same via DWMWA_CAPTION_COLOR (WebviewHost.cpp).
+	// Theme is pinned to Light so the caption buttons stay dark-on-white even
+	// on a dark-mode system. Colors are COLORREF (0x00BBGGRR); the border uses
+	// DWMWA_COLOR_DEFAULT (-1) to keep the system edge.
+	const (
+		captionWhite  = int32(0xFFFFFF)
+		captionText   = int32(0x000000)
+		defaultBorder = int32(-1)
+	)
+	theme := windows.ThemeSettings{
+		LightModeTitleBar:          captionWhite,
+		LightModeTitleText:         captionText,
+		LightModeBorder:            defaultBorder,
+		LightModeTitleBarInactive:  captionWhite,
+		LightModeTitleTextInactive: captionText,
+		LightModeBorderInactive:    defaultBorder,
+		DarkModeTitleBar:           captionWhite,
+		DarkModeTitleText:          captionText,
+		DarkModeBorder:             defaultBorder,
+		DarkModeTitleBarInactive:   captionWhite,
+		DarkModeTitleTextInactive:  captionText,
+		DarkModeBorderInactive:     defaultBorder,
+	}
+
 	err := wails.Run(&options.App{
 		Title:            title,
 		Width:            640,
@@ -68,7 +94,11 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
-		OnStartup:        app.startup,
+		Windows: &windows.Options{
+			Theme:       windows.Light,
+			CustomTheme: &theme,
+		},
+		OnStartup: app.startup,
 		Bind: []interface{}{
 			app,
 		},

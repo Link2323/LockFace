@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Slim overlay-style scrollbar, same as the enrollment console: the thumb is
+   inset via a transparent border (background-clip:content-box) so it floats a
+   few px off the edge. */
+::-webkit-scrollbar{width:14px;height:14px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d1d5db;background-clip:content-box;
+  border:3px solid transparent;border-radius:7px}
+::-webkit-scrollbar-thumb:hover{background-color:#9ca3af}
+::-webkit-scrollbar-corner{background:transparent}
+
 html {
   background-color: #ffffff;
   text-align: left;
@@ -8,8 +18,9 @@ html {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  /* Same font stack as the enrollment console. */
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei",
+    -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

@@ -390,7 +390,7 @@ async function doUninstall() {
 <template>
   <div class="flex flex-col h-screen bg-white select-none">
     <!-- Header -->
-    <div class="px-8 pt-8 pb-2">
+    <div class="px-8 pt-3 pb-2">
       <h1 class="text-2xl font-light tracking-tight text-gray-900">LockFace</h1>
       <p class="text-sm text-gray-400 font-light">人脸识别登录系统 · {{ showInstall ? '安装程序' : '卸载程序' }}</p>
     </div>
@@ -419,12 +419,12 @@ async function doUninstall() {
         <div class="flex items-center gap-3">
           <input
             v-model="installDir"
-            class="flex-1 px-3 py-2 text-sm border border-gray-200 bg-gray-50
+            class="flex-1 rounded-lg px-3 py-2 text-sm border border-gray-200 bg-gray-50
                    focus:outline-none focus:border-gray-400 transition-colors text-gray-800"
             placeholder="选择安装目录"
           />
           <button
-            class="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-200
+            class="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200
                    hover:bg-gray-100 transition-colors text-gray-500"
             @click="doPickDirectory"
             title="选择文件夹"
@@ -436,25 +436,32 @@ async function doUninstall() {
         </div>
         <p class="mt-1 text-xs text-gray-400">建议保留默认目录：<code class="text-gray-500">C:\Program Files\</code> 受系统保护，可防止程序文件被篡改。</p>
 
-        <div class="mt-5 border-t border-gray-100 pt-4">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="text-xs font-medium text-gray-800">人脸识别隐私说明</p>
-              <p class="mt-1 text-xs leading-relaxed text-gray-500">
-                人脸仅在本机用于登录比对，不保存照片或视频，不上传；只保存人脸特征和加密后的 Windows 密码。
-              </p>
+        <div class="mt-5 rounded-[10px] border border-gray-200 px-4 py-3.5">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <p class="text-[15px] font-semibold text-gray-900">人脸识别隐私说明</p>
+              <span
+                class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px]"
+                :class="consentAccepted ? 'border-gray-200 text-gray-500' : 'border-amber-300 text-amber-700'"
+              >
+                <span class="h-1.5 w-1.5 rounded-full" :class="consentAccepted ? 'bg-emerald-500' : 'bg-amber-500'"></span>
+                {{ consentAccepted ? '已同意' : '未同意' }}
+              </span>
             </div>
             <button class="flex-shrink-0 text-xs text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-gray-900" @click="openConsent">
               {{ consentAccepted ? '重新阅读' : '阅读全文' }}
             </button>
           </div>
-          <p class="mt-2 text-xs" :class="consentAccepted ? 'text-gray-700' : 'text-gray-500'">
-            {{ consentAccepted ? '已阅读并同意《LockFace 人脸识别隐私说明与知情同意书》' : '安装前需完整阅读并同意隐私说明' }}
+          <p class="mt-2.5 text-xs leading-relaxed text-gray-500">
+            人脸仅在本机用于登录比对，不保存照片或视频，不上传；只保存人脸特征和加密后的 Windows 密码。
+          </p>
+          <p v-if="!consentAccepted" class="mt-2 text-[11px] text-gray-400">
+            安装前需点击「阅读全文」完整浏览并同意隐私说明。
           </p>
         </div>
 
         <button
-          class="mt-5 w-full py-2.5 text-sm font-medium bg-gray-900 text-white
+          class="mt-5 w-full rounded-lg py-2.5 text-sm font-medium bg-gray-900 text-white
                  hover:bg-gray-800 transition-colors disabled:opacity-40"
           @click="doInstall"
           :disabled="!installDir || !consentAccepted"
@@ -468,7 +475,7 @@ async function doUninstall() {
           以及 <strong>人脸数据和日志（不可恢复）</strong>，并移除安装目录。
         </p>
         <button
-          class="mt-6 w-full py-2.5 text-sm font-medium border border-gray-300 text-gray-700
+          class="mt-6 w-full rounded-lg py-2.5 text-sm font-medium border border-gray-300 text-gray-700
                  hover:bg-gray-100 transition-colors disabled:opacity-40"
           @click="doUninstall"
         >卸载 LockFace</button>
@@ -476,7 +483,7 @@ async function doUninstall() {
 
       <!-- Progress -->
       <div v-if="running" class="space-y-4">
-        <div class="relative h-0.5 bg-gray-100">
+        <div class="relative h-[3px] rounded-[2px] overflow-hidden bg-gray-100">
           <div
             class="absolute top-0 left-0 h-full bg-gray-900 transition-all duration-300 ease-out"
             :style="{ width: progressPercent + '%' }"
@@ -498,7 +505,7 @@ async function doUninstall() {
           {{ resultSuccess ? '✓ ' : '✗ ' }}{{ resultMessage }}
         </div>
         <button
-          class="w-full py-2 text-sm text-gray-500 border border-gray-200
+          class="w-full rounded-lg py-2 text-sm text-gray-500 border border-gray-200
                  hover:bg-gray-50 transition-colors"
           @click="hideTabs ? doExit() : (showResult = false)"
         >{{ hideTabs ? '退出' : '返回' }}</button>
@@ -523,7 +530,7 @@ async function doUninstall() {
         </label>
         <p v-if="finishError" class="text-xs text-red-600">{{ finishError }}</p>
         <button
-          class="w-full py-2.5 text-sm font-medium bg-gray-900 text-white
+          class="w-full rounded-lg py-2.5 text-sm font-medium bg-gray-900 text-white
                  hover:bg-gray-800 transition-colors disabled:opacity-40"
           @click="doFinish"
           :disabled="finishing"
@@ -554,7 +561,7 @@ async function doUninstall() {
     </dialog>
 
     <dialog ref="consentDialog" aria-labelledby="consent-title" @cancel.prevent
-      class="m-auto w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-xl p-0 shadow-2xl backdrop:bg-slate-900/50">
+      class="m-auto w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-[10px] p-0 shadow-2xl backdrop:bg-slate-900/50">
       <div class="flex max-h-[92vh] flex-col bg-white">
         <div ref="consentScroller" tabindex="-1" autofocus
           class="min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none" @scroll="onConsentScroll">
@@ -602,7 +609,7 @@ async function doUninstall() {
               class="rounded-sm text-xs text-gray-500 underline decoration-gray-300 underline-offset-4 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
               @click="declineConsent">不同意并退出</button>
             <button v-if="consentScrolled || consentAccepted"
-              class="rounded-md bg-gray-900 px-6 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-lg bg-gray-900 px-6 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="!consentAccepted && !consentChecked" @click="acceptConsent">
               {{ consentAccepted ? '关闭' : '同意并继续' }}
             </button>
