@@ -58,6 +58,16 @@ cmake --build build --config Debug --target CredentialConcurrencyTest --parallel
 ctest --test-dir build -C Debug --output-on-failure -R '^CredentialConcurrencyTest$'
 ```
 
+只读相机启动对照用 `CameraStartupProbe`，显式指定设备路径（可先用 `CameraLifecycleTest --list-devices` 枚举），每次调用为一个独立进程：
+
+```powershell
+cmake --build build --config Release --target CameraStartupProbe --parallel 1
+.\build\tools\camera_lifecycle\Release\CameraStartupProbe.exe --device '<DevicePath>' --query immediate
+.\build\tools\camera_lifecycle\Release\CameraStartupProbe.exe --device '<DevicePath>' --query after-frame
+```
+
+交替两种顺序采样；工具不写传感器、不保存画面或曝光状态。相机 COM/属性查询留在 owner MTA，观察线程仅复制回调帧缓冲。JSON 的首帧、稳定门、查询起止均从 Initialize 返回后计时，`ready_gate_ms` 取稳定门与查询完成的较晚时间；`activate_ms` 另计 Initialize。工具没有模型、身份/PAD 或完整曝光重放，不能代替生产流水线或 Session 0 锁屏。窗口内未获得稳定帧或属性读取失败返回非零。目标不参与默认产品构建和安装载荷。
+
 注册端支持模块可独立验证，无需打开相机或启动已安装的服务：
 
 ```powershell

@@ -153,7 +153,6 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
     using facelogin::credential_provider::InputTriggerKind;
 
     constexpr DWORD kPollIntervalMs = 10;
-    constexpr DWORD kMouseSelectionSettleMs = 100;
     constexpr int kFirstVk = 0x01;
     constexpr int kLastVk = 0xFE;
     constexpr int kMouseButtons[] = {
@@ -274,28 +273,39 @@ unsigned __stdcall LockFaceCredential::InputDetectionThreadProc(void* pParam) {
     t_inputTriggerPolicy = nullptr;
     rawSink.Unregister();  // idempotent no-op if registration failed
 
+    if (shouldTrigger) pCred->QueueInputAfterSelection(*context, triggerKind);
+
+    pCred->m_inputThreadRunning = false;
+    pCred->Release();
+    return 0;
+}
+
+void LockFaceCredential::QueueInputAfterSelection(
+    const WorkerContext& context,
+    facelogin::credential_provider::InputTriggerKind triggerKind) {
     // A mouse click can target another sign-in option. LogonUI dispatches the
     // tile switch at the end of that click and calls SetDeselected, which
     // signals m_hInputStop. Give that UI transition one short cancellable
     // window before opening the authentication pipe. Keyboard presses retain
     // their immediate path.
-    if (shouldTrigger && triggerKind == InputTriggerKind::MouseButton &&
-        WaitForSingleObject(context->stop, kMouseSelectionSettleMs) ==
-            WAIT_OBJECT_0) {
-        shouldTrigger = false;
+    // Keep a cancellable 50 ms window; the prior 100 ms also delayed every
+    // intentional face click. Real LogonUI tile-switch timing still requires
+    // lock-screen verification; the queued event is generation-checked too.
+    constexpr DWORD kMouseSelectionSettleMs = 50;
+#ifdef FACELOGIN_CONCURRENCY_TESTS
+    if (m_testBarrier) m_testBarrier(4);
+#endif
+    if (triggerKind == facelogin::credential_provider::InputTriggerKind::MouseButton &&
+        WaitForSingleObject(context.stop, kMouseSelectionSettleMs) != WAIT_TIMEOUT) {
+        return;
     }
 
     // Deselect/UnAdvise wins a race with the qualifying edge: once the stop
     // event is signaled this watcher must not open a new pipe while its owner
     // is joining the thread and tearing the selected tile down.
-    if (shouldTrigger &&
-        WaitForSingleObject(context->stop, 0) != WAIT_OBJECT_0) {
-        pCred->QueueEvent(EventKind::Input, context->generation, true);
+    if (WaitForSingleObject(context.stop, 0) == WAIT_TIMEOUT) {
+        QueueEvent(EventKind::Input, context.generation, true);
     }
-
-    pCred->m_inputThreadRunning = false;
-    pCred->Release();
-    return 0;
 }
 
 // Idle prompt for the Waiting tile. Event-driven, never the enumeration

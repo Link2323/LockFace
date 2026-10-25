@@ -140,6 +140,8 @@ private:
         facelogin::credential_provider::InputDetectionRound round;
         const wchar_t* pipeName = nullptr; // tests only; normal rounds use ipc::PIPE_NAME
     };
+    void QueueInputAfterSelection(const WorkerContext& context,
+        facelogin::credential_provider::InputTriggerKind triggerKind);
     bool EnsureDispatcher();
     static LRESULT CALLBACK DispatchWndProc(HWND, UINT, WPARAM, LPARAM);
     void QueueEvent(EventKind kind, std::uint64_t generation, bool success,

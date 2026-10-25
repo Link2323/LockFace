@@ -73,6 +73,24 @@ struct CredentialConcurrencyTestAccess {
     static bool Stopped(LockFaceCredential& c) {
         return !c.m_hAuthThread && !c.m_hAuthStop && !c.m_hInputThread && !c.m_hInputStop;
     }
+    static std::uint64_t PrepareInput(LockFaceCredential& c) {
+        const auto generation = Arm(c);
+        c.m_state = State::Waiting;
+        c.m_selected = true;
+        return generation;
+    }
+    static void InputCandidate(LockFaceCredential& c, HANDLE stop,
+                               std::uint64_t generation,
+                               facelogin::credential_provider::InputTriggerKind kind) {
+        const LockFaceCredential::WorkerContext context{
+            &c, stop, generation, {},
+            facelogin::credential_provider::InputDetectionRound::InitialLock};
+        c.QueueInputAfterSelection(context, kind);
+    }
+    static bool HasOneInput(LockFaceCredential& c) {
+        return c.m_pendingEvents.size() == 1 &&
+            c.m_pendingEvents.front()->kind == Kind::Input;
+    }
     static void Attach(LockFaceProvider& p, LockFaceCredential* c) {
         p.m_pCredential = c; // transfers the construction reference
         c->Initialize(&p);
@@ -393,10 +411,59 @@ static void WaitingPromptTiming() {
           "drained L gets a hint only after the credential view is quiet");
 }
 
+static void MouseSelectionCancellation() {
+    using facelogin::credential_provider::InputTriggerKind;
+    auto credential = Make<LockFaceCredential>();
+    credential->Advise(nullptr);
+    auto generation = Access::PrepareInput(*credential.Get());
+    Event cancelled;
+    cancelled.Set();
+    Access::InputCandidate(*credential.Get(), cancelled.handle, generation,
+                           InputTriggerKind::MouseButton);
+    Check(Access::Empty(*credential.Get()), "cancelled mouse candidate never queues input");
+
+    Event stop, paused, resume;
+    Access::Barrier(*credential.Get(), [&](int point) {
+        if (point == 4) { paused.Set(); Wait(resume.handle); }
+    });
+    std::thread worker([&] {
+        Access::InputCandidate(*credential.Get(), stop.handle, generation,
+                               InputTriggerKind::MouseButton);
+    });
+    Wait(paused.handle);
+    // The same stop event observed by the selection wait is manual-reset:
+    // cancellation before/during that wait must survive the final zero wait.
+    stop.Set();
+    resume.Set();
+    worker.join();
+    Access::Barrier(*credential.Get(), {});
+    Check(Access::Empty(*credential.Get()), "mouse selection wait retains cancellation signal");
+
+    Event active;
+    Access::InputCandidate(*credential.Get(), active.handle, generation,
+                           InputTriggerKind::MouseButton);
+    Check(Access::HasOneInput(*credential.Get()), "selected mouse candidate queues exactly one input");
+    credential->SetDeselected();
+    Pump();
+    Check(Access::Empty(*credential.Get()) && Access::Stopped(*credential.Get()) &&
+          Access::GetState(*credential.Get()) == State::Waiting,
+          "deselect after mouse publication drops queued input without starting authentication");
+
+    credential->Advise(nullptr);
+    generation = Access::PrepareInput(*credential.Get());
+    Access::InputCandidate(*credential.Get(), active.handle, generation,
+                           InputTriggerKind::Keyboard);
+    Check(Access::HasOneInput(*credential.Get()), "keyboard candidate retains direct input publication");
+    credential->UnAdvise();
+    Pump();
+    std::cout << "PASS mouse selection cancellation and queued-input teardown\n";
+}
+
 int main() {
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
     ComFactoryOwnership();
     WaitingPromptTiming();
+    MouseSelectionCancellation();
     PublicationTeardownInterleavings();
     DispatchAndReentry();
     RealWorker(false);

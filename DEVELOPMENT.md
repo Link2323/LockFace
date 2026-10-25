@@ -40,6 +40,8 @@
 
 ## 运行期架构
 
+首次曝光查询与首帧的只读时序对照见 `CameraStartupProbe`（[构建与用法](docs/BUILD.md)）。2026-10-25 桌面对照未发现延后查询有整体收益，鼠标触发窗口缩短的试用与锁屏验收条件见 [记录](docs/work/in-progress/unlock-input-latency.md)。
+
 曝光确认中断后的接续复核可先运行 `build/tools/auth_pipeline/Release/AuthPipelineTest.exe --tune-recovery`，覆盖固定场景连续重试及身份/PAD 拒绝、取消、断开、漂移和旧帧；此入口不能替代完整自动测试及真实相机、GUI 和锁屏验收。
 
 曝光粗调过暗后回退、并在首绑前重复纠正的固定场景可运行 `build/tools/auth_pipeline/Release/AuthPipelineTest.exe --bright-fallback`；配合 `FaceGainTuneTest` 验证回退后增益细调及未确认/取消保护。此场景假定增益有效，真实设备无增益或增益无响应时仍须独立测量。
