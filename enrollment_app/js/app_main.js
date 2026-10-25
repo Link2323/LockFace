@@ -43,7 +43,8 @@ function buildEnrollmentApp(deps) {
                                    showRefreshPrompt: accountRefresh.showRefreshPrompt});
   var settings = createSettingsModule({host: H, showBanner: ui.showBanner,
                                        previewCtl: previewCtl,
-                                       withBusy: ui.withBusy});
+                                       withBusy: ui.withBusy,
+                                       syncSelects: deps.syncSelects});
   var logs = createLogsModule({host: H, escapeHtml: ui.escapeHtml});
 
   nav.onEnter('settings', settings.load);
@@ -71,9 +72,11 @@ function buildEnrollmentApp(deps) {
 // consumed by index.html.in's inline handlers, and start the page. The var
 // list below is the page's ENTIRE global surface (plus consoleApp itself) —
 // everything else now lives inside module closures.
+var customSelect = createCustomSelectModule();
 var consoleApp = buildEnrollmentApp({
   host: window.chrome.webview.hostObjects.sync.host,
-  timers: window
+  timers: window,
+  syncSelects: customSelect.refreshAll
 });
 
 var switchTab = consoleApp.nav.switchTab,
@@ -88,6 +91,7 @@ var switchTab = consoleApp.nav.switchTab,
     onClearAllFaces = consoleApp.faces.onClearAllFaces,
     onSaveSettings = consoleApp.settings.save,
     onResetDefaults = consoleApp.settings.resetDefaults,
+    onUnlockTierInput = consoleApp.settings.onUnlockTierInput,
     onCamPickerConfirm = consoleApp.settings.onCamPickerConfirm,
     onCamPickerSkip = consoleApp.settings.onCamPickerSkip,
     refreshLogs = consoleApp.logs.refresh,
@@ -118,6 +122,8 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
   var logs = consoleApp.logs, settings = consoleApp.settings;
   var accountRefresh = consoleApp.accountRefresh;
   var consent = consoleApp.consent;
+
+  customSelect.enhanceAll();
 
   try { document.getElementById('fld-user').value = H.GetUsername(); } catch(e) {}
 

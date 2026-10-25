@@ -5,6 +5,7 @@
 set(ENROLLMENT_JS_SOURCES
     js/capture_flow.js
     js/ui_common.js
+    js/custom_select.js
     js/preview.js
     js/capture_ui.js
     js/navigation.js
@@ -69,6 +70,7 @@ target_link_libraries(LockFaceConsole PRIVATE
     crypt32
     windowscodecs
     netapi32
+    dwmapi
 )
 
 target_include_directories(LockFaceConsole PRIVATE

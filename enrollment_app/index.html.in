@@ -23,7 +23,6 @@
     <span class="tab" onclick="switchTab('logs')">日志</span>
   </div>
   <div class="cam-body">
-    <div class="banner" id="cam-banner"></div>
     <div class="cam-viewport" id="viewport">
       <div class="loading-overlay" id="cam-loading">
         <div class="spinner-dark"></div>
@@ -32,10 +31,13 @@
       <canvas id="bg-canvas"></canvas>
       <canvas id="face-canvas"></canvas>
       <div class="cam-caption" id="cam-caption">请将面部置于取景框内，确保光线充足。</div>
+      <div class="banner" id="cam-banner"></div>
     </div>
     <div class="capture-aux">
       <label class="chk-row" title="正面、左转 30°、右转 30° 各录 5 帧，侧脸角度也能解锁">
-        <input type="checkbox" id="chk-multi-angle" checked> 多角度录入（推荐，侧脸可解锁）
+        <input type="checkbox" id="chk-multi-angle" class="switch-input" checked>
+        <span class="switch-track"></span>
+        多角度录入（推荐，侧脸可解锁）
       </label>
       <button class="consent-pill" id="btn-consent-status" onclick="onConsentStatus()"
               title="隐私同意状态，点击查看或撤回">隐私说明</button>
@@ -117,8 +119,8 @@
     <p class="dim">当前账号：<span id="faces-user">-</span></p>
     <div class="face-list" id="face-list"></div>
     <div class="faces-actions">
-      <button class="btn btn-primary" onclick="goAddFace()">添加新人脸</button>
       <button class="btn btn-secondary" onclick="onClearAllFaces()">清空全部</button>
+      <button class="btn btn-primary" onclick="goAddFace()">添加新人脸</button>
     </div>
   </div>
   <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
@@ -206,12 +208,19 @@
           <label>解锁档位</label>
           <span class="hint">活体检测计帧数</span>
         </div>
-        <select id="cfg-unlockframes">
-          <option value="3">标准（3 帧）</option>
-          <option value="5">严格（5 帧）</option>
-          <option value="2">极速（2 帧）· 实验性</option>
-        </select>
-        <p class="dim">档位越快活体检测次数越少，防照片攻击的证据也越少。严格 5 帧为标定策略；极速 2 帧建议仅在受控环境使用。</p>
+        <div class="seg" id="cfg-unlockframes">
+          <input type="radio" name="unlock-tier" id="cfg-unlockframes-0" value="0"
+                 onchange="onUnlockTierInput(this.value)">
+          <label for="cfg-unlockframes-0">严格 5 帧</label>
+          <input type="radio" name="unlock-tier" id="cfg-unlockframes-1" value="1" checked
+                 onchange="onUnlockTierInput(this.value)">
+          <label for="cfg-unlockframes-1">标准 3 帧</label>
+          <input type="radio" name="unlock-tier" id="cfg-unlockframes-2" value="2"
+                 onchange="onUnlockTierInput(this.value)">
+          <label for="cfg-unlockframes-2">极速 2 帧</label>
+          <span class="seg-thumb"></span>
+        </div>
+        <p class="dim">档位越快活体检测次数越少，防照片攻击的证据也越少。</p>
       </div>
 
       <div class="field">
@@ -287,7 +296,7 @@
     <div class="logs-toolbar">
       <h2>运行日志</h2>
       <div style="display:flex;gap:8px;align-items:center">
-        <select id="log-source" onchange="refreshLogs()" style="font-size:12px;padding:4px 8px;border:1px solid #e5e7eb;background:#f9fafb">
+        <select id="log-source" onchange="refreshLogs()">
           <option value="console">控制台(console.log)</option>
           <option value="service">解锁结果(service.log)</option>
           <option value="worker">识别过程(auth_worker.log)</option>
@@ -301,7 +310,7 @@
     </div>
     <div class="log-viewer" id="log-viewer"></div>
   </div>
-  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p></div>
+  <div class="footer"><p>LockFace Console · v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
 </div>
 
 <!-- ================================================================== -->

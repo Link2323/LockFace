@@ -6,6 +6,7 @@
 #include "resource.h"
 #include "version.h"
 #include <wtsapi32.h>
+#include <dwmapi.h>
 #include <shlobj.h>
 #include <filesystem>
 #include <fstream>
@@ -198,6 +199,13 @@ int WebviewHost::Run() {
         (scrW - actualWndW)/2, (scrH - actualWndH)/2, actualWndW, actualWndH,
         nullptr, nullptr, m_hInstance, this);
     if (!m_hWnd) return 1;
+
+    // Win11: paint the caption the same white as the page background so the
+    // title bar and the content read as one surface. Pre-22000 Windows reject
+    // the attribute — ignore the result and keep the system caption.
+    COLORREF captionColor = RGB(255, 255, 255);
+    DwmSetWindowAttribute(m_hWnd, DWMWA_CAPTION_COLOR,
+                          &captionColor, sizeof(captionColor));
 
     ShowWindow(m_hWnd, SW_SHOW);
     UpdateWindow(m_hWnd);

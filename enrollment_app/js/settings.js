@@ -1,13 +1,48 @@
-// Settings screen + first-run camera picker. The last config loaded by
-// loadSettings is kept whole for onSaveSettings — it is this module's only
-// shared state. deps: {host, showBanner, previewCtl, withBusy}.
+// Settings screen + first-run camera picker. Shared state: the last config
+// loaded by loadSettings (kept whole for onSaveSettings) and the selected
+// unlock tier index. deps: {host, showBanner, previewCtl, withBusy}.
 function createSettingsModule(deps) {
   var H = deps.host;
   var showBanner = deps.showBanner;
   var previewCtl = deps.previewCtl;
   var withBusy = deps.withBusy;
+  // Re-syncs the custom-select facades after this module re-points a hidden
+  // select programmatically (.value writes fire no events).
+  var syncSelects = deps.syncSelects || function() {};
 
   var loadedConfig = null;
+
+  // Unlock tier selector detents, strict→fast (left→right). The three radios
+  // (#cfg-unlockframes-N) carry the visual state — the sliding pill is pure
+  // CSS on :checked — while this index is what onSaveSettings writes; the
+  // wire format stays unlock_frames {5,3,2}. Anything unexpected from config
+  // displays as the standard 3.
+  var UNLOCK_TIERS = [
+    {frames: 5, name: '严格'},
+    {frames: 3, name: '标准'},
+    {frames: 2, name: '极速'}
+  ];
+  var curTierIdx = 1;
+
+  function unlockTierIndex(frames) {
+    for (var i = 0; i < UNLOCK_TIERS.length; i++) {
+      if (UNLOCK_TIERS[i].frames === frames) return i;
+    }
+    return 1;
+  }
+
+  function setTierChecked(idx) {
+    for (var i = 0; i < UNLOCK_TIERS.length; i++) {
+      var el = document.getElementById('cfg-unlockframes-' + i);
+      if (el) el.checked = (i === idx);
+    }
+  }
+
+  // Called from each radio's inline onchange with its value.
+  function onUnlockTierInput(value) {
+    var idx = Number(value);
+    if (idx >= 0 && idx < UNLOCK_TIERS.length) curTierIdx = idx;
+  }
 
   function loadSettings() {
     try {
@@ -22,7 +57,8 @@ function createSettingsModule(deps) {
       // Unlock tier {5,3,2}; anything unexpected displays as the standard 3.
       var unlockFrames = Number(cfg.unlock_frames || 3);
       if (unlockFrames !== 5 && unlockFrames !== 2) unlockFrames = 3;
-      document.getElementById('cfg-unlockframes').value = String(unlockFrames);
+      curTierIdx = unlockTierIndex(unlockFrames);
+      setTierChecked(curTierIdx);
 
       // Populate the camera dropdown from the enumerated devices.
       var camSel = document.getElementById('cfg-camera');
@@ -77,6 +113,7 @@ function createSettingsModule(deps) {
       if (lgThr > 0.68) lgThr = 0.68;
       document.getElementById('cfg-learn-gate').value = lgThr;
       document.getElementById('cfg-learn-gate-val').textContent = lgThr.toFixed(2);
+      syncSelects();
     } catch(e) { showBanner('settings', '读取设置失败: ' + e.message, 'error'); }
   }
 
@@ -84,6 +121,9 @@ function createSettingsModule(deps) {
     // Single UI switch drives both learning channels so "off" means templates
     // are strictly read-only (docs/work/in-progress/progressive-learning-v2.md red line 5).
     var learning = document.getElementById('cfg-learning').checked;
+    // The tier index tracks the radios via onchange; guard anyway so an out-
+    // of-range state can never write a bogus unlock_frames.
+    var tierIdx = (curTierIdx >= 0 && curTierIdx < UNLOCK_TIERS.length) ? curTierIdx : 1;
     // Round-trip the FULL config: UI-managed keys overridden, every other key
     // preserved from the last load (see loadSettings note on partial saves).
     var cfg = Object.assign({}, loadedConfig || {}, {
@@ -93,7 +133,7 @@ function createSettingsModule(deps) {
       camera_device: document.getElementById('cfg-camera').value,
       ema_learning: learning,
       failure_learning: learning,
-      unlock_frames: parseInt(document.getElementById('cfg-unlockframes').value) || 3,
+      unlock_frames: UNLOCK_TIERS[tierIdx].frames,
       learning_distance_gate: parseFloat(document.getElementById('cfg-learn-gate').value)
     });
     // withBusy defers the synchronous COM call so the locked button and
@@ -122,13 +162,15 @@ function createSettingsModule(deps) {
     var camSel = document.getElementById('cfg-camera');
     if (camSel.querySelector('option[value=""]')) camSel.value = '';
     document.getElementById('cfg-learning').checked = false;
-    document.getElementById('cfg-unlockframes').value = '3';
+    curTierIdx = 1;
+    setTierChecked(curTierIdx);
     document.getElementById('cfg-threshold').value = 1.00;
     document.getElementById('cfg-threshold-val').textContent = '1.00';
     document.getElementById('cfg-antispoof-threshold').value = 0.28;
     document.getElementById('cfg-asthr-val').textContent = '0.28';
     document.getElementById('cfg-learn-gate').value = 0.65;
     document.getElementById('cfg-learn-gate-val').textContent = '0.65';
+    syncSelects();
     showBanner('settings', '已恢复默认值，点击“保存设置”后生效。', 'ok');
   }
 
@@ -187,6 +229,7 @@ function createSettingsModule(deps) {
     load: loadSettings,
     save: onSaveSettings,
     resetDefaults: onResetDefaults,
+    onUnlockTierInput: onUnlockTierInput,
     showCamPicker: showCamPicker,
     onCamPickerConfirm: onCamPickerConfirm,
     onCamPickerSkip: onCamPickerSkip

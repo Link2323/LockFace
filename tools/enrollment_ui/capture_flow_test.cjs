@@ -61,6 +61,7 @@ function page(overrides) {
   function element(key) {
     if (!elements.has(key)) elements.set(key, {
       checked: true, style: {}, disabled: false, value: '', textContent: '',
+      children: [],
       classList: (() => {
         const set = new Set();
         return {
@@ -392,6 +393,29 @@ test('saving settings round-trips non-UI config keys through the loaded snapshot
   assert.equal(saved.camera_rotation, 180);   // UI-managed key overridden
   assert.equal(saved.secret_key, 'keep-me');  // non-UI key survives the round trip
   assert.equal(p.element('btn-save-settings').disabled, false); // withBusy restored the button
+});
+
+test('unlock tier selector maps config frames to the matching radio and saves the picked tier', () => {
+  const p = page();
+  p.state.config.unlock_frames = 5;
+  p.app.settings.load();
+  assert.equal(p.element('cfg-unlockframes-0').checked, true);   // strict cell on
+  assert.equal(p.element('cfg-unlockframes-1').checked, false);
+  p.app.settings.onUnlockTierInput('2');                          // user picks 极速
+  p.app.settings.save();
+  [...p.timeouts.values()].forEach(fn => fn());
+  assert.equal(JSON.parse(p.calls.setConfig[0]).unlock_frames, 2);
+});
+
+test('unknown unlock_frames config snaps the selector back to standard', () => {
+  const p = page();
+  p.state.config.unlock_frames = 4;
+  p.app.settings.load();
+  assert.equal(p.element('cfg-unlockframes-1').checked, true);
+  assert.equal(p.element('cfg-unlockframes-0').checked, false);
+  p.app.settings.save();
+  [...p.timeouts.values()].forEach(fn => fn());
+  assert.equal(JSON.parse(p.calls.setConfig[0]).unlock_frames, 3);
 });
 
 test('banner re-show clears the previous hide timer for the same screen only', () => {
