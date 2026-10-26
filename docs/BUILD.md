@@ -126,7 +126,7 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 
 ## 前端开发
 
-注册页面采集流程的无硬件回归：`node tools/enrollment_ui/capture_flow_test.cjs`。该测试覆盖角度间取消、立即重试和旧回调隔离；实际 WebView2、摄像头与保存流程仍需 GUI 验收。
+注册页面采集流程的无硬件回归：`node tools/enrollment_ui/capture_flow_test.cjs`。该测试覆盖角度间取消、立即重试和旧回调隔离，以及重复预览帧不重绘、不重复传输图像、标注独立更新、布局/DPI 变化重绘和重启后强制同步。`EnrollmentSupportTest` 另覆盖实际 WIC JPEG 编解码的颜色通道、奇数宽度、横竖图尺寸、输入只读和空帧清除输出；实际 WebView2、摄像头与保存流程仍需 GUI 验收。
 
 ```powershell
 cd installer/LockFaceSetup/frontend

@@ -20,19 +20,27 @@ namespace facelogin {
 // w600k_r50 per-call latency with no system-lag regression; see
 // docs/performance-baseline.md perf2). Lower-core machines naturally use fewer
 // via the cores/2 floor. Overridable via FACELOGIN_ONNX_THREADS env var.
+// SetOnnxThreadCap() can lower this per process (enrollment console) without
+// touching the service's tuned default.
 // Inter-op parallelism is pinned to 1 (our callers are single-graph, so a
 // second inter-op pool only adds contention without throughput benefit).
+// Per-process cap set by SetOnnxThreadCap. Written once from main() before
+// any model initialization and read once when the shared Ort::Env is created
+// — no synchronization needed.
+static int g_onnxThreadCap = -1;
+
 static int OnnxThreadCount() {
     if (const char* env = std::getenv("FACELOGIN_ONNX_THREADS")) {
         int n = std::atoi(env);
         if (n > 0) return n;
     }
     int n = static_cast<int>(std::thread::hardware_concurrency());
-    if (n <= 0) return 2;
-    n = std::max(2, n / 2);   // half of logical cores
-    if (n > 8) return 8;
+    n = n <= 0 ? 2 : std::clamp(n / 2, 2, 8);
+    if (g_onnxThreadCap > 0 && n > g_onnxThreadCap) return g_onnxThreadCap;
     return n;
 }
+
+void SetOnnxThreadCap(int cap) { g_onnxThreadCap = cap; }
 
 // ONNX Runtime documents Ort::Env as the process-level runtime environment and
 // provides global thread pools for sessions that are repeatedly constructed.

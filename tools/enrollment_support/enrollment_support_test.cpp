@@ -15,6 +15,8 @@
 #include <thread>
 #include <vector>
 
+int RunPreviewFrameEncoderTests();
+
 namespace {
 
 using facelogin::EnrollmentLogSource;
@@ -473,6 +475,7 @@ void TestMachineSidRepair(const fs::path& dataDir) {
 } // namespace
 
 int main() {
+    failures += RunPreviewFrameEncoderTests();
     std::error_code error;
     const auto tempDir = fs::temp_directory_path(error);
     if (error) return 1;

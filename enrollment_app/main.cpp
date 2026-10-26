@@ -106,6 +106,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     // COM for WebView2 + WIC
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+    // Preview pacing does not need a large inference pool: cap this process's
+    // ONNX thread count. The face service keeps its tuned default (see
+    // docs/performance-baseline.md perf2). Must run before the first model
+    // initialization inside StartPreview.
+    facelogin::SetOnnxThreadCap(4);
+
     facelogin::EnrollmentWizard wizard;
 
     // Startup repairs, best-effort and never fatal — both must run after the

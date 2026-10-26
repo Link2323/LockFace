@@ -103,11 +103,15 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
 
     // The preview and capture threads run independently. Consume each
     // cached camera frame at most once so a stalled preview cannot turn one
-    // PAD result into a synthetic 5/5 sequence.
-    const auto copyFreshFrame = [&readFrame, &lastFrameSequence](FrameImage& output) {
+    // PAD result into a synthetic 5/5 sequence. The reader hands over a
+    // shared borrow of the cache's immutable frame — no pixel copy.
+    const auto nextFreshFrame = [&readFrame, &lastFrameSequence](
+                                    std::shared_ptr<const FrameImage>& output) {
         std::uint64_t sequence = lastFrameSequence;
-        if (!readFrame(output, sequence) || sequence == lastFrameSequence) return false;
+        auto frame = readFrame(sequence);
+        if (!frame || sequence == lastFrameSequence) return false;
         lastFrameSequence = sequence;
+        output = std::move(frame);
         return true;
     };
 
@@ -129,16 +133,16 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
             auto elapsed = std::chrono::steady_clock::now() - asStart;
             if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 8) break;
 
-            FrameImage frame;
-            if (!copyFreshFrame(frame)) {
+            std::shared_ptr<const FrameImage> frame;
+            if (!nextFreshFrame(frame)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(33));
                 continue;
             }
             // MiniFASNet consumes expanded crops around the SCRFD bbox.
-            auto asDet = detector.DetectLargestFace(frame);
+            auto asDet = detector.DetectLargestFace(*frame);
             if (!asDet) { std::this_thread::sleep_for(std::chrono::milliseconds(33)); continue; }
 
-            float score = antiSpoof.Predict(frame,
+            float score = antiSpoof.Predict(*frame,
                 FaceRect(static_cast<long>(asDet->x1),
                                 static_cast<long>(asDet->y1),
                                 static_cast<long>(asDet->x2),
@@ -187,15 +191,15 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
     int failCount = 0;
     while (m_angleSampleCounts[angleIndex] < kAngleTargetFrames && m_capturing) {
         // Read the latest frame from the frame-grab thread (no camera contention)
-        FrameImage frame;
-        if (!copyFreshFrame(frame)) {
+        std::shared_ptr<const FrameImage> frame;
+        if (!nextFreshFrame(frame)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
             continue;
         }
 
         // Detect with SCRFD — the 5 keypoints drive the alignment inside
         // ComputeEmbedding (no landmark model).
-        auto onnxDet = detector.DetectLargestFace(frame);
+        auto onnxDet = detector.DetectLargestFace(*frame);
         if (!onnxDet) {
             if (++failCount > 600) { m_capturing = false; break; }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -212,7 +216,7 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
             continue;
         }
 
-        const float samplePadScore = antiSpoof.Predict(frame,
+        const float samplePadScore = antiSpoof.Predict(*frame,
             FaceRect(static_cast<long>(onnxDet->x1),
                             static_cast<long>(onnxDet->y1),
                             static_cast<long>(onnxDet->x2),
@@ -230,7 +234,7 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         // pre-normalization L2 norm (quality signal, progressive-learning
         // phase 0 calibration).
         float embNorm = 0.0f;
-        auto onnxEmb = recognizer.ComputeEmbedding(frame, onnxDet->kps,
+        auto onnxEmb = recognizer.ComputeEmbedding(*frame, onnxDet->kps,
                                                           &embNorm);
         if (onnxEmb.empty()) {
             if (++failCount > 600) { m_capturing = false; break; }

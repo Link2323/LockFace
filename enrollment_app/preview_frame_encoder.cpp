@@ -50,32 +50,24 @@ bool PreviewFrameEncoder::Encode(const FrameImage& frame, std::string& out) {
     const size_t width = frame.nc();
     const size_t height = frame.nr();
     const size_t maxSize = std::numeric_limits<UINT>::max();
-    if (width == 0 || height == 0 || width > maxSize / 4 || height > maxSize / (width * 4)) {
+    if (width == 0 || height == 0 || width > maxSize / 3 || height > maxSize / (width * 3)) {
         FACELOGIN_ERROR(L"Preview JPEG dimensions exceed WIC buffer limits");
         return false;
     }
     const UINT srcW = static_cast<UINT>(width);
     const UINT srcH = static_cast<UINT>(height);
-    const UINT stride = srcW * 4;
-    std::vector<BYTE> bgra(static_cast<size_t>(stride) * srcH);
-    for (UINT y = 0; y < srcH; ++y) {
-        BYTE* row = bgra.data() + static_cast<size_t>(y) * stride;
-        for (UINT x = 0; x < srcW; ++x) {
-            const auto& pixel = frame(y, x);
-            row[x * 4] = pixel.blue;
-            row[x * 4 + 1] = pixel.green;
-            row[x * 4 + 2] = pixel.red;
-            row[x * 4 + 3] = 255;
-        }
-    }
+    const UINT stride = srcW * 3;
 
     ComPtr<IWICBitmap> bitmap;
     ComPtr<IWICBitmapEncoder> encoder;
     ComPtr<IStream> stream;
     ComPtr<IWICBitmapFrameEncode> encodedFrame;
     ComPtr<IPropertyBag2> properties;
-    if (Failed(m_factory->CreateBitmapFromMemory(srcW, srcH, GUID_WICPixelFormat32bppBGR,
-                stride, static_cast<UINT>(bgra.size()), bgra.data(), bitmap.GetAddressOf()), L"bitmap creation") ||
+    // FrameImage is tightly packed, top-down RGB24. WIC takes its bitmap
+    // snapshot directly; no temporary RGB -> BGRX expansion is needed here.
+    // CreateBitmapFromMemory's buffer parameter is non-const, but is input only.
+    if (Failed(m_factory->CreateBitmapFromMemory(srcW, srcH, GUID_WICPixelFormat24bppRGB,
+                stride, stride * srcH, const_cast<BYTE*>(frame.raw()), bitmap.GetAddressOf()), L"bitmap creation") ||
         Failed(m_factory->CreateEncoder(GUID_ContainerFormatJpeg, nullptr,
                 encoder.GetAddressOf()), L"encoder creation") ||
         Failed(CreateStreamOnHGlobal(nullptr, TRUE, stream.GetAddressOf()), L"stream creation") ||

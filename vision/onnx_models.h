@@ -139,6 +139,15 @@ private:
     bool m_initialized = false;
 };
 
+// Lowers this process's default ONNX Runtime intra-op thread count. The cap
+// never raises the computed default, and an explicit FACELOGIN_ONNX_THREADS
+// setting stays authoritative. The shared Ort::Env (and its thread pool) is
+// created lazily on the first model initialization, so the call must happen
+// before any Initialize() in this process — the enrollment console caps at 4
+// from main(); the face service keeps the tuned default
+// (docs/performance-baseline.md perf2).
+void SetOnnxThreadCap(int cap);
+
 // One throwaway inference per session so ORT's first-run costs (arena growth,
 // thread-pool spin-up, per-input-shape memory planning) are paid during model
 // preload instead of on the first authentication frame. Dummy inputs reuse the

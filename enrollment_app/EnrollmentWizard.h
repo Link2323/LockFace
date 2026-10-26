@@ -154,12 +154,33 @@ public:
     void ClearLog();
     bool ClearFileLog(const std::wstring& source);
 
-    // Per-frame data for JS canvas rendering (pull model — JS polls this
-    // from rAF). Atomically returns "<frame base64>\x1E<faces json>" from
-    // the SAME frame.
-    std::string GetLatestFrameAndFaces();
+    // Returns empty if knownVersion matches, otherwise an atomic snapshot:
+    // "<version>\x1E<frame base64>\x1E<faces json>". Empty version forces a read.
+    std::string GetLatestFrameAndFaces(const std::string& knownVersion);
 
     bool IsPreviewRunning() const { return m_previewRunning; }
+
+    // Window focus/minimize state pushed by WebviewHost (WM_ACTIVATE /
+    // WM_SIZE). Unfocused (window visible but not in the foreground): the
+    // preview keeps the camera rate, only detection pins to the no-face
+    // tier. Minimized: the whole frame pipeline drops to the background
+    // cadence — nobody can see it at all. Safe from any thread; may be
+    // called before StartPreview.
+    void SetUnfocused(bool unfocused) {
+        m_unfocused.store(unfocused, std::memory_order_relaxed);
+    }
+    void SetMinimized(bool minimized) {
+        m_minimized.store(minimized, std::memory_order_relaxed);
+    }
+    // True while a capture (liveness check or sampling) is in flight. The
+    // host checks it before releasing the camera on minimize: a capture must
+    // not be killed by the window going to the taskbar.
+    bool IsCaptureRunning() const { return m_capture.IsRunning(); }
+    // Canvas backing size (physical px) for preview JPEG encoding, pushed by
+    // js/preview.js whenever layout or DPI scale changes. The frame thread
+    // scales frames to fit this before encoding; until the first report (or
+    // for a zero size) frames encode at full camera resolution.
+    void SetPreviewSize(int width, int height);
 
 private:
     std::string FacesToJson(const std::vector<facelogin::FaceWithKps>& faces);
@@ -187,15 +208,29 @@ private:
     // Frame-grab thread (runs off UI thread — GrabFrame + JPEG encode + detection)
     std::thread m_frameThread;
     std::atomic<bool> m_frameRunning{false};
+    // Window state pushed by WebviewHost (see SetUnfocused / SetMinimized);
+    // read per-iteration by the frame thread. Minimized normally releases the
+    // camera outright (WebviewHost WM_SIZE); the flag still drives the frame
+    // thread's low cadence for the window between minimize and camera stop,
+    // and for a capture that kept the camera alive across a minimize.
+    std::atomic<bool> m_unfocused{false};
+    std::atomic<bool> m_minimized{false};
+    // Packed preview-encode target (width << 16 | height), written by the JS
+    // bridge on the COM thread and read per-frame by the frame thread. 0 =
+    // not reported — encode at full camera resolution.
+    std::atomic<std::uint32_t> m_previewEncodeSize{0};
 
     std::unique_ptr<PreviewFrameEncoder> m_frameEncoder;
 
-    // Per-frame caches (produced by frame thread, consumed by JS on UI thread)
+    // Per-frame caches (produced by frame thread; the images are consumed by
+    // JS on the UI thread, the frame itself by the capture thread as an
+    // immutable shared borrow — no pixel copies on either side of the lock).
     std::mutex  m_frameCacheMutex;
     std::string m_latestFrameB64;
     std::string m_latestFacesJson;
-    FrameImage m_latestFrame;                      // for capture to read
-    std::uint64_t m_latestFrameSequence = 0;       // guarded by m_frameCacheMutex
+    std::uint64_t m_previewVersion = 0;  // guarded by m_frameCacheMutex; survives restarts
+    std::shared_ptr<const FrameImage> m_latestFrame;   // capture reads via borrow
+    std::uint64_t m_latestFrameSequence = 0;           // real camera sequence; guarded by m_frameCacheMutex
 
     // Preview state
     bool m_previewRunning = false;

@@ -6,11 +6,15 @@ function createPreview(deps) {
   var showBanner = deps.showBanner;
 
   var viewing = false, lastB64 = '', lastFacesJson = '', timer = 0, faceImg = new Image();
+  var pendingFacesJson = '';
+  var lastVersion = '';
+  var drawnWidth = -1, drawnHeight = -1, drawnDpr = 0, drawnFacesJson = '';
   var camReady = false;
   var consentGranted = false;
 
   faceImg.onload = function() {
-    drawBackgroundAndOverlay();
+    lastFacesJson = pendingFacesJson;
+    drawBackgroundAndOverlay(true);
     if (!camReady) {
       camReady = true;
       document.getElementById('cam-loading').classList.add('fade');
@@ -36,11 +40,22 @@ function createPreview(deps) {
     return { sx: s, sy: s, ox: ox, oy: oy };
   }
 
+  // Tell the backend the canvas backing size (CSS viewport × dpr) whenever it
+  // changes: preview JPEGs are encoded at this size, so the bridge carries
+  // exactly the pixels the canvas shows instead of full camera frames.
+  var lastReportedW = 0, lastReportedH = 0;
+  function reportPreviewSize(w, h) {
+    if (w <= 0 || h <= 0 || (w === lastReportedW && h === lastReportedH)) return;
+    lastReportedW = w;
+    lastReportedH = h;
+    try { H.SetPreviewSize(w, h); } catch(e) {}
+  }
+
   // Draw the background image AND its paired overlay (same frame). The frame is
   // contain-fit over a blurred cover-scaled backdrop, and the overlay uses the
   // SAME contain mapping so the face box/landmarks always line up with the
   // visible face.
-  function drawBackgroundAndOverlay() {
+  function drawBackgroundAndOverlay(imageChanged) {
     var c = document.getElementById('bg-canvas');
     var vp = document.getElementById('viewport');
     // The viewport stays a flex-fitted full area; the frame is drawn contain-fit
@@ -56,14 +71,34 @@ function createPreview(deps) {
     // viewport, so a larger bitmap renders sharper, never larger.
     var dpr = window.devicePixelRatio || 1;
     var cw = vp.clientWidth, ch = vp.clientHeight;
-    c.width = Math.round(cw * dpr);
-    c.height = Math.round(ch * dpr);
+    if (cw <= 0 || ch <= 0) return;
+    var resized = cw !== drawnWidth || ch !== drawnHeight || dpr !== drawnDpr;
+    if (!imageChanged && !resized) {
+      if (lastFacesJson !== drawnFacesJson) {
+        drawOverlay(lastFacesJson);
+        drawnFacesJson = lastFacesJson;
+      }
+      return;
+    }
+    var bw = Math.round(cw * dpr), bh = Math.round(ch * dpr);
+    // Assigning even the same width/height clears the bitmap and resets state.
+    if (c.width !== bw) c.width = bw;
+    if (c.height !== bh) c.height = bh;
+    reportPreviewSize(c.width, c.height);
+    drawnWidth = cw;
+    drawnHeight = ch;
+    drawnDpr = dpr;
     var m = containMapping(srcW, srcH, cw, ch);
+    // Coverage test: when the contain-fit frame already spans the whole
+    // canvas (16:9 camera in the 16:9 viewport — the normal shape), the
+    // blurred backdrop and darkening wash underneath are fully covered, so
+    // drawing them is a full-frame filter pass for zero visible pixels.
+    var coversCanvas = srcW * m.sx >= cw && srcH * m.sy >= ch;
     var ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-    if (faceImg.naturalWidth > 0) {
+    if (faceImg.naturalWidth > 0 && !coversCanvas) {
       // Backdrop: cover-scale, ~15% oversized so the blur never samples past the
       // image edge into transparency, then darken so the sharp image reads on top.
       ctx.save();
@@ -77,22 +112,33 @@ function createPreview(deps) {
     }
     ctx.drawImage(faceImg, m.ox, m.oy, srcW * m.sx, srcH * m.sy);
     drawOverlay(lastFacesJson);
+    drawnFacesJson = lastFacesJson;
   }
 
   function renderFrame() {
     if (!viewing) return;
     try {
       // Get the frame AND its face overlay atomically (same frame, no desync).
-      var combined = H.GetLatestFrameAndFaces();
-      var sep = combined.indexOf('\x1e');
-      var b64 = sep > 0 ? combined.substring(0, sep) : combined;
-      lastFacesJson = sep > 0 ? combined.substring(sep + 1) : '';
-      if (b64 && b64 !== lastB64) {
-        lastB64 = b64;
-        faceImg.src = b64;   // async load; onload redraws bg + overlay
-      } else if (faceImg.complete) {
-        // Frame unchanged but canvas may be stale (e.g. window resize) — redraw.
-        drawBackgroundAndOverlay();
+      // The version stays a string, so even long-running sessions do not
+      // lose integer precision through JS/COM. Unchanged polls return empty.
+      var combined = H.GetLatestFrameAndFaces(lastVersion);
+      if (combined) {
+        var first = combined.indexOf('\x1e');
+        var second = combined.indexOf('\x1e', first + 1);
+        if (first < 0 || second < 0) throw new Error('Invalid preview snapshot');
+        var b64 = combined.substring(first + 1, second);
+        pendingFacesJson = combined.substring(second + 1);
+        if (b64 && b64 !== lastB64) {
+          lastB64 = b64;
+          faceImg.src = b64;   // async load; onload redraws bg + overlay
+        }
+        lastVersion = combined.substring(0, first);
+      }
+      if (lastB64 && faceImg.complete && faceImg.naturalWidth > 0) {
+        // Keep overlay-only updates and layout/DPI changes responsive without
+        // painting the unchanged JPEG again. Pending images draw on load.
+        lastFacesJson = pendingFacesJson;
+        drawBackgroundAndOverlay(false);
       }
     } catch(e) {}
     timer = setTimeout(renderFrame, 33);
@@ -213,7 +259,12 @@ function createPreview(deps) {
   // over from the previous session would keep the first new frame from
   // clearing it — live video stuck behind the spinner forever.
   function beginLoop() {
+    clearTimeout(timer);
     camReady = false;
+    // Re-load even an identical first JPEG so the loading overlay is dismissed
+    // for every new session, including consent withdrawal and re-grant.
+    lastB64 = '';
+    lastVersion = '';  // force the first snapshot even if backend data is identical
     viewing = true;
     renderFrame();
   }

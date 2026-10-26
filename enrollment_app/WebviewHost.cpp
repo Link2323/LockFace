@@ -351,6 +351,20 @@ LRESULT CALLBACK WebviewHost::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcW(hWnd, msg, wp, lp);
 }
 
+// Pushes the focus/minimize snapshot into the wizard's frame-loop pacing and
+// mirrors minimize into WebView2 visibility: a hidden controller suspends
+// Chromium composition and throttles page timers, which also parks the JS
+// preview poll. Focus loss alone keeps rendering — the window is still on
+// screen; only minimize changes visibility.
+void WebviewHost::UpdateBackgroundState() {
+    if (m_wizard) {
+        m_wizard->SetUnfocused(!m_foregroundActive);
+        m_wizard->SetMinimized(m_minimized);
+    }
+    if (m_controller)
+        m_controller->put_IsVisible(m_minimized ? FALSE : TRUE);
+}
+
 LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_NCCALCSIZE:
@@ -369,6 +383,14 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         // WebView2 drag regions can request maximize on double click. This
         // fixed-height tool deliberately has no maximize button or state.
         if ((wp & 0xfff0) == SC_MAXIMIZE) return 0;
+        break;
+    case WM_ACTIVATE:
+        // LOWORD(wp): WA_ACTIVE/WA_CLICKACTIVE gained the foreground,
+        // WA_INACTIVE lost it. Minimization is tracked in WM_SIZE — a
+        // restore does not always reactivate, so the two signals stay
+        // independent and this handler only writes plain members.
+        m_foregroundActive = LOWORD(wp) != WA_INACTIVE;
+        UpdateBackgroundState();
         break;
     case WM_ERASEBKGND: {
         RECT rect;
@@ -455,6 +477,34 @@ LRESULT WebviewHost::HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_SIZE:
         ResizeWebView(hWnd);
+        // Minimize/restore transitions feed the preview pacing tiers (and
+        // WebView2 visibility); every other resize leaves them alone.
+        if (m_minimized != (wp == SIZE_MINIMIZED)) {
+            m_minimized = (wp == SIZE_MINIMIZED);
+            UpdateBackgroundState();
+            // Camera lifecycle, mirroring the session-lock path: a minimized
+            // window has nobody watching the preview, so the camera is
+            // released outright instead of idling at the throttled rate, and
+            // restored on un-minimize only if it was live at minimize (the
+            // JS layer keeps its cam-tab state and keeps polling either
+            // way). A capture in flight is never killed by the taskbar — it
+            // keeps the camera and falls back to the low pipeline cadence.
+            if (m_wizard) {
+                if (m_minimized) {
+                    if (!m_wizard->IsCaptureRunning()) {
+                        m_previewActiveAtMinimize = m_wizard->IsPreviewRunning();
+                        if (m_previewActiveAtMinimize) {
+                            FACELOGIN_INFO(L"WebviewHost: minimized — releasing camera");
+                            m_wizard->StopPreview();
+                        }
+                    }
+                } else if (m_previewActiveAtMinimize) {
+                    FACELOGIN_INFO(L"WebviewHost: restored — restarting camera");
+                    m_wizard->StartPreview();
+                    m_previewActiveAtMinimize = false;
+                }
+            }
+        }
         return 0;
 
     case WM_MOVE:
@@ -616,7 +666,10 @@ void WebviewHost::EnableCustomFrame() {
     X(ClearLog, 17, m_wizard->ClearLog()) \
     X(GetUserSid, 18, if (res) *res = MakeStr(m_wizard->GetUserSid())) \
     X(GetAccountType, 19, if (res) *res = MakeStr(m_wizard->GetAccountType())) \
-    X(GetLatestFrameAndFaces, 20, if (res) *res = MakeStr(m_wizard->GetLatestFrameAndFaces())) \
+    X(GetLatestFrameAndFaces, 20, { \
+        const std::string version = facelogin::WstrToUtf8(OptionalArg(p, 0)); \
+        if (res) *res = MakeStr(m_wizard->GetLatestFrameAndFaces(version)); \
+    }) \
     X(GetCameraList, 21, if (res) *res = MakeStr(m_wizard->GetCameraList())) \
     X(GetFaceCount, 22, if (res) *res = MakeInt(m_wizard->GetFaceCount())) \
     X(GetFacesJson, 23, if (res) *res = MakeStr(m_wizard->GetFacesJson())) \
@@ -681,6 +734,24 @@ void WebviewHost::EnableCustomFrame() {
             ApplyWindowTheme(m_hWnd, self ? self->m_controller : nullptr); \
         } \
         if (res) *res = MakeBool(ok); \
+    }) \
+    X(SetPreviewSize, 46, { \
+        /* Canvas backing pixels for preview JPEG encoding. JS calls */ \
+        /* SetPreviewSize(width, height); rgvarg is in reverse order, so */ \
+        /* rgvarg[1] is width and rgvarg[0] is height. JS numbers arrive */ \
+        /* as VT_I4 or VT_R8 (same handling as CaptureFaceSamples). */ \
+        if (p->cArgs < 2) return DISP_E_BADPARAMCOUNT; \
+        auto hostArgInt = [](const VARIANT& v) -> int { \
+            if (v.vt == VT_I4) return v.lVal; \
+            if (v.vt == VT_R8) return static_cast<int>(v.dblVal); \
+            if (v.vt == VT_UI4) return static_cast<int>(v.ulVal); \
+            if (v.vt == VT_I2) return v.iVal; \
+            return -1; \
+        }; \
+        const int width = hostArgInt(p->rgvarg[1]); \
+        const int height = hostArgInt(p->rgvarg[0]); \
+        if (width < 0 || height < 0) return DISP_E_TYPEMISMATCH; \
+        m_wizard->SetPreviewSize(width, height); \
     })
 
 struct HostMethodEntry { const wchar_t* name; DISPID id; };

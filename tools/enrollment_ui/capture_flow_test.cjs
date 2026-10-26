@@ -122,6 +122,130 @@ function page(overrides) {
   return { context, app: context.consoleApp, intervals, timeouts, elements, element, calls, state };
 }
 
+// Drive real preview polling with observable canvas writes and asynchronous
+// image loads; this catches redundant rendering without requiring a camera.
+function previewFixture(initialFrame = 'jpeg-a') {
+  const counts = { sizeWrites: 0, images: 0, overlays: 0 };
+  const pending = new Map();
+  let timer = 0, image, imageRequests = 0;
+  const bgContext = canvasContext(), faceContext = canvasContext();
+  bgContext.drawImage = () => counts.images++;
+  faceContext.clearRect = () => counts.overlays++;
+  const bg = { getContext: () => bgContext };
+  for (const [key, initial] of [['width', 300], ['height', 150]]) {
+    let value = initial;
+    Object.defineProperty(bg, key, {
+      get: () => value,
+      set(v) { value = v; counts.sizeWrites++; }
+    });
+  }
+  const viewport = { clientWidth: 640, clientHeight: 360 };
+  const loading = { classList: { add() {} }, style: {} };
+  const nodes = { 'bg-canvas': bg, viewport, 'cam-loading': loading,
+    'face-canvas': { getContext: () => faceContext } };
+  const state = { frame: initialFrame, faces: '[]' };
+  const transport = { polls: 0, payloads: 0 };
+  let version = 0, previousSnapshot = '';
+  const context = vm.createContext({
+    window: { devicePixelRatio: 1 },
+    document: { getElementById: key => nodes[key] },
+    setTimeout(fn) { pending.set(++timer, fn); return timer; },
+    clearTimeout(key) { pending.delete(key); },
+    Image: function() {
+      image = this;
+      this.naturalWidth = 1280; this.naturalHeight = 720; this.complete = false;
+      Object.defineProperty(this, 'src', { set() { this.complete = false; imageRequests++; } });
+    }
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname,
+    '../../enrollment_app/js/preview.js'), 'utf8'), context);
+  const preview = context.createPreview({ host: {
+    StartPreview: () => true, SetPreviewSize() {},
+    GetLatestFrameAndFaces(knownVersion) {
+      transport.polls++;
+      const snapshot = state.frame + '\x1e' + state.faces;
+      if (snapshot !== previousSnapshot) { version++; previousSnapshot = snapshot; }
+      if (knownVersion === String(version)) return '';
+      transport.payloads++;
+      return String(version) + '\x1e' + snapshot;
+    }
+  }, showBanner() {} });
+  preview.setConsentGranted(true);
+  preview.restartPreview();
+  return { counts, viewport, state, context, preview, loading, transport,
+    imageRequests: () => imageRequests,
+    load() { image.complete = true; image.onload(); },
+    poll() {
+      const entry = [...pending].find(([, fn]) => fn.name === 'renderFrame');
+      assert.ok(entry, 'preview polling is scheduled');
+      pending.delete(entry[0]);
+      entry[1]();
+    }
+  };
+}
+
+test('an empty backend cache waits for a valid JPEG without decoding the separator', () => {
+  const p = previewFixture('');
+  p.poll();
+  assert.equal(p.imageRequests(), 0);
+  assert.equal(p.counts.images, 0);
+  p.state.frame = 'jpeg-a';
+  p.poll(); p.load();
+  assert.equal(p.imageRequests(), 1);
+  assert.equal(p.counts.images, 1);
+});
+
+test('unchanged preview polls do not resize or repaint either canvas', () => {
+  const p = previewFixture();
+  p.load();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 1, overlays: 1 });
+  for (let i = 0; i < 30; i++) p.poll();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 1, overlays: 1 });
+  assert.deepEqual(p.transport, { polls: 31, payloads: 1 });
+  p.state.frame = 'jpeg-b';
+  p.poll(); p.load();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 2, overlays: 2 });
+  assert.equal(p.transport.payloads, 2);
+});
+
+test('overlay changes repaint only the overlay and wait for pending JPEG loads', () => {
+  const p = previewFixture();
+  p.load();
+  p.state.faces = '[ ]';
+  p.poll();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 1, overlays: 2 });
+  p.state.frame = 'jpeg-b'; p.state.faces = '[]';
+  p.poll(); p.poll();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 1, overlays: 2 });
+  p.load();
+  assert.deepEqual(p.counts, { sizeWrites: 2, images: 2, overlays: 3 });
+});
+
+test('layout and DPI changes redraw a stationary preview at physical resolution', () => {
+  const p = previewFixture();
+  p.load();
+  p.viewport.clientWidth = 800; p.viewport.clientHeight = 450;
+  p.poll();
+  assert.deepEqual(p.counts, { sizeWrites: 4, images: 2, overlays: 2 });
+  p.context.window.devicePixelRatio = 1.5;
+  p.poll();
+  assert.deepEqual(p.counts, { sizeWrites: 6, images: 3, overlays: 3 });
+  p.poll();
+  assert.equal(p.counts.images, 3);
+});
+
+test('restarting with an identical JPEG dismisses the loading overlay again', () => {
+  const p = previewFixture();
+  p.load();
+  p.preview.stopLoop();
+  p.loading.classList.add = () => { p.loading.dismissed = true; };
+  p.preview.restartPreview();
+  p.load();
+  assert.equal(p.loading.dismissed, true);
+  assert.equal(p.counts.sizeWrites, 2);
+  assert.equal(p.transport.payloads, 2, 'new viewing session forces a full snapshot');
+});
+
 test('caption buttons dispatch minimize and close to the native host', () => {
   const calls = [];
   const p = page({ host: {
@@ -318,7 +442,7 @@ test('re-granting consent after a withdrawal clears the starting-camera overlay'
     WithdrawPrivacyConsent() { rec.record = null; return true; },
     StartPreview: () => true,
     StopPreview() {},
-    GetLatestFrameAndFaces: () => 'data:image/jpeg;base64,F' + (frame++) + '\x1e[]'
+    GetLatestFrameAndFaces: () => String(++frame) + '\x1edata:image/jpeg;base64,F' + frame + '\x1e[]'
   } });
   // Drain each pending timer exactly once. The mock keeps fired entries, so a
   // plain values() loop would re-run stale timers on a later drain — the first

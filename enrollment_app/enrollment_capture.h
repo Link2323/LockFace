@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,12 +30,12 @@ struct EnrollmentCaptureStatus {
 // Owns the sampling thread, progress and unsaved samples. Control methods run
 // on the UI thread; status getters may also run on the preview thread. Models
 // and the frame reader must remain alive until Stop() returns. The reader
-// copies a preview frame and its sequence under the host's frame-cache mutex;
-// the incoming sequence is the last consumed one, allowing duplicate rejection
-// before copying the pixels.
+// hands out the preview cache's immutable frame — a shared borrow with no
+// pixel copy — together with its sequence; the incoming sequence is the last
+// consumed one, so duplicate frames are rejected before inference.
 class EnrollmentCapture {
 public:
-    using FrameReader = std::function<bool(FrameImage&, std::uint64_t&)>;
+    using FrameReader = std::function<std::shared_ptr<const FrameImage>(std::uint64_t&)>;
     static constexpr int kAngleTargetFrames = 5;
 
     ~EnrollmentCapture();

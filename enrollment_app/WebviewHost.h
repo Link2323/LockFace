@@ -109,12 +109,23 @@ public:
     // unconditional restart would leave the camera live behind those screens
     // with the JS "viewing" flag desynchronized (nobody stops it again).
     bool m_previewActiveAtLock = false;
+    // Same snapshot for minimize/restore: the camera is released outright
+    // when the window goes to the taskbar (nobody can see the preview), and
+    // brought back on restore only if it was live at minimize. Independent
+    // of the lock flag — a session can lock while minimized and vice versa.
+    bool m_previewActiveAtMinimize = false;
+    // Focus/minimize snapshot for preview pacing (see UpdateBackgroundState).
+    bool m_foregroundActive = true;
+    bool m_minimized = false;
 
     std::string m_html;
 
 private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT HandleMessage(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+    // Pushes m_foregroundActive/m_minimized into the wizard's pacing flag and
+    // mirrors minimize into WebView2 controller visibility.
+    void UpdateBackgroundState();
 };
 
 class HostObject : public IDispatch {

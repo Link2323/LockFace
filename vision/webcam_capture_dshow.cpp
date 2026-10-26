@@ -688,12 +688,14 @@ void WebcamCaptureDS::Pause() {
     }
 }
 
-bool WebcamCaptureDS::GrabFrame(FrameImage& outFrame, unsigned long long* frameSequence) {
+bool WebcamCaptureDS::GrabFrame(FrameImage& outFrame, unsigned long long* frameSequence,
+                                unsigned long long afterSequence) {
     if (!m_initialized) return false;
 
     EnterCriticalSection(&m_frameCs);
 
-    if (!m_frameReady || !m_frameBuffer || m_frameSize == 0) {
+    if (!m_frameReady || !m_frameBuffer || m_frameSize == 0 ||
+        m_frameSeq <= afterSequence) {
         LeaveCriticalSection(&m_frameCs);
         return false;
     }

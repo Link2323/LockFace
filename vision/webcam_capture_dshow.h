@@ -111,7 +111,10 @@ public:
     // Pause()/resume — identical consecutive values mean the same buffered
     // frame was returned again, which callers sampling per-frame statistics
     // (exposure warmup) use to dedupe.
-    bool GrabFrame(FrameImage& outFrame, unsigned long long* frameSequence = nullptr);
+    // With afterSequence > 0, return false before copying pixels if no newer
+    // camera frame exists. Default 0 preserves the latest-buffer behavior.
+    bool GrabFrame(FrameImage& outFrame, unsigned long long* frameSequence = nullptr,
+                   unsigned long long afterSequence = 0);
     // Sensor-gain controls for the face-priority exposure tune
     // (face_gain_tune.h). All three return false when the driver exposes no
     // VideoProcAmp gain; setters default to Manual. Diagnostics may restore
