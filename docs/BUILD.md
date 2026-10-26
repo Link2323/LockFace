@@ -66,7 +66,7 @@ cmake --build build --config Release --target EnrollmentSupportTest IpcProtocolT
 .\build\tools\ipc_protocol\Release\IpcProtocolTest.exe
 ```
 
-`EnrollmentSupportTest` 使用独立命名管道和自动清理的临时日志目录，覆盖服务请求/ACK、拒绝与断开响应，以及日志编码、截尾和正在写入的日志清空。
+`EnrollmentSupportTest` 使用独立命名管道和自动清理的临时日志目录，覆盖服务请求/ACK、拒绝与断开响应，以及日志编码、截尾和正在写入的日志清空；另以可控时钟验证注册采集断流超时和重复缓存帧不续期，并验证人脸管理更改已落盘但服务未确认时的结果和重载。
 
 凭据保护回归：`CredentialStoreTest` 验证当前身份 DPAPI 往返、其他身份拒绝和未升级 V6 拒绝；SYSTEM 专用迁移用例在普通用户进程中明确跳过。`EnrollmentSupportTest` 验证假服务管道在端点身份验证失败时收不到任何密码字节。
 

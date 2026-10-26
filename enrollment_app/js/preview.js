@@ -276,10 +276,14 @@ function createPreview(deps) {
   // exactly when the 33ms loop should run.
   function restartPreview() {
     if (!consentGranted) return false;
+    stopLoop();
     try {
       if (H.StartPreview()) { beginLoop(); return true; }
-      showBanner('cam', '预览启动失败：请检查摄像头占用、权限、驱动和模型文件。', 'error', 10000);
-    } catch(e) { showBanner('cam', '预览启动失败: ' + e.message, 'error', 10000); }
+    } catch(e) {}
+    // The startup overlay sits above the banner; dismiss it on failure so
+    // the error and its recovery guidance are actually visible.
+    document.getElementById('cam-loading').style.display = 'none';
+    showBanner('cam', '预览启动失败：请检查摄像头占用、权限、驱动和模型文件；可切换页面后返回重试。', 'error', 15000);
     return false;
   }
 

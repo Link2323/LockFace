@@ -138,14 +138,12 @@ function createLogsModule(deps) {
   function clearLogs() {
     var src = document.getElementById('log-source').value;
     if (src === 'learning') return;  // live view, nothing to clear
-    try {
-      if (src === 'console') H.ClearLog();
-      else H.ClearFileLog(src);
-    } catch(e) { return; }
-    document.getElementById('log-viewer').textContent = '';
+    var ok = false;
+    try { ok = src === 'console' ? H.ClearLog() : H.ClearFileLog(src); } catch(e) {}
+    if (ok) document.getElementById('log-viewer').textContent = '';
     var btn = document.getElementById('btn-clear-log');
-    btn.textContent = '已清空';
-    setTimeout(function() { btn.textContent = '清空日志'; }, 1500);
+    btn.textContent = ok ? '已清空' : '清空失败，请检查日志权限';
+    setTimeout(function() { btn.textContent = '清空日志'; }, ok ? 1500 : 6000);
   }
 
   // Copy exactly what the viewer currently shows (the selected source). The app

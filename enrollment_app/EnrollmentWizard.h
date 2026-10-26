@@ -55,7 +55,7 @@ public:
     // Capture progress for the JS UI:
     // {"angle":0,"label":"正面","targetYaw":0,"collected":3,"target":5,
     //  "yaw":12.3,"total":8,"livenessChecking":false,"livenessPassed":true,
-    //  "cancelled":false,"done":false}
+    //  "cancelled":false,"done":false,"failureReason":""}
     std::string GetCaptureStatus();
     bool ValidatePassword(const std::wstring& password);
     // Save enrollment with the given password. label names this face (may be
@@ -71,6 +71,8 @@ public:
     // Append a new face for the current account without re-entering a password
     // (identity proven by the session token SID). label may be empty.
     bool SaveEnrollmentAppend(const std::wstring& label = L"");
+    // UI-thread result of the most recent enrollment save (including append).
+    std::string GetEnrollmentSaveStatus() const { return m_enrollmentSaveStatus; }
     // Delete one face of the current account (removes the account if it was
     // the last face). Returns false on unknown id / not enrolled.
     bool DeleteFace(int faceId);
@@ -78,6 +80,7 @@ public:
     bool ClearAllFaces();
     // Rename one face of the current account.
     bool RenameFace(int faceId, const std::wstring& label);
+    std::string GetAccountSaveStatus() const;
 
     // Account-type change detection (symmetric MSA ↔ local conversions).
     // Windows keeps the same SID when a user converts their account between a
@@ -135,7 +138,10 @@ public:
 
     // Configuration
     std::string GetConfig() const;
-    bool SetConfig(const std::string& json);
+    // Apply local settings on the UI thread; wait for service ACK off-thread.
+    // True means accepted. Poll GetConfigSaveStatus for the final outcome.
+    bool BeginConfigSave(const std::string& json);
+    std::string GetConfigSaveStatus() const;
     // LEARNING_STATUS pipe query → compact JSON ({"error":...} on failure).
     // Read-only data for the learning-observability view.
     std::string GetLearningStatus();
@@ -151,7 +157,7 @@ public:
     std::string GetServiceLogLines();
     std::string GetAuthWorkerLogLines();
     std::string GetCredentialProviderLogLines();
-    void ClearLog();
+    bool ClearLog();
     bool ClearFileLog(const std::wstring& source);
 
     // Returns empty if knownVersion matches, otherwise an atomic snapshot:
@@ -189,6 +195,11 @@ private:
 
     bool SaveEnrollmentImpl(const std::wstring& password,
                             const std::wstring& label, bool append = false);
+    std::string m_enrollmentSaveStatus = "failed";
+
+    enum class ConfigSaveState { Idle, Pending, Saved, ReloadFailed, SaveFailed };
+    std::atomic<ConfigSaveState> m_configSaveState{ConfigSaveState::Idle};
+    std::thread m_configSaveThread;
 
     // Camera & face processing
     std::unique_ptr<WebcamCaptureDS>  m_webcam;
@@ -198,7 +209,7 @@ private:
     std::unique_ptr<EnrollmentAccounts> m_accounts;
 
     // Configuration. m_configMutex serializes the frame thread's per-frame
-    // snapshot against SetConfig's whole-struct replacement on the UI thread
+    // snapshot against BeginConfigSave's whole-struct replacement on the UI thread
     // (rotation applies live; only a camera change restarts the preview).
     // The UI thread is the sole writer, so its own reads need no lock.
     AppConfig m_config;

@@ -208,13 +208,21 @@ function createCaptureUi(deps) {
         return;
       }
 
-      // Liveness failed -> abort with the classic error banner.
+      // Completion reasons distinguish missing input from an actual PAD rejection.
       if (st.done && !st.livenessPassed) {
         captureCtl.stopPolling();
         resetCaptureUi();
         hideCaptureProgress();
         setCaption('采集失败');
-        showBanner('cam', '活体检测失败，请确保是真人并重试。', 'error');
+        var failures = {
+          no_frames: '摄像头未提供新的画面，采集已停止。请检查连接、占用和权限后重试。',
+          no_face: '未检测到人脸。请将面部置于取景框内、改善光线后重试。',
+          inference_failed: '人脸模型推理失败，请检查模型文件和日志后重试。',
+          liveness_timeout: '未能完成活体检测，请保持面部清晰并正对摄像头后重试。',
+          liveness_failed: '活体检测未通过，请改善光线、保持面部无遮挡后重试。',
+          sample_failed: '人脸样本采集未完成，请调整姿态和光线后重试。'
+        };
+        showBanner('cam', failures[st.failureReason] || '采集失败，请检查摄像头、光线和日志后重试。', 'error', 10000);
         return;
       }
 

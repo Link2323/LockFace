@@ -259,8 +259,9 @@ function createUiCommon(deps) {
   // Lock button(s) — and show the spinner, if any — then run work after a
   // short deferral: synchronous host-object COM calls block the UI thread,
   // and the 50ms gap lets the locked controls paint first so the click
-  // visibly registers before the freeze (SetConfig can block ~25s while the
-  // auth worker is replaced). Restoration lives in finally so no outcome —
+  // visibly registers before password validation or a database write waits
+  // for the host. Configuration reload uses its own asynchronous status poll.
+  // Restoration lives in finally so no outcome —
   // early return or a thrown host error — can leave the page stuck busy.
   // This replaces the per-call-site disable/spinner/defer sequence every
   // COM-writing button used to repeat.

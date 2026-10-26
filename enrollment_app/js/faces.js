@@ -95,12 +95,7 @@ function createFacesModule(deps) {
       okText: '删除',
       onOk: function() {
         try {
-          if (H.DeleteFace(id)) {
-            showBanner('faces', '已删除。', 'ok');
-            loadFaces();
-          } else {
-            showBanner('faces', '删除失败，请重试。', 'error');
-          }
+          finishMutation(H.DeleteFace(id), '已删除。', '删除失败，请检查日志后重试。');
         } catch(e) { showBanner('faces', '删除失败: ' + e.message, 'error'); }
       }
     });
@@ -114,12 +109,7 @@ function createFacesModule(deps) {
       onOk: function(name) {
         name = (name || '').trim();
         try {
-          if (H.RenameFace(id, name)) {
-            showBanner('faces', '已重命名。', 'ok');
-            loadFaces();
-          } else {
-            showBanner('faces', '重命名失败，请重试。', 'error');
-          }
+          finishMutation(H.RenameFace(id, name), '已重命名。', '重命名失败，请检查日志后重试。');
         } catch(e) { showBanner('faces', '重命名失败: ' + e.message, 'error'); }
       }
     });
@@ -132,15 +122,26 @@ function createFacesModule(deps) {
       okText: '清空',
       onOk: function() {
         try {
-          if (H.ClearAllFaces()) {
-            showBanner('faces', '已清空全部人脸。', 'ok');
-            loadFaces();
-          } else {
-            showBanner('faces', '清空失败，请重试。', 'error');
-          }
+          finishMutation(H.ClearAllFaces(), '已清空全部人脸。', '清空失败，请检查日志后重试。');
         } catch(e) { showBanner('faces', '清空失败: ' + e.message, 'error'); }
       }
     });
+  }
+
+  function finishMutation(ok, success, failure) {
+    if (ok) {
+      loadFaces();
+      showBanner('faces', success, 'ok');
+      return;
+    }
+    var persisted = false;
+    try { persisted = H.GetAccountSaveStatus() === 'reload_failed'; } catch(e) {}
+    if (persisted) {
+      loadFaces();
+      showBanner('faces', '更改已保存，但后台服务未确认加载；列表已更新。请检查服务状态和日志，无需重复操作。', 'error', 15000);
+    } else {
+      showBanner('faces', failure, 'error', 10000);
+    }
   }
 
   return {

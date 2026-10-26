@@ -1,6 +1,7 @@
 #pragma once
 
 #include "enrollment_samples.h"
+#include "enrollment_capture_health.h"
 #include "../common/frame_image.h"
 #include "../vision/onnx_models.h"
 
@@ -25,6 +26,7 @@ struct EnrollmentCaptureStatus {
     bool passed = false;
     bool cancelled = false;
     bool done = true;
+    EnrollmentCaptureFailure failure = EnrollmentCaptureFailure::None;
 };
 
 // Owns the sampling thread, progress and unsaved samples. Control methods run
@@ -69,6 +71,7 @@ private:
     std::atomic<bool> m_captureCancelled{false};
     std::atomic<bool> m_livenessPassed{false};
     std::atomic<bool> m_livenessChecking{false};
+    std::atomic<EnrollmentCaptureFailure> m_failure{EnrollmentCaptureFailure::None};
     std::atomic<int> m_samplesCollected{0};
     std::atomic<int> m_angleSampleCounts[3] = {0, 0, 0};
     std::atomic<int> m_captureAngle{0};

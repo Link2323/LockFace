@@ -90,6 +90,9 @@ EnrollmentWizard::EnrollmentWizard() {
 
 EnrollmentWizard::~EnrollmentWizard() {
     StopPreview();
+    // The bounded pipe request owns no camera/COM objects. Keep the controller
+    // and service client alive until its final status has been published.
+    if (m_configSaveThread.joinable()) m_configSaveThread.join();
 }
 
 // ============================================================================
@@ -514,6 +517,7 @@ std::string EnrollmentWizard::GetCaptureStatus() {
        << ",\"livenessChecking\":" << (status.checking ? "true" : "false")
        << ",\"livenessPassed\":" << (status.passed ? "true" : "false")
        << ",\"cancelled\":" << (status.cancelled ? "true" : "false")
+       << ",\"failureReason\":\"" << CaptureFailureName(status.failure) << "\""
        << ",\"done\":" << (status.done ? "true" : "false") << "}";
     return js.str();
 }
@@ -533,6 +537,7 @@ bool EnrollmentWizard::SaveEnrollment(const std::wstring& password,
 
 bool EnrollmentWizard::SaveEnrollmentImpl(const std::wstring& password,
                                           const std::wstring& label, bool append) {
+    m_enrollmentSaveStatus = "failed";
     EnrollmentSamples samples;
     if (!m_capture.CopyCompletedSamples(samples)) return false;
     std::vector<EnrollmentTemplate> templates;
@@ -542,6 +547,7 @@ bool EnrollmentWizard::SaveEnrollmentImpl(const std::wstring& password,
     if (outcome.persisted) {
         // A failed reload ACK does not undo the save or permit reusing its proof.
         m_capture.ClearSavedSamples();
+        m_enrollmentSaveStatus = acknowledged ? "saved" : "reload_failed";
     }
     return acknowledged;
 }
@@ -556,6 +562,7 @@ bool EnrollmentWizard::ClearAllFaces() { return m_accounts->ClearAllFaces(); }
 bool EnrollmentWizard::RenameFace(int faceId, const std::wstring& label) {
     return m_accounts->RenameFace(faceId, label);
 }
+std::string EnrollmentWizard::GetAccountSaveStatus() const { return m_accounts->GetSaveStatus(); }
 std::string EnrollmentWizard::CheckAccountTypeChanged() { return m_accounts->CheckAccountTypeChanged(); }
 bool EnrollmentWizard::RefreshAccountIdentity(const std::wstring& password) {
     return m_accounts->RefreshAccountIdentity(password);
@@ -594,12 +601,15 @@ std::string EnrollmentWizard::GetLearningStatus() {
     return m_serviceClient.QueryLearningStatus();
 }
 
-bool EnrollmentWizard::SetConfig(const std::string& json) {
+bool EnrollmentWizard::BeginConfigSave(const std::string& json) {
+    if (m_configSaveState.load() == ConfigSaveState::Pending) return false;
+    if (m_configSaveThread.joinable()) m_configSaveThread.join();
+    m_configSaveState.store(ConfigSaveState::SaveFailed);
     AppConfig newConfig = ConfigFromJson(json);
     // A running preview must already have the mandatory model.  Refuse to
     // mutate live settings if that invariant has somehow been broken.
     if (m_previewRunning && (!m_antiSpoof || !m_antiSpoof->IsInitialized())) {
-        FACELOGIN_ERROR(L"SetConfig: anti-spoof unavailable while preview is running");
+        FACELOGIN_ERROR(L"BeginConfigSave: anti-spoof unavailable while preview is running");
         return false;
     }
 
@@ -615,11 +625,6 @@ bool EnrollmentWizard::SetConfig(const std::string& json) {
     }
     m_antiSpoofThreshold = newConfig.anti_spoof_threshold;
 
-    // Notify the service and require an explicit acknowledgement. Saving a
-    // file is not enough: if the service cannot load the mandatory PAD model,
-    // the UI must not claim that authentication settings are active.
-    const bool reloadConfirmed = m_serviceClient.ReloadConfig();
-
     FACELOGIN_INFO(L"Configuration updated: thr=%.2f antiSpoof=%.3f rotation=%d",
                   m_config.match_threshold, m_config.anti_spoof_threshold,
                   m_config.camera_rotation);
@@ -631,7 +636,25 @@ bool EnrollmentWizard::SetConfig(const std::string& json) {
         RestartPreview();
     }
 
-    return reloadConfirmed;
+    // Only the bounded pipe wait runs off-thread. In particular, keep camera
+    // teardown/restart above on the UI thread's existing COM apartment.
+    m_configSaveState.store(ConfigSaveState::Pending);
+    m_configSaveThread = std::thread([this]() {
+        const bool confirmed = m_serviceClient.ReloadConfig();
+        m_configSaveState.store(confirmed ? ConfigSaveState::Saved
+                                         : ConfigSaveState::ReloadFailed);
+    });
+    return true;
+}
+
+std::string EnrollmentWizard::GetConfigSaveStatus() const {
+    switch (m_configSaveState.load()) {
+    case ConfigSaveState::Pending: return "pending";
+    case ConfigSaveState::Saved: return "saved";
+    case ConfigSaveState::ReloadFailed: return "reload_failed";
+    case ConfigSaveState::SaveFailed: return "save_failed";
+    default: return "idle";
+    }
 }
 
 bool EnrollmentWizard::RestartPreview() {
@@ -666,8 +689,8 @@ bool EnrollmentWizard::ClearFileLog(const std::wstring& source) {
     return false;
 }
 
-void EnrollmentWizard::ClearLog() {
-    ClearEnrollmentLog(m_dataDir, EnrollmentLogSource::Console);
+bool EnrollmentWizard::ClearLog() {
+    return ClearEnrollmentLog(m_dataDir, EnrollmentLogSource::Console);
 }
 
 } // namespace facelogin

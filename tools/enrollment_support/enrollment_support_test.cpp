@@ -4,6 +4,7 @@
 #include "session_identity.h"
 #include "../../common/account_identity.h"
 #include "enrollment_accounts.h"
+#include "enrollment_capture_health.h"
 #include "ipc_protocol.h"
 
 #include <windows.h>
@@ -106,6 +107,17 @@ void TestLogs(const fs::path& dataDir) {
     Check(ReadEnrollmentLog(dir, EnrollmentLogSource::AuthWorker) == "[]" &&
               ReadEnrollmentLog(dir, EnrollmentLogSource::CredentialProvider) == "[]",
           "source-specific clears target their own files");
+    WriteBytes(logDir / L"auth_worker.log", "keep on failure\r\n");
+    HANDLE locked = CreateFileW((logDir / L"auth_worker.log").c_str(), GENERIC_READ,
+                                FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    Check(locked != INVALID_HANDLE_VALUE, "hold log without write sharing");
+    if (locked != INVALID_HANDLE_VALUE) {
+        Check(!ClearEnrollmentLog(dir, EnrollmentLogSource::AuthWorker),
+              "locked log reports clear failure");
+        CloseHandle(locked);
+        Check(ReadEnrollmentLog(dir, EnrollmentLogSource::AuthWorker) == "[\"keep on failure\"]",
+              "failed log clear preserves file contents");
+    }
 }
 
 // The server uses its own uniquely named pipe, never the installed service.
@@ -472,6 +484,62 @@ void TestMachineSidRepair(const fs::path& dataDir) {
           "genuine user-SID record is untouched");
 }
 
+void TestCaptureFrameWatchdog() {
+    using facelogin::CaptureFrameWatchdog;
+    using namespace std::chrono_literals;
+    const CaptureFrameWatchdog::Clock::time_point start{};
+    CaptureFrameWatchdog stream(start);
+    Check(!stream.TimedOut(start + 4999ms), "new capture allows camera startup before deadline");
+    Check(stream.TimedOut(start + 5s), "no initial camera frame ends at deadline");
+    Check(stream.AcceptFrame(1, start + 1s), "first fresh frame resets camera deadline");
+    Check(!stream.AcceptFrame(1, start + 5s), "repeated cache frame cannot reset camera deadline");
+    Check(stream.TimedOut(start + 6s), "camera stall times out even after partial sample progress");
+    Check(stream.AcceptFrame(2, start + 6s), "new camera sequence permits a recovered frame");
+    Check(!stream.TimedOut(start + 10s), "fresh frame resets camera deadline");
+    // Continuous video is healthy while the user takes time to turn their head.
+    for (std::uint64_t i = 3; i < 100; ++i) {
+        const auto now = start + std::chrono::seconds(i + 4);
+        Check(stream.AcceptFrame(i, now) && !stream.TimedOut(now),
+              "fresh video does not time out while waiting for a pose");
+    }
+}
+
+void TestAccountMutationOutcomes(const fs::path& dataDir) {
+    std::error_code error;
+    if (!fs::create_directory(dataDir, error) || error) {
+        Check(false, "create account mutation fixture");
+        return;
+    }
+    const auto identity = facelogin::session_identity::ReadSessionIdentity();
+    facelogin::CredentialStore store;
+    store.SetDataDir(dataDir.wstring());
+    const std::vector<uint8_t> password = {0x41, 0x42, 0x43};
+    const std::vector<float> embedding(facelogin::kRecognizerDimension, 0.25f);
+    uint32_t faceId = 0;
+    Check(store.AddFace(identity.username, identity.upn, identity.sid, password, embedding,
+                        L"original", &faceId, 0.0f, 0.0f) && store.SaveDatabase(),
+          "seed account mutation fixture");
+    // The isolated nonexistent endpoint cannot acknowledge the persisted change.
+    const std::wstring pipeName = L"\\\\.\\pipe\\LockFace.NoMutationService." +
+        std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(GetTickCount64());
+    facelogin::EnrollmentServiceClient client(pipeName);
+    facelogin::EnrollmentAccounts accounts(dataDir.wstring(), identity, client);
+    Check(!accounts.RenameFace(faceId, L"renamed") && accounts.GetSaveStatus() == "reload_failed",
+          "rename distinguishes persisted change from missing service acknowledgement");
+    Check(accounts.GetFacesJson().find("renamed") != std::string::npos,
+          "renamed label can be reloaded from disk despite missing acknowledgement");
+    Check(!accounts.DeleteFace(-1) && accounts.GetSaveStatus() == "failed",
+          "failed validation clears a preceding persisted outcome");
+    Check(!accounts.DeleteFace(faceId) && accounts.GetSaveStatus() == "reload_failed" && accounts.GetFaceCount() == 0,
+          "delete distinguishes persisted removal from missing acknowledgement");
+    Check(store.LoadDatabase(), "reload disk after deletion before reseeding");
+    Check(store.AddFace(identity.username, identity.upn, identity.sid, password, embedding,
+                        L"another", &faceId, 0.0f, 0.0f) && store.SaveDatabase(),
+          "seed a face for clear-all verification");
+    Check(!accounts.ClearAllFaces() && accounts.GetSaveStatus() == "reload_failed" && accounts.GetFaceCount() == 0,
+          "clear-all distinguishes persisted removal from missing acknowledgement");
+}
+
 } // namespace
 
 int main() {
@@ -495,6 +563,8 @@ int main() {
         Check(!facelogin::account_identity::ResolveUserSid(L"S-1-5-32-544", domain, sam), "group SID rejected as login identity");
     }
     TestMachineSidRepair(dataDir / L"sidrepair");
+    TestCaptureFrameWatchdog();
+    TestAccountMutationOutcomes(dataDir / L"mutations");
     // Only remove the unique directory successfully created by this test.
     fs::remove_all(dataDir, error);
     Check(!error, "remove temporary test fixtures");

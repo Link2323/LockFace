@@ -35,6 +35,7 @@ bool EnrollmentCapture::Start(int angleIndex, OnnxDetector& detector,
     m_capturing = true;
     m_running = true;
     m_captureCancelled = false;
+    m_failure = EnrollmentCaptureFailure::None;
     m_captureAngle = angleIndex;
     if (angleIndex == 0) {
         // New capture round: reset everything. Later angles append to the
@@ -78,6 +79,7 @@ bool EnrollmentCapture::Start(int angleIndex, OnnxDetector& detector,
                 Run(angleIndex, detector, recognizer, antiSpoof, threshold, readFrame);
             } catch (const std::exception& error) {
                 m_livenessPassed = false;
+                m_failure = EnrollmentCaptureFailure::InferenceFailed;
                 FACELOGIN_ERROR(L"Enrollment capture failed: %hs", error.what());
             }
         });
@@ -99,18 +101,20 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
     // inherit a stale proof from an earlier front capture or save.
     bool livenessPassed = false;
     bool livenessInferenceError = false;
-    std::uint64_t lastFrameSequence = 0;
+    CaptureFrameWatchdog frameWatchdog;
+    bool sawFrame = false;
+    int totalChecked = 0;
 
     // The preview and capture threads run independently. Consume each
     // cached camera frame at most once so a stalled preview cannot turn one
     // PAD result into a synthetic 5/5 sequence. The reader hands over a
     // shared borrow of the cache's immutable frame — no pixel copy.
-    const auto nextFreshFrame = [&readFrame, &lastFrameSequence](
+    const auto nextFreshFrame = [&readFrame, &frameWatchdog, &sawFrame](
                                     std::shared_ptr<const FrameImage>& output) {
-        std::uint64_t sequence = lastFrameSequence;
+        std::uint64_t sequence = frameWatchdog.LastSequence();
         auto frame = readFrame(sequence);
-        if (!frame || sequence == lastFrameSequence) return false;
-        lastFrameSequence = sequence;
+        if (!frame || !frameWatchdog.AcceptFrame(sequence)) return false;
+        sawFrame = true;
         output = std::move(frame);
         return true;
     };
@@ -128,13 +132,17 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         FACELOGIN_INFO(L"Enrollment anti-spoof: threshold=%.3f → %d checks, %d required",
                        threshold, totalChecks, passRequired);
         auto asStart = std::chrono::steady_clock::now();
-        int passCount = 0, totalChecked = 0;
+        int passCount = 0;
         while (m_capturing && totalChecked < totalChecks) {
             auto elapsed = std::chrono::steady_clock::now() - asStart;
             if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 8) break;
 
             std::shared_ptr<const FrameImage> frame;
             if (!nextFreshFrame(frame)) {
+                if (frameWatchdog.TimedOut()) {
+                    m_failure = EnrollmentCaptureFailure::NoFrames;
+                    break;
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(33));
                 continue;
             }
@@ -162,7 +170,15 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         livenessPassed = (!livenessInferenceError &&
                           totalChecked == totalChecks &&
                           passCount >= passRequired);
+        if (!livenessPassed && !m_captureCancelled && m_failure == EnrollmentCaptureFailure::None) {
+            m_failure = livenessInferenceError ? EnrollmentCaptureFailure::InferenceFailed
+                : !sawFrame ? EnrollmentCaptureFailure::NoFrames
+                : totalChecked == 0 ? EnrollmentCaptureFailure::NoFace
+                : totalChecked < totalChecks ? EnrollmentCaptureFailure::LivenessTimeout
+                : EnrollmentCaptureFailure::LivenessFailed;
+        }
     } else {
+        m_failure = EnrollmentCaptureFailure::InferenceFailed;
         FACELOGIN_ERROR(L"Enrollment refused: anti-spoof is not initialized");
     }
 
@@ -193,6 +209,10 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         // Read the latest frame from the frame-grab thread (no camera contention)
         std::shared_ptr<const FrameImage> frame;
         if (!nextFreshFrame(frame)) {
+            if (frameWatchdog.TimedOut()) {
+                m_failure = EnrollmentCaptureFailure::NoFrames;
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
             continue;
         }
@@ -201,7 +221,11 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         // ComputeEmbedding (no landmark model).
         auto onnxDet = detector.DetectLargestFace(*frame);
         if (!onnxDet) {
-            if (++failCount > 600) { m_capturing = false; break; }
+            if (++failCount > 600) {
+                m_failure = EnrollmentCaptureFailure::NoFace;
+                m_capturing = false;
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
@@ -226,6 +250,8 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
             FACELOGIN_WARN(L"Enrollment sample PAD failed closed for angle %d: score=%.4f",
                            angleIndex, samplePadScore);
             livenessPassed = false;
+            m_failure = !std::isfinite(samplePadScore) || samplePadScore < 0.0f || samplePadScore > 1.0f
+                ? EnrollmentCaptureFailure::InferenceFailed : EnrollmentCaptureFailure::LivenessFailed;
             break;
         }
 
@@ -237,7 +263,11 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
         auto onnxEmb = recognizer.ComputeEmbedding(*frame, onnxDet->kps,
                                                           &embNorm);
         if (onnxEmb.empty()) {
-            if (++failCount > 600) { m_capturing = false; break; }
+            if (++failCount > 600) {
+                m_failure = EnrollmentCaptureFailure::InferenceFailed;
+                m_capturing = false;
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
@@ -254,6 +284,8 @@ void EnrollmentCapture::Run(int angleIndex, OnnxDetector& detector,
     const bool complete = livenessPassed &&
         m_angleSampleCounts[angleIndex] == kAngleTargetFrames;
     m_livenessPassed = complete;
+    if (!complete && !m_captureCancelled && m_failure == EnrollmentCaptureFailure::None)
+        m_failure = EnrollmentCaptureFailure::SampleFailed;
     if (m_captureCancelled) {
         FACELOGIN_INFO(L"Enrollment capture cancelled for angle %d", angleIndex);
     } else if (!complete) {
@@ -289,6 +321,7 @@ EnrollmentCaptureStatus EnrollmentCapture::Status() const {
     status.checking = m_livenessChecking.load();
     status.passed = m_livenessPassed.load();
     status.cancelled = m_captureCancelled.load();
+    status.failure = m_failure.load();
     return status;
 }
 

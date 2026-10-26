@@ -75,7 +75,7 @@ function page(overrides) {
       getAttribute(n) { return n in this.attrs ? this.attrs[n] : null; },
       removeAttribute(n) { delete this.attrs[n]; },
       contains() { return false; },
-      addEventListener() {}, querySelector: () => null, getContext: () => canvasContext()
+      addEventListener() {}, focus() {}, select() {}, querySelector: () => null, getContext: () => canvasContext()
     });
     return elements.get(key);
   }
@@ -93,7 +93,8 @@ function page(overrides) {
     CancelCapture() {},
     GetFacesJson() { calls.facesJson++; return JSON.stringify([{ id: 1, label: 'test-face' }]); },
     GetConfig: () => JSON.stringify(state.config),
-    SetConfig(json) { calls.setConfig.push(json); return true; }
+    BeginConfigSave(json) { calls.setConfig.push(json); return true; },
+    GetConfigSaveStatus: () => 'saved'
   }, overrides.host);
   const context = vm.createContext({
     ...timers, window: { ...timers, chrome: { webview: { hostObjects: { sync: { host } } } } },
@@ -531,7 +532,7 @@ test('saving settings round-trips non-UI config keys through the loaded snapshot
   assert.equal(p.element('cfg-threshold-val').textContent, '0.85');
   p.element('cfg-rotation').value = '180';
   p.app.settings.save();
-  [...p.timeouts.values()].forEach(fn => fn()); // run the deferred SetConfig
+  [...p.timeouts.values()].forEach(fn => fn()); // run the deferred BeginConfigSave
   assert.equal(p.calls.setConfig.length, 1);
   const saved = JSON.parse(p.calls.setConfig[0]);
   assert.equal(saved.camera_rotation, 180);   // UI-managed key overridden
@@ -614,4 +615,259 @@ test('a persisted dark preference applies at startup', () => {
   const p = page({ host: { GetThemeMode: () => 'dark' } });
   assert.equal(p.element('html').getAttribute('data-theme'), 'dark');
   assert.ok(p.element('theme-row-dark').classList.contains('on'));
+});
+
+function runDeferred(p) {
+  const callbacks = [...p.timeouts.values()];
+  p.timeouts.clear();
+  callbacks.forEach(fn => fn());
+}
+
+test('log clear failures preserve the displayed log and report failure for every source', () => {
+  for (const src of ['console', 'service', 'worker', 'cp']) {
+    const p = page({ host: { ClearLog: () => false, ClearFileLog: () => false } });
+    p.element('log-source').value = src;
+    p.element('log-viewer').textContent = 'keep these logs';
+    p.app.logs.clearLogs();
+    assert.equal(p.element('log-viewer').textContent, 'keep these logs');
+    assert.match(p.element('btn-clear-log').textContent, /失败/);
+  }
+});
+
+test('log clear exceptions report failure and successful clears empty the viewer', () => {
+  for (const throws of [false, true]) {
+    const p = page({ host: { ClearFileLog() {
+      if (throws) throw new Error('file unavailable');
+      return true;
+    } } });
+    p.element('log-source').value = 'service';
+    p.element('log-viewer').textContent = 'visible logs';
+    p.app.logs.clearLogs();
+    assert.equal(p.element('log-viewer').textContent, throws ? 'visible logs' : '');
+    assert.match(p.element('btn-clear-log').textContent, throws ? /失败/ : /已清空/);
+  }
+});
+
+test('unpersisted face mutations keep the list and report failure rather than a stale reload result', () => {
+  const p = page({ host: { DeleteFace: () => false, GetAccountSaveStatus: () => 'failed' } });
+  p.app.faces.onDeleteFace(1);
+  p.app.ui.onModalOk();
+  assert.equal(p.calls.facesJson, 0);
+  assert.match(p.element('faces-banner').textContent, /删除失败/);
+});
+
+test('persisted face management operations refresh the list even without service acknowledgement', () => {
+  for (const action of ['onDeleteFace', 'onClearAllFaces', 'onRenameFace']) {
+    const p = page({ host: { DeleteFace: () => false, ClearAllFaces: () => false,
+      RenameFace: () => false, GetAccountSaveStatus: () => 'reload_failed' } });
+    p.app.faces[action](1);
+    p.element('modal-input').value = 'new label';
+    p.app.ui.onModalOk();
+    assert.equal(p.calls.facesJson, 1);
+    assert.match(p.element('faces-banner').textContent, /已保存.*未确认/);
+  }
+});
+
+test('capture failure reasons provide camera, face and model guidance instead of blaming liveness', () => {
+  for (const [reason, expected] of [
+    ['no_frames', /摄像头.*画面/], ['no_face', /未检测到人脸/],
+    ['inference_failed', /模型|推理/], ['liveness_timeout', /未能完成活体检测/],
+    ['liveness_failed', /活体检测未通过/]
+  ]) {
+    const p = page();
+    p.element('chk-multi-angle').checked = false;
+    p.app.captureUi.onCapture();
+    p.state.status = { done: true, livenessPassed: false, collected: 0, target: 5,
+      livenessChecking: false, failureReason: reason };
+    [...p.intervals.values()].forEach(fn => fn());
+    assert.equal(p.app.captureCtl.isActive(), false);
+    assert.match(p.element('cam-banner').textContent, expected);
+  }
+});
+
+test('a storage failure after valid password is not reported as a password error', () => {
+  const p = page({ host: { ValidatePassword: () => true, SaveEnrollment: () => false,
+    GetEnrollmentSaveStatus: () => 'failed' } });
+  p.element('fld-pass').value = 'synthetic-password';
+  p.element('fld-acct-type').value = 'local';
+  p.app.enrollSave.onSave();
+  runDeferred(p);
+  assert.match(p.element('pwd-banner').textContent, /保存失败/);
+  assert.doesNotMatch(p.element('pwd-banner').textContent, /密码错误/);
+});
+
+test('a persisted enrollment without reload acknowledgement exits the consumed-sample form', () => {
+  const p = page({ host: { ValidatePassword: () => true, SaveEnrollment: () => false,
+    GetEnrollmentSaveStatus: () => 'reload_failed', StartPreview: () => true } });
+  p.element('fld-pass').value = 'synthetic-password';
+  p.app.enrollSave.onSave();
+  runDeferred(p);
+  assert.ok(p.element('screen-cam').classList.contains('active'));
+  assert.equal(p.element('fld-pass').value, '');
+  assert.match(p.element('cam-banner').textContent, /已保存.*未确认/);
+});
+
+test('append also reports persisted faces without asking the user to save consumed samples again', () => {
+  const p = page({ host: { SaveEnrollmentAppend: () => false,
+    GetEnrollmentSaveStatus: () => 'reload_failed', StartPreview: () => true } });
+  p.app.enrollSave.onAppendConfirm();
+  runDeferred(p);
+  assert.ok(p.element('screen-cam').classList.contains('active'));
+  assert.match(p.element('cam-banner').textContent, /已保存.*未确认/);
+});
+
+test('returning to capture reports both false and throwing camera starts', () => {
+  for (const start of [() => false, () => { throw new Error('camera unavailable'); }]) {
+    const p = page({ host: { StartPreview: start, StopPreview() {} } });
+    p.app.nav.switchTab('settings');
+    p.app.nav.switchTab('cam');
+    assert.match(p.element('cam-banner').textContent, /预览启动失败/);
+    assert.equal(p.app.previewCtl.isViewing(), false);
+    assert.equal(p.element('cam-loading').style.display, 'none');
+  }
+});
+
+test('settings save stays busy until the background reload completes and rejects repeat saves', () => {
+  let starts = 0, status = 'pending';
+  const p = page({ host: {
+    BeginConfigSave() { starts++; return true; }, GetConfigSaveStatus: () => status
+  } });
+  p.app.settings.load();
+  p.app.settings.save();
+  runDeferred(p);
+  assert.equal(starts, 1);
+  assert.equal(p.element('btn-save-settings').disabled, true);
+  assert.equal(p.element('settings-spinner').style.display, 'inline-block');
+  p.app.settings.save();
+  assert.equal(starts, 1);
+  p.app.nav.switchTab('logs'); // navigation remains available during the wait
+  status = 'saved';
+  runDeferred(p);
+  assert.equal(p.element('btn-save-settings').disabled, false);
+  assert.equal(p.element('settings-spinner').style.display, 'none');
+  assert.match(p.element('settings-banner').textContent, /已保存/);
+});
+
+test('camera picker reload failure is shown inside the open picker and can be retried', () => {
+  let status = 'pending';
+  const p = page({ host: { BeginConfigSave: () => true, GetConfigSaveStatus: () => status } });
+  p.element('cam-picker-overlay').classList.add('active');
+  p.element('cam-picker-select').value = 'camera-a';
+  p.app.settings.onCamPickerConfirm();
+  runDeferred(p);
+  assert.equal(p.element('cam-picker-confirm').disabled, true);
+  assert.equal(p.element('cam-picker-skip').disabled, true);
+  status = 'reload_failed';
+  runDeferred(p);
+  assert.ok(p.element('cam-picker-overlay').classList.contains('active'));
+  assert.match(p.element('cam-picker-error').textContent, /已保存.*未确认/);
+  assert.equal(p.element('cam-picker-confirm').disabled, false);
+  assert.equal(p.element('cam-picker-skip').disabled, false);
+  status = 'saved';
+  p.app.settings.onCamPickerConfirm();
+  runDeferred(p);
+  assert.equal(p.element('cam-picker-error').textContent, '');
+  assert.equal(p.element('cam-picker-overlay').classList.contains('active'), false);
+});
+
+test('invalid passwords retain account-specific guidance and never attempt a save', () => {
+  for (const type of ['local', 'msa']) {
+    let saves = 0;
+    const p = page({ host: { ValidatePassword: () => false,
+      SaveEnrollment() { saves++; return true; } } });
+    p.element('fld-pass').value = 'synthetic-password';
+    p.element('fld-acct-type').value = type;
+    p.app.enrollSave.onSave();
+    runDeferred(p);
+    assert.equal(saves, 0);
+    assert.match(p.element('pwd-banner').textContent,
+      type === 'msa' ? /微软账号密码/ : /密码错误/);
+    assert.equal(p.element('btn-save-cancel').disabled, false);
+  }
+});
+
+test('settings restore controls and distinguish write failure, rejected reload and bridge errors', () => {
+  for (const scenario of ['write', 'reload', 'throw', 'poll-throw']) {
+    const p = page({ host: {
+      BeginConfigSave() {
+        if (scenario === 'throw') throw new Error('bridge failed');
+        return scenario !== 'write';
+      },
+      GetConfigSaveStatus() {
+        if (scenario === 'poll-throw') throw new Error('bridge failed');
+        return 'reload_failed';
+      }
+    } });
+    p.app.settings.load();
+    p.app.settings.save();
+    runDeferred(p);
+    assert.equal(p.element('btn-save-settings').disabled, false);
+    assert.equal(p.element('settings-spinner').style.display, 'none');
+    assert.match(p.element('settings-banner').textContent,
+      scenario === 'write' ? /保存失败/ : scenario === 'reload' ? /已保存.*未确认/ : /无法确认/);
+  }
+});
+
+test('camera picker reports read and write failures inside its overlay', () => {
+  for (const scenario of ['read', 'write']) {
+    const p = page({ host: {
+      GetConfig() { if (scenario === 'read') throw new Error('read failed'); return '{}'; },
+      BeginConfigSave: () => false
+    } });
+    p.element('cam-picker-overlay').classList.add('active');
+    p.element('cam-picker-select').value = 'camera-a';
+    p.app.settings.onCamPickerConfirm();
+    runDeferred(p);
+    assert.match(p.element('cam-picker-error').textContent, /无法读取|保存失败/);
+    assert.equal(p.element('cam-picker-confirm').disabled, false);
+    assert.ok(p.element('cam-picker-overlay').classList.contains('active'));
+  }
+});
+
+test('disabled camera select facade cannot open or commit a changed selection', () => {
+  function node() {
+    return {
+      children: [], events: {}, attrs: {}, style: {}, classList: { add() {}, remove() {} },
+      appendChild(child) { this.children.push(child); child.parentNode = this; },
+      insertBefore(child) { this.appendChild(child); },
+      addEventListener(name, fn) { this.events[name] = fn; },
+      setAttribute(name, value) { this.attrs[name] = value; },
+      getBoundingClientRect: () => ({ left: 0, top: 0, bottom: 20, width: 100 })
+    };
+  }
+  const sel = node(), parent = node();
+  parent.appendChild(sel);
+  sel.options = [{ textContent: 'A' }, { textContent: 'B' }];
+  sel.selectedIndex = 0;
+  sel.disabled = false;
+  let changes = 0;
+  sel.dispatchEvent = () => { changes++; };
+  const context = vm.createContext({
+    document: { createElement: node, querySelectorAll: () => [sel], addEventListener() {} },
+    window: { addEventListener() {}, innerHeight: 700 }, Event: function() {}
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname,
+    '../../enrollment_app/js/custom_select.js'), 'utf8'), context);
+  const selects = context.createCustomSelectModule();
+  selects.enhanceAll();
+  const trigger = sel.parentNode.children[1], popup = sel.parentNode.children[2];
+  const event = { stopPropagation() {}, preventDefault() {} };
+  trigger.events.click(event);
+  assert.equal(popup.style.display, 'block');
+  sel.disabled = true;
+  selects.refreshAll();
+  assert.equal(popup.style.display, 'none');
+  assert.equal(trigger.attrs['aria-disabled'], 'true');
+  assert.equal(trigger.tabIndex, -1);
+  popup.children[1].events.click(event); // an already queued option click
+  trigger.events.keydown({ ...event, key: 'ArrowDown' });
+  assert.equal(sel.selectedIndex, 0);
+  assert.equal(changes, 0);
+  assert.equal(popup.style.display, 'none');
+  sel.disabled = false;
+  selects.refreshAll();
+  trigger.events.click(event);
+  popup.children[1].events.click(event);
+  assert.equal(sel.selectedIndex, 1);
+  assert.equal(changes, 1);
 });

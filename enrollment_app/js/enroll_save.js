@@ -9,6 +9,18 @@ function createEnrollSaveModule(deps) {
   var showScreen = deps.showScreen;
   var previewCtl = deps.previewCtl;
 
+  function savedWithoutReload() {
+    try { return H.GetEnrollmentSaveStatus() === 'reload_failed'; } catch(e) { return false; }
+  }
+
+  function showSavedWithoutReload() {
+    showScreen('cam');
+    document.getElementById('fld-pass').value = '';
+    setCaption('人脸已保存');
+    previewCtl.restartPreview();
+    showBanner('cam', '人脸已保存，但后台服务未确认加载，暂不能确认人脸登录可用。请检查服务状态和日志，无需重复保存。', 'error', 15000);
+  }
+
   // Show the append-face confirmation screen (current account already has
   // faces). When isReplace is true (multi-angle re-enrollment), old faces are
   // cleared and the three new angle faces replace them. Otherwise it is a
@@ -55,8 +67,10 @@ function createEnrollSaveModule(deps) {
         var okMsg = '新脸已添加成功！可按 Win+L 锁定屏幕测试人脸登录。';
         showBanner('cam', okMsg, 'ok');
         previewCtl.restartPreview();
+      } else if (savedWithoutReload()) {
+        showSavedWithoutReload();
       } else {
-        showBanner('append', '追加失败（已达人脸上限或身份校验失败）。', 'error');
+        showBanner('append', '人脸保存失败。请检查服务状态、日志和人脸数量后重试。', 'error', 10000);
       }
     });
   }
@@ -83,18 +97,23 @@ function createEnrollSaveModule(deps) {
     var pass = document.getElementById('fld-pass').value;
     if (!pass) { showBanner('pwd', '请输入密码。', 'error'); return; }
 
-    withBusy([document.getElementById('btn-save')],
+    withBusy([document.getElementById('btn-save'), document.getElementById('btn-save-cancel')],
              document.getElementById('save-spinner'),
     function() {
-      var ok = false;
+      var passwordValid = false, validationFailed = false;
       var label = '';
       try { label = document.getElementById('fld-face-label').value.trim(); } catch(e) {}
-      try { ok = H.ValidatePassword(pass); } catch(e) {}
-      if (ok) {
-        try { ok = H.SaveEnrollment(pass, label); } catch(e) { ok = false; }
-      }
-
-      if (ok) {
+      try { passwordValid = H.ValidatePassword(pass); } catch(e) { validationFailed = true; }
+      if (validationFailed) {
+        showBanner('pwd', '无法完成密码验证，请稍后重试并检查日志。', 'error', 10000);
+      } else if (passwordValid) {
+        var ok = false;
+        try { ok = H.SaveEnrollment(pass, label); } catch(e) {}
+        if (!ok) {
+          if (savedWithoutReload()) showSavedWithoutReload();
+          else showBanner('pwd', '人脸保存失败。密码已验证，请检查服务状态和日志后重试。', 'error', 10000);
+          return;
+        }
         // Return to the camera (main) screen immediately
         showScreen('cam');
         document.getElementById('fld-pass').value = '';

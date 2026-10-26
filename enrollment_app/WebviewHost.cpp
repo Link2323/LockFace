@@ -653,17 +653,17 @@ void WebviewHost::EnableCustomFrame() {
         if (res) *res = MakeBool(m_wizard->SaveEnrollment(pass, label)); \
     }) \
     X(GetConfig, 13, if (res) *res = MakeStr(m_wizard->GetConfig())) \
-    X(SetConfig, 14, { \
+    X(BeginConfigSave, 14, { \
         if (p->cArgs < 1) return DISP_E_BADPARAMCOUNT; \
         std::string json; \
         if (p->rgvarg[0].vt == VT_BSTR && p->rgvarg[0].bstrVal) { \
             json = facelogin::WstrToUtf8(p->rgvarg[0].bstrVal); \
         } \
-        if (res) *res = MakeBool(m_wizard->SetConfig(json)); \
+        if (res) *res = MakeBool(m_wizard->BeginConfigSave(json)); \
     }) \
     X(GetLogLines, 15, if (res) *res = MakeStr(m_wizard->GetLogLines())) \
     X(GetServiceLogLines, 16, if (res) *res = MakeStr(m_wizard->GetServiceLogLines())) \
-    X(ClearLog, 17, m_wizard->ClearLog()) \
+    X(ClearLog, 17, if (res) *res = MakeBool(m_wizard->ClearLog())) \
     X(GetUserSid, 18, if (res) *res = MakeStr(m_wizard->GetUserSid())) \
     X(GetAccountType, 19, if (res) *res = MakeStr(m_wizard->GetAccountType())) \
     X(GetLatestFrameAndFaces, 20, { \
@@ -735,6 +735,9 @@ void WebviewHost::EnableCustomFrame() {
         } \
         if (res) *res = MakeBool(ok); \
     }) \
+    X(GetEnrollmentSaveStatus, 47, if (res) *res = MakeStr(m_wizard->GetEnrollmentSaveStatus())) \
+    X(GetConfigSaveStatus, 48, if (res) *res = MakeStr(m_wizard->GetConfigSaveStatus())) \
+    X(GetAccountSaveStatus, 49, if (res) *res = MakeStr(m_wizard->GetAccountSaveStatus())) \
     X(SetPreviewSize, 46, { \
         /* Canvas backing pixels for preview JPEG encoding. JS calls */ \
         /* SetPreviewSize(width, height); rgvarg is in reverse order, so */ \

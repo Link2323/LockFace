@@ -56,7 +56,7 @@ function createNavigation(deps) {
       // The camera stays off until the per-user consent gate is accepted.
       // Idempotent server-side (no-op if already running).
       if (previewCtl.consentGranted()) {
-        try { if (H.StartPreview()) previewCtl.startLoop(); } catch(e) {}
+        previewCtl.restartPreview();
       } else {
         showBanner('cam', '请先同意隐私说明，摄像头才会启动。', 'error', 6000);
       }

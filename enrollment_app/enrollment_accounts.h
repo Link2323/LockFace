@@ -28,6 +28,7 @@ public:
     bool DeleteFace(int faceId);
     bool ClearAllFaces();
     bool RenameFace(int faceId, const std::wstring& label);
+    std::string GetSaveStatus() const { return m_saveStatus; }
     int GetAccountTypeChanged();
     std::string CheckAccountTypeChanged();
     bool RefreshAccountIdentity(const std::wstring& password);
@@ -47,6 +48,7 @@ private:
     bool SaveAndReload(bool* persisted = nullptr);
 
     CredentialStore m_store;
+    std::string m_saveStatus = "failed";
     const session_identity::SessionIdentity m_identity;
     const EnrollmentServiceClient& m_serviceClient;
 };

@@ -22,6 +22,8 @@ function createCustomSelectModule() {
 
   function renderTrigger(state) {
     state.label.textContent = labelText(state);
+    state.trigger.setAttribute('aria-disabled', String(state.sel.disabled));
+    state.trigger.tabIndex = state.sel.disabled ? -1 : 0;
   }
 
   function paintActive(state) {
@@ -53,6 +55,7 @@ function createCustomSelectModule() {
   }
 
   function choose(state, idx) {
+    if (state.sel.disabled) { close(); return; }
     if (idx >= 0 && idx < state.sel.options.length &&
         idx !== state.sel.selectedIndex) {
       state.sel.selectedIndex = idx;
@@ -83,6 +86,7 @@ function createCustomSelectModule() {
   }
 
   function open(state) {
+    if (state.sel.disabled) return;
     if (openState === state) return;
     close();
     renderRows(state);
@@ -171,7 +175,7 @@ function createCustomSelectModule() {
     // observer keeps the facade in step without touching those call sites.
     if (typeof MutationObserver === 'function') {
       new MutationObserver(function() { refresh(state); })
-        .observe(sel, {childList: true});
+        .observe(sel, {childList: true, attributes: true, attributeFilter: ['disabled']});
     }
     renderTrigger(state);
     states.push(state);
@@ -180,6 +184,7 @@ function createCustomSelectModule() {
 
   function refresh(state) {
     renderTrigger(state);
+    if (state.sel.disabled && openState === state) close();
     if (openState === state) renderRows(state);
   }
 

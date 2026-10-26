@@ -1,16 +1,66 @@
 // Settings screen + first-run camera picker. Shared state: the last config
 // loaded by loadSettings (kept whole for onSaveSettings) and the selected
-// unlock tier index. deps: {host, showBanner, previewCtl, withBusy}.
+// unlock tier index. deps: {host, showBanner, previewCtl, syncSelects}.
 function createSettingsModule(deps) {
   var H = deps.host;
   var showBanner = deps.showBanner;
   var previewCtl = deps.previewCtl;
-  var withBusy = deps.withBusy;
   // Re-syncs the custom-select facades after this module re-points a hidden
   // select programmatically (.value writes fire no events).
   var syncSelects = deps.syncSelects || function() {};
 
   var loadedConfig = null;
+  var saving = false;
+
+  // The host applies settings on its UI thread and starts a bounded service
+  // request in the background. Poll only its in-memory status, never the pipe.
+  // Both entry points share one gate so a picker save cannot race a tab save.
+  function saveConfig(cfg, done) {
+    if (saving) return;
+    saving = true;
+    var ids = ['btn-save-settings', 'btn-reset-settings', 'cam-picker-confirm',
+               'cam-picker-skip', 'cam-picker-select'];
+    var controls = ids.map(function(id) { return document.getElementById(id); });
+    controls.forEach(function(el) { if (el) el.disabled = true; });
+    syncSelects();
+    var spinner = document.getElementById('settings-spinner');
+    spinner.style.display = 'inline-block';
+
+    function finish(status) {
+      saving = false;
+      controls.forEach(function(el) { if (el) el.disabled = false; });
+      syncSelects();
+      spinner.style.display = 'none';
+      done(status);
+    }
+    function poll() {
+      var status;
+      try { status = H.GetConfigSaveStatus(); }
+      catch(e) { finish('unknown'); return; }
+      if (status === 'pending') { setTimeout(poll, 150); return; }
+      finish(status);
+    }
+    setTimeout(function() {
+      try {
+        if (!H.BeginConfigSave(JSON.stringify(cfg))) { finish('save_failed'); return; }
+      } catch(e) { finish('unknown'); return; }
+      poll();
+    }, 50);
+  }
+
+  function configSaveError(status) {
+    if (status === 'reload_failed') {
+      return '设置已保存，但后台服务未确认安全重载；请检查服务状态和模型文件后重试。';
+    }
+    if (status === 'save_failed') return '设置保存失败，请检查日志后重试。';
+    return '无法确认设置保存结果，请检查服务状态和日志后重试。';
+  }
+
+  function pickerError(text) {
+    var el = document.getElementById('cam-picker-error');
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
 
   // Unlock tier selector detents, strict→fast (left→right). The three radios
   // (#cfg-unlockframes-N) carry the visual state — the sliding pill is pure
@@ -48,7 +98,7 @@ function createSettingsModule(deps) {
     try {
       var json = H.GetConfig();
       var cfg = JSON.parse(json);
-      // Keep the full parsed config for onSaveSettings: the backend's SetConfig
+      // Keep the full parsed config for onSaveSettings: the backend's BeginConfigSave
       // parser starts from defaults, so saving only the UI-managed keys would
       // silently reset non-UI fields (learning gates, alpha, interval, ...).
       loadedConfig = cfg;
@@ -118,6 +168,7 @@ function createSettingsModule(deps) {
   }
 
   function onSaveSettings() {
+    if (saving) return;
     // Single UI switch drives both learning channels so "off" means templates
     // are strictly read-only (docs/work/in-progress/progressive-learning-v2.md red line 5).
     var learning = document.getElementById('cfg-learning').checked;
@@ -136,21 +187,13 @@ function createSettingsModule(deps) {
       unlock_frames: UNLOCK_TIERS[tierIdx].frames,
       learning_distance_gate: parseFloat(document.getElementById('cfg-learn-gate').value)
     });
-    // withBusy defers the synchronous COM call so the locked button and
-    // spinner paint first: SetConfig replaces the auth worker and waits out
-    // its handshake (up to ~25s), during which the UI thread is blocked
-    // (repeated clicks can no longer stack SetConfig round trips).
-    withBusy([document.getElementById('btn-save-settings')],
-             document.getElementById('settings-spinner'),
-    function() {
-      try {
-        var ok = H.SetConfig(JSON.stringify(cfg));
-        if (ok) {
-          showBanner('settings', '设置已保存并通知后台服务。', 'ok');
-        } else {
-          showBanner('settings', '设置已写入，但后台服务未确认安全重载；人脸认证将保持关闭，请检查服务和模型文件。', 'error', 10000);
-        }
-      } catch(e) { showBanner('settings', '保存设置失败: ' + e.message, 'error'); }
+    showBanner('settings', '正在保存设置并等待后台服务确认…', 'ok', 30000);
+    saveConfig(cfg, function(status) {
+      if (status === 'saved') {
+        showBanner('settings', '设置已保存并通知后台服务。', 'ok');
+      } else {
+        showBanner('settings', configSaveError(status), 'error', 15000);
+      }
     });
   }
 
@@ -158,6 +201,7 @@ function createSettingsModule(deps) {
   // ConfigFromJson starting point). Nothing is written until the user clicks
   // 保存设置, which round-trips the loaded config for the non-UI keys.
   function onResetDefaults() {
+    if (saving) return;
     document.getElementById('cfg-rotation').value = '0';
     var camSel = document.getElementById('cfg-camera');
     if (camSel.querySelector('option[value=""]')) camSel.value = '';
@@ -177,10 +221,11 @@ function createSettingsModule(deps) {
   // ==================================================================
   // First-run camera picker: if config has no camera_device (fresh install
   // or the user never touched settings) AND more than one camera is present,
-  // prompt the user to pick one. Saves via SetConfig so subsequent launches
+  // prompt the user to pick one. Saves via BeginConfigSave so subsequent launches
   // and the service use the chosen device.
   // ==================================================================
   function showCamPicker() {
+    pickerError('');
     var sel = document.getElementById('cam-picker-select');
     sel.innerHTML = '';
     var camList = [];
@@ -196,33 +241,34 @@ function createSettingsModule(deps) {
   }
 
   function onCamPickerConfirm() {
+    if (saving) return;
     var sel = document.getElementById('cam-picker-select');
     var path = sel.value;
     if (!path) return;
-    // withBusy locks the button first so the click visibly registers before
-    // SetConfig blocks the UI thread (same shape as onSaveSettings).
-    withBusy([document.getElementById('cam-picker-confirm')], null, function() {
-      try {
-        var cfg = JSON.parse(H.GetConfig());
-        cfg.camera_device = path;
-        if (H.SetConfig(JSON.stringify(cfg))) {
-          document.getElementById('cam-picker-overlay').classList.remove('active');
-          showBanner('cam', '已选择摄像头，正在启动预览...', 'ok');
-          // Restart preview with the newly chosen camera.
-          try { H.StopPreview(); } catch(e) {}
-          setTimeout(previewCtl.restartPreview, 100);
-        } else {
-          showBanner('cam', '保存摄像头设置失败，请重试。', 'error');
-        }
-      } catch(e) {
-        showBanner('cam', '选择摄像头失败: ' + e.message, 'error');
+    pickerError('');
+    var cfg;
+    try { cfg = JSON.parse(H.GetConfig()); }
+    catch(e) { pickerError('无法读取摄像头设置，请检查日志后重试。'); return; }
+    cfg.camera_device = path;
+    document.getElementById('cam-picker-confirm').textContent = '正在保存，请稍候…';
+    saveConfig(cfg, function(status) {
+      document.getElementById('cam-picker-confirm').textContent = '使用此摄像头';
+      if (status === 'saved') {
+        document.getElementById('cam-picker-overlay').classList.remove('active');
+        showBanner('cam', '已选择摄像头，正在启动预览...', 'ok');
+        // Restart preview with the newly chosen camera.
+        try { H.StopPreview(); } catch(e) {}
+        setTimeout(previewCtl.restartPreview, 100);
+      } else {
+        pickerError(configSaveError(status));
       }
     });
   }
 
   function onCamPickerSkip() {
+    if (saving) return;
     document.getElementById('cam-picker-overlay').classList.remove('active');
-    showBanner('cam', '已使用默认摄像头，可在设置页随时更改。', 'ok');
+    showBanner('cam', '将使用当前摄像头设置，可在设置页随时更改。', 'ok');
   }
 
   return {

@@ -165,8 +165,9 @@ std::string ReadEnrollmentLog(const std::wstring& dataDir, EnrollmentLogSource s
 bool ClearEnrollmentLog(const std::wstring& dataDir, EnrollmentLogSource source) {
     const wchar_t* fileName = LogFileName(source);
     if (!fileName) return false;
+    if (!TruncateLogFile(dataDir, fileName)) return false;
     if (source == EnrollmentLogSource::Console) Logger::Instance().ClearLogs();
-    return TruncateLogFile(dataDir, fileName);
+    return true;
 }
 
 } // namespace facelogin

@@ -392,6 +392,8 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .cam-picker-overlay{position:fixed;inset:0;z-index:100;display:none;
   align-items:center;justify-content:center;background:rgba(0,0,0,.5)}
 .cam-picker-overlay.active{display:flex}
+.picker-error{color:var(--error);font-size:13px;line-height:1.5;margin:0 0 12px}
+.cselect-trigger[aria-disabled="true"]{opacity:.5;cursor:default}
 .cam-picker{width:90%;max-width:420px;background:var(--card);border:1px solid var(--border);
   border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.15);padding:24px}
 .cam-picker h2{font-size:18px;line-height:26px;font-weight:600;letter-spacing:-0.2px;color:var(--strong);margin-bottom:6px}

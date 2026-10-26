@@ -47,8 +47,8 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立，同月完成内�
 - 修改认证计时时联查锁屏端、父服务和 worker 的截止时间；一次认证共用 5 秒预算，模型等待、相机准备及曝光调节都计入，阶段切换不重新计时。起点和超时终态以 IPC 契约为准。
 - 服务父进程管理公共管道和凭据存储；认证 worker 持有推理模型。锁屏预载阶段禁止打开摄像头，认证开始后才激活设备。配置了 `DevicePath` 时必须使用指定设备；找不到设备就失败，不得静默切换到其他摄像头。生命周期细节见 [`docs/modules/face-service.md`](docs/modules/face-service.md)。
 - `DataPath` 默认指向安装目录，ProgramData 仅作回退。服务按 EXE 目录所有者与 DACL 判定生产模式，不按盘符；运行期目录权限处理拒绝低权限所有者，不能只改 DACL 后视为安全。服务、Credential Provider 和注册程序的路径校验逻辑不同；修改路径处理时要检查三个组件。入口见 [`DEVELOPMENT.md`](DEVELOPMENT.md#sec-paths)。
-- 服务 worker 使用 MTA；Credential Provider 和 WebView2 注册界面使用 Apartment 线程。DirectShow 必须复用当前线程已初始化的 COM 公寓；只有在同一线程初始化 COM 的代码才能调用 `CoUninitialize`。
-- 公共管道、worker 管道和 `users.dat` 格式以 `docs/contracts/` 中的契约文档为准。不要在本文件复制字段表或字节布局。
+- 服务 worker 使用 MTA；Credential Provider 和 WebView2 注册界面使用 Apartment 线程。DirectShow 必须复用当前线程已初始化的 COM 公寓；只有在同一线程初始化 COM 的代码才能调用 `CoUninitialize`。注册端配置保存仅把服务重载等待移到后台线程，配置更新和相机生命周期操作仍留在 UI 线程；结果与关闭时的线程回收见 Windows 客户端模块文档。
+- 公共管道、worker 管道和 `users.dat` 格式以 `docs/contracts/` 中的契约文档为准。注册端 WebView2 宿主的采集失败原因和账户落盘结果见 [`docs/modules/windows-clients.md`](docs/modules/windows-clients.md)。不要在本文件复制字段表或字节布局。
 - `users.dat` 当前格式和模型标识见 [`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)。格式、识别模型或模型标识变更可能影响现有录入，实施前先核对契约和迁移行为；多角度记录分别保存，不跨角度平均嵌入。
 - Credential Provider CLSID 同时出现在 `credential_provider/resource.h`、`credential_provider/dllmain.cpp`、`credential_provider/LockFaceProvider.cpp`、`installer/LockFaceSetup/internal/com.go`、`scripts/unregister_dev.bat` 和 `docs/modules/windows-clients.md`（共 6 处）；前四处由安装器的跨语言一致性测试钉住，改动时全部同步。
 

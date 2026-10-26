@@ -291,7 +291,7 @@
     </div>
 
     <div class="set-actions">
-      <button class="btn btn-secondary" onclick="onResetDefaults()">恢复默认</button>
+      <button class="btn btn-secondary" id="btn-reset-settings" onclick="onResetDefaults()">恢复默认</button>
       <button class="btn btn-primary" id="btn-save-settings" onclick="onSaveSettings()">
         <span class="spinner" id="settings-spinner"></span>
         保存设置
@@ -346,6 +346,7 @@
     <h2>选择摄像头</h2>
     <p class="dim">检测到多台摄像头。请选择用于人脸录入与登录的摄像头。</p>
     <select id="cam-picker-select"></select>
+    <p class="picker-error" id="cam-picker-error" role="alert" style="display:none"></p>
     <button class="btn btn-primary" id="cam-picker-confirm" onclick="onCamPickerConfirm()">
       使用此摄像头
     </button>

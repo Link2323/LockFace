@@ -15,13 +15,16 @@ EnrollmentAccounts::EnrollmentAccounts(const std::wstring& dataDir,
 }
 
 bool EnrollmentAccounts::SaveAndReload(bool* persisted) {
+    m_saveStatus = "failed";
     if (persisted) *persisted = false;
     if (!m_store.SaveDatabase()) {
         FACELOGIN_ERROR(L"Enrollment account update: database save failed");
         return false;
     }
     if (persisted) *persisted = true;
-    return m_serviceClient.ReloadDatabase();
+    const bool confirmed = m_serviceClient.ReloadDatabase();
+    m_saveStatus = confirmed ? "saved" : "reload_failed";
+    return confirmed;
 }
 
 bool EnrollmentAccounts::SaveTemplates(const std::vector<EnrollmentTemplate>& templates,
@@ -169,6 +172,7 @@ std::string EnrollmentAccounts::GetFacesJson() {
 }
 
 bool EnrollmentAccounts::DeleteFace(int faceId) {
+    m_saveStatus = "failed";
     if (faceId <= 0) return false;
     if (!m_store.LoadDatabase()) return false;
     if (!m_store.DeleteFace(m_identity.sid, static_cast<uint32_t>(faceId))) return false;
@@ -176,12 +180,14 @@ bool EnrollmentAccounts::DeleteFace(int faceId) {
 }
 
 bool EnrollmentAccounts::ClearAllFaces() {
+    m_saveStatus = "failed";
     if (!m_store.LoadDatabase()) return false;
     if (!m_store.ClearAllFaces(m_identity.sid)) return false;
     return SaveAndReload();
 }
 
 bool EnrollmentAccounts::RenameFace(int faceId, const std::wstring& label) {
+    m_saveStatus = "failed";
     if (faceId <= 0) return false;
     if (!m_store.LoadDatabase()) return false;
     if (!m_store.RenameFace(m_identity.sid, static_cast<uint32_t>(faceId), label)) return false;

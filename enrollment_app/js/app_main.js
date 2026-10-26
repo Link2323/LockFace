@@ -52,7 +52,6 @@ function buildEnrollmentApp(deps) {
                                    showRefreshPrompt: accountRefresh.showRefreshPrompt});
   var settings = createSettingsModule({host: H, showBanner: ui.showBanner,
                                        previewCtl: previewCtl,
-                                       withBusy: ui.withBusy,
                                        syncSelects: deps.syncSelects});
   var logs = createLogsModule({host: H, escapeHtml: ui.escapeHtml});
   var theme = createThemeCtl({host: H});
