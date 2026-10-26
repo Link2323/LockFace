@@ -417,10 +417,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
    into the monochrome language instead of the native accent blue. */
 .consent-check input{margin-top:2px;flex-shrink:0;accent-color:var(--strong)}
 .consent-modal .btn{margin-top:8px}
-.consent-link{display:block;width:100%;margin-top:12px;border:0;background:none;
+.consent-link{display:block;margin:0 0 16px;border:0;background:none;
   color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;
-  text-underline-offset:2px;padding:0;text-align:center}
+  text-underline-offset:2px;padding:0;text-align:left;line-height:1.5}
 .consent-link:hover{color:var(--strong)}
+.consent-link:focus-visible{outline:2px solid var(--strong);outline-offset:3px}
 
 /* ========== In-app modal (confirm/prompt replacement) ========== */
 /* Reuses the .cam-picker card; OK stays the dark primary — no red variant. */

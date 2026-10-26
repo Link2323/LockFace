@@ -1,5 +1,5 @@
-// Per-user privacy consent gate. The installer consent is machine-wide and may
-// have been accepted by a different Windows user; this gate is shown before
+// Per-user biometric consent gate. The installation notice acknowledgment is
+// machine-wide and may belong to a different user; this gate is shown before
 // the camera is allowed to start and is the actual consent of the person whose
 // face will be enrolled. Acceptance is remembered per Windows user through the
 // host (HKCU record: notice version + time) and silently resumed while the

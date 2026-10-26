@@ -397,24 +397,23 @@
 <div class="cam-picker-overlay" id="consent-overlay" role="dialog" aria-modal="true"
      aria-labelledby="consent-title">
   <div class="cam-picker consent-modal">
-    <h2 id="consent-title">人脸识别隐私说明与知情同意</h2>
-    <p class="dim">在启动摄像头之前，请确认以下事项：</p>
+    <h2 id="consent-title">人脸登录与隐私</h2>
+    <p class="dim">人脸登录完全可选，请先了解：</p>
     <ul class="consent-list">
       <li>人脸画面仅在本机内存中处理，不保存照片或视频，不上传。</li>
-      <li>本机仅保存人脸特征向量和 DPAPI 加密后的 Windows 密码。</li>
-      <li>你可以随时在「录入」页点击同意状态撤回同意，或删除人脸数据、卸载软件。</li>
-      <li>人脸识别无法保证绝对安全；识别失败时请使用密码登录。</li>
+      <li>密码经 Windows DPAPI 加密；人脸模板由本机目录权限保护，未另行加密。</li>
+      <li>可随时撤回并删除人脸数据，继续使用 Windows 密码登录。</li>
     </ul>
+    <button type="button" class="consent-link" onclick="openPrivacyNotice()" aria-haspopup="dialog">阅读《隐私声明》原文</button>
     <label class="chk-row consent-check">
       <input type="checkbox" id="consent-agree">
-      我已阅读并同意《LockFace 人脸识别隐私说明与知情同意书》
+      我已阅读隐私声明，同意在本机采集、保存本人的人脸信息，用于 Windows 登录。
     </label>
-    <p class="dim" id="consent-hint">勾选后才能启动摄像头和人脸采集。</p>
+    <p class="dim" id="consent-hint">勾选同意后启动摄像头预览。</p>
     <button class="btn btn-primary" id="btn-consent-accept" onclick="onConsentAccept()" disabled>
-      同意并开始
+      同意并开启预览
     </button>
     <button class="btn btn-secondary" onclick="onConsentDecline()">暂不同意</button>
-    <button class="consent-link" onclick="openPrivacyNotice()">查看完整说明（安装目录 PRIVACY.txt）</button>
   </div>
 </div>
 

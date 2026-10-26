@@ -9,7 +9,8 @@ import (
 )
 
 // ConsentVersion is the version of docs/legal/privacy-notice.txt the installer
-// requires the user to accept. consent_test.go pins it to the canonical text so
+// requires the installer to acknowledge. This is not biometric consent.
+// consent_test.go pins it to the canonical text so
 // the recorded version cannot drift from what the installer displayed.
 const ConsentVersion = "1.1"
 
@@ -21,8 +22,10 @@ const (
 	RegConsentTime    = "ConsentTime"
 )
 
-// RecordConsent stores the accepted privacy-notice version and the local
-// timestamp of the acceptance. It intentionally contains no personal data.
+// RecordConsent stores the installation notice acknowledgment and local time.
+// Historical registry names remain unchanged; individual biometric consent is
+// recorded separately by the console under HKCU. No biometric data is stored
+// here, but account-linked acknowledgment records may still be personal data.
 func RecordConsent() error {
 	if err := WriteRegString(RegConsentVersion, ConsentVersion); err != nil {
 		return fmt.Errorf("write consent version: %w", err)
@@ -35,8 +38,8 @@ func RecordConsent() error {
 
 // DeletePerUserConsentRecords removes the per-user acceptance records the
 // console's consent gate stores under HKCU\SOFTWARE\LockFace (version +
-// time, nothing else). PRIVACY.txt 12.4 promises the consent record is
-// deleted with the product, so uninstall deletes that key for the current
+// time, nothing else). PRIVACY.txt 7.6 describes best-effort uninstall
+// cleanup, so uninstall deletes that key for the current
 // user and for every profile hive currently mounted under HKEY_USERS; the
 // pre-rename SOFTWARE\FaceLogin key is swept too. Best effort: hives of
 // profiles that are not logged on are not mounted and are left alone; a hive

@@ -445,7 +445,7 @@ async function doUninstall() {
                 :class="consentAccepted ? 'border-gray-200 text-gray-500' : 'border-amber-300 text-amber-700'"
               >
                 <span class="h-1.5 w-1.5 rounded-full" :class="consentAccepted ? 'bg-emerald-500' : 'bg-amber-500'"></span>
-                {{ consentAccepted ? '已同意' : '未同意' }}
+                {{ consentAccepted ? '已确认阅读' : '待阅读' }}
               </span>
             </div>
             <button class="flex-shrink-0 text-xs text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-gray-900" @click="openConsent">
@@ -453,10 +453,10 @@ async function doUninstall() {
             </button>
           </div>
           <p class="mt-2.5 text-xs leading-relaxed text-gray-500">
-            人脸仅在本机用于登录比对，不保存照片或视频，不上传；只保存人脸特征和加密后的 Windows 密码。
+            人脸仅在本机用于登录比对，不保存照片或视频，不上传。本机保存人脸模板、账户标识、加密密码及日志；模板通过目录权限保护，未另行加密。
           </p>
           <p v-if="!consentAccepted" class="mt-2 text-[11px] text-gray-400">
-            安装前需点击「阅读全文」完整浏览并同意隐私说明。
+            安装前请阅读说明。安装阅读确认不授权采集人脸；每位使用者须在注册界面单独授权。
           </p>
         </div>
 
@@ -597,21 +597,22 @@ async function doUninstall() {
               :disabled="consentAccepted || !!consentError"
               class="mt-0.5 h-4 w-4 flex-shrink-0 accent-gray-900" />
             <span class="text-xs leading-relaxed text-gray-700">
-              我已完整阅读并同意
+              我已阅读
               <span class="font-medium text-gray-900">《LockFace 人脸识别隐私说明与知情同意书》</span>
+              ，知悉人脸处理需由每位使用者另行授权。本次确认不代表人脸处理同意，也不代表放弃法定权利。
             </span>
           </label>
           <div class="mt-2.5 flex items-center justify-between gap-4">
             <span v-if="!consentScrolled && !consentAccepted && !consentError"
               class="text-[11px] text-gray-400">请滚动阅读至底部后勾选</span>
-            <span v-else-if="consentAccepted" class="text-[11px] font-medium text-emerald-600">✓ 已阅读并同意</span>
+            <span v-else-if="consentAccepted" class="text-[11px] font-medium text-emerald-600">✓ 已确认阅读</span>
             <button v-if="!consentAccepted"
               class="rounded-sm text-xs text-gray-500 underline decoration-gray-300 underline-offset-4 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
-              @click="declineConsent">不同意并退出</button>
+              @click="declineConsent">退出安装</button>
             <button v-if="consentScrolled || consentAccepted"
               class="rounded-lg bg-gray-900 px-6 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="!consentAccepted && !consentChecked" @click="acceptConsent">
-              {{ consentAccepted ? '关闭' : '同意并继续' }}
+              {{ consentAccepted ? '关闭' : '确认已阅读' }}
             </button>
           </div>
         </div>

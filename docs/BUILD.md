@@ -120,6 +120,8 @@ SFace 自 2026-10-04 起使用清理 initializer graph inputs 的规范化 FP32 
 
 根目录 `LICENSE`、`THIRD_PARTY_NOTICES.txt`、[`third_party/MODEL_LICENSES.txt`](../third_party/MODEL_LICENSES.txt) 和 [`docs/legal/privacy-notice.txt`](legal/privacy-notice.txt) 是随包许可与隐私说明的事实源。详细模型来源核查记录保留在 [`model-licenses.md`](model-licenses.md)。依赖升级后重新生成第三方声明；`scripts/stage_licenses.ps1` 将许可文件和隐私说明复制到安装载荷和前端。注册 Console 页脚的“许可声明”入口从 Console 同目录读取这四份文件。
 
+隐私文书更新时同步安装器 `internal/consent.go` 的版本，并运行暂存脚本及相应构建。安装端确认阅读，Console 另行征得每用户人脸处理授权；两类记录不能互相替代。
+
 ### 载荷压缩
 
 完整安装器只嵌入 `payload.zip`；`scripts/make_payload.ps1` 从 `resources/` 生成它。资源有任何改动都要重打包。zip 的正斜线路径、显式目录项和 `resources/` 前缀由 `payload_zip_test.go` 覆盖；不要改成直接嵌入资源目录。slim 卸载器不嵌入载荷。

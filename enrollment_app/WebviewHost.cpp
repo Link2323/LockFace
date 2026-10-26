@@ -842,8 +842,9 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
 // Per-user privacy consent record
 // ==========================================================================
 // The console's camera gate remembers each Windows user's acceptance under
-// HKCU\SOFTWARE\LockFace — the per-user mirror of the installer's ACL-locked
-// machine-wide record, with the same value names. ConsentVersion pins which
+// HKCU\SOFTWARE\LockFace. The installer's machine-wide record only acknowledges
+// reading the notice; the same value names here record biometric consent.
+// ConsentVersion pins which
 // notice text was accepted, ConsentTime when. ConsentWithdrawalPending is
 // independent and blocks resumption until deletion and cleanup complete. The
 // gate silently resumes while the recorded version still matches the

@@ -19,6 +19,10 @@
 
 `frontend/wailsjs/` 是生成绑定，不手工编辑。
 
+## 隐私说明阅读确认
+
+随包文书以 [`privacy-notice.txt`](../legal/privacy-notice.txt) 为准。安装界面要求阅读确认，`internal/consent.go` 的 `ConsentVersion` 与文书版本由测试校验一致；历史 `RecordConsent` 名称及 HKLM 注册表值名保留，但它们只记录安装时的阅读确认，不授权采集人脸，也不代替各 Windows 用户在 Console 中作出的单独授权。界面确认及人脸授权均不包含接受免责或放弃法定权利。
+
 ## 安装安全不变量
 
 安装流程须保证：
@@ -40,7 +44,7 @@
 
 ## 卸载语义
 
-卸载停止并删除服务、注销 COM、清除安装器拥有的程序文件和用户数据，并删除 FaceLogin/LockFace 注册表键（含更名前旧键残留）。注册表清理同时移除 Console 同意门写入的每用户记录（`HKCU\SOFTWARE\LockFace`，PRIVACY.txt 12.4 的删除承诺）：当前用户与 HKEY_USERS 下已挂载的各配置单元逐一清理，未登录用户的 hive 不挂载、不处理，单个 hive 失败仅告警。卸载器会尽力结束残留进程，使文件可立即删除；失败时使用经验证的重启删除队列。
+卸载停止并删除服务、注销 COM、清除安装器拥有的程序文件和用户数据，并删除 FaceLogin/LockFace 注册表键（含更名前旧键残留）。注册表清理同时移除 Console 同意门写入的每用户记录（`HKCU\SOFTWARE\LockFace`，PRIVACY.txt 7.6 的清理边界）：当前用户与 HKEY_USERS 下已挂载的各配置单元逐一清理，未登录用户的 hive 不挂载、不处理，单个 hive 失败仅告警。卸载器会尽力结束残留进程，使文件可立即删除；失败时使用经验证的重启删除队列。
 
 根目录的 `camera_tune.state` 是运行时曝光缓存，不属于安装载荷。完整卸载通过独立的运行数据清单删除它，完整与 slim 路径一致；升级清理程序文件时保留。即使之前卸载只留下该缓存，后续卸载也能识别并清理目录。
 
