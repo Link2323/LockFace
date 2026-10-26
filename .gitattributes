@@ -6,5 +6,4 @@
 third_party/libraries/onnxruntime/*.txt -text
 third_party/models/*/*.txt -text
 third_party/models/*/model-card.md -text
-third_party/models/w600k-r50/model-zoo.md -text
 THIRD_PARTY_NOTICES.txt text eol=lf

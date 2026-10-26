@@ -1,4 +1,4 @@
-> 当前识别权重已切换为 OpenCV SFace，许可与固定来源在 `models/sface/`。`models/w600k-r50/` 为历史材料，索引标记 distributed=false，不再打入声明或模型载荷。
+> 当前识别权重已切换为 OpenCV SFace，许可与固定来源在 `models/sface/`。
 
 # Third-party notice sources
 
@@ -16,10 +16,6 @@ third_party/
     minifas/
       yakhyo-LICENSE.txt        # ONNX download/export repository
       minivision-LICENSE.txt   # Cited training-source upstream
-    w600k-r50/
-      model-zoo.md             # InsightFace's pretrained model policy
-      provenance.json          # Mirror revision/hash and pending authorization
-      authorization-request.md # Unsent licensing inquiry draft
   libraries/
     onnxruntime/
       ThirdPartyNotices.txt     # ONNX Runtime 1.23.2 upstream notices
@@ -37,10 +33,6 @@ declaration for the pinned model revision. The related FaceDetection source
 license is included separately; code licensing is not used to invent a weight
 grant. `models/scrfd-10g/provenance.json` distinguishes direct source evidence,
 graph observations and inferred training attribution.
-The recognizer's `models/w600k-r50/model-zoo.md` preserves its official
-non-commercial research policy. Its provenance record pins the download mirror
-and distinguishes file identity from permission. The authorization inquiry
-draft is source-only documentation and is not an authorization grant.
 
 `../THIRD_PARTY_NOTICES.txt` is the checked-in distribution bundle. Regenerate it
 after dependency upgrades with:

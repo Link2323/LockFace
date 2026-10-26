@@ -35,14 +35,6 @@
     "url": "https://huggingface.co/kunkunlin1221/face-detection_scrfd-10g-gnkps/raw/eb0e349519cd951b2a9423dac45b39e8ce5a71b8/README.md"
   },
   {
-    "component": "InsightFace pretrained recognizer - non-commercial research policy (not a product-use grant)",
-    "file": "models/w600k-r50/model-zoo.md",
-    "revision": "317d33497a4342351666a1dec69b7176eb67084e",
-    "sha256": "3334e8c7945819ee04002b260d2f2a755e8508768215ed6f778916cb3dfc5ccb",
-    "url": "https://raw.githubusercontent.com/deepinsight/insightface/317d33497a4342351666a1dec69b7176eb67084e/python-package/docs/model_zoo.md",
-    "distributed": false
-  },
-  {
     "component": "OpenCV SFace recognition weights - Apache-2.0",
     "file": "models/sface/LICENSE.txt",
     "revision": "47534e27c9851bb1128ccc0102f1145e27f23f98",
