@@ -11,7 +11,7 @@
   --font-ui:"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
   --font-mono:"Cascadia Code","Consolas","Microsoft YaHei UI",monospace;
   --surface:#fff;--strong:#1a1c1f;--text:#1a1c1f;--label:#303030;
-  --chrome:#f3f3f3;--card:#f9f9f9;
+  --chrome:#f3f3f3;--card:#f9f9f9;--caption-hover:#e5e5e5;
   --body:#414141;--muted:#5d5d5d;--subtle:#767676;
   --control-border:#cdcdcd;--border:#ededed;--soft:#f3f3f3;--field:#fff;
   --warning:#b45309;--warning-border:#fcd34d;--warning-dot:#f59e0b;
@@ -25,7 +25,7 @@
   /* Codex app palette: gray-fixed-900 surface, gray-fixed-800 raised
      controls, gray-fixed-150 foreground; secondary text is 70% white. */
   --surface:#181818;--strong:#ededed;--text:#dfdfdf;--label:#cdcdcd;
-  --chrome:#212121;--card:#232323;
+  --chrome:#212121;--card:#232323;--caption-hover:#282828;
   --body:#b9b9b9;--muted:#bababa;--subtle:#8c8c8c;
   --control-border:#414141;--border:#303030;--soft:#282828;--field:#282828;
   --warning:#fbbf24;--warning-border:#856428;--warning-dot:#fbbf24;
@@ -72,11 +72,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
 .window-controls{display:none}
 .custom-frame .window-controls{position:fixed;top:0;right:0;z-index:250;
   display:flex;-webkit-app-region:no-drag;app-region:no-drag}
+/* Caption highlights switch immediately to avoid interrupted fades during
+   rapid pointer entry/exit. */
 .window-button{display:flex;align-items:center;justify-content:center;
   width:46px;height:36px;border:0;background:transparent;color:var(--text);
-  cursor:default;transition:background-color .15s,color .15s}
+  cursor:default}
 .window-button svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1}
-.window-button:hover{background:var(--soft)}
+.window-button:hover{background:var(--caption-hover)}
 .window-button.window-close:hover{background:#c42b1c;color:#fff}
 .window-button:focus-visible{outline:2px solid var(--muted);outline-offset:-3px}
 .custom-frame .header{-webkit-app-region:drag;app-region:drag;padding-right:136px}
