@@ -1,5 +1,6 @@
 #include "WebviewHost.h"
 #include "EnrollmentWizard.h"
+#include "privacy_withdrawal.h"
 #include "../common/logger.h"
 #include "../common/secure_clear.h"
 #include "../common/text_util.h"
@@ -711,7 +712,7 @@ void WebviewHost::EnableCustomFrame() {
     X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0)))) \
     X(GetPrivacyConsent, 39, if (res) *res = MakeStr(GetPrivacyConsentJson())) \
     X(AcceptPrivacyConsent, 40, if (res) *res = MakeBool(RecordPrivacyConsent())) \
-    X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(ClearPrivacyConsent())) \
+    X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(m_wizard->WithdrawPrivacyConsent())) \
     X(MinimizeWindow, 42, PostMessageW(m_hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0)) \
     X(CloseWindow, 43, PostMessageW(m_hWnd, WM_CLOSE, 0, 0)) \
     X(GetThemeMode, 44, { \
@@ -843,7 +844,8 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
 // The console's camera gate remembers each Windows user's acceptance under
 // HKCU\SOFTWARE\LockFace — the per-user mirror of the installer's ACL-locked
 // machine-wide record, with the same value names. ConsentVersion pins which
-// notice text was accepted, ConsentTime when; nothing else is stored. The
+// notice text was accepted, ConsentTime when. ConsentWithdrawalPending is
+// independent and blocks resumption until deletion and cleanup complete. The
 // gate silently resumes while the recorded version still matches the
 // 版本：x.y line of the shipped PRIVACY.txt, and reopens on a notice revision,
 // a missing record, or an explicit withdrawal from the settings screen.
@@ -927,6 +929,10 @@ static bool ReadConsentRecord(std::wstring* version, std::wstring* time) {
 }
 
 static bool RecordPrivacyConsent() {
+    if (facelogin::PrivacyWithdrawal().Read() != facelogin::PrivacyWithdrawalState::None) {
+        FACELOGIN_WARN(L"Privacy consent refused: finish the pending withdrawal first");
+        return false;
+    }
     const std::wstring ver = ReadNoticeVersion();
     if (ver.empty()) {
         FACELOGIN_WARN(L"Privacy consent not recorded: PRIVACY.txt version line unreadable");
@@ -953,24 +959,14 @@ static bool RecordPrivacyConsent() {
     return ok;
 }
 
-static bool ClearPrivacyConsent() {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kUserPrefsKeyPath, 0, KEY_SET_VALUE, &key)
-            != ERROR_SUCCESS) {
-        return true;  // nothing recorded — already withdrawn
-    }
-    RegDeleteValueW(key, kConsentVersionName);
-    RegDeleteValueW(key, kConsentTimeName);
-    RegCloseKey(key);
-    FACELOGIN_INFO(L"Privacy consent withdrawn for this user");
-    return true;
-}
-
 static std::string GetPrivacyConsentJson() {
     std::wstring ver, time;
     const bool has = ReadConsentRecord(&ver, &time);
     const std::wstring notice = ReadNoticeVersion();
-    std::string json = "{\"noticeVersion\":\"" + facelogin::WstrToUtf8(notice) +
+    const auto withdrawal = facelogin::PrivacyWithdrawal().Read();
+    std::string json = "{\"withdrawalPending\":" +
+        std::string(withdrawal != facelogin::PrivacyWithdrawalState::None ? "true" : "false") +
+        ",\"noticeVersion\":\"" + facelogin::WstrToUtf8(notice) +
                        "\",\"record\":";
     if (has) {
         json += "{\"version\":\"" + facelogin::WstrToUtf8(ver) +

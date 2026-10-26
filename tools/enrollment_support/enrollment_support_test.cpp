@@ -17,6 +17,7 @@
 #include <vector>
 
 int RunPreviewFrameEncoderTests();
+int RunPrivacyWithdrawalTests();
 
 namespace {
 
@@ -275,6 +276,34 @@ void TestPasswordEndpointVerification() {
     Check(!client.ProtectPassword(std::wstring(L"a\0b", 3), encrypted), "embedded NUL password rejected");
 }
 
+void TestDeletionEndpointVerification() {
+    const std::wstring name = L"\\\\.\\pipe\\LockFace.FakeDeletionService." +
+        std::to_wstring(GetCurrentProcessId());
+    HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, 4096, 4096, 0, nullptr);
+    Check(pipe != INVALID_HANDLE_VALUE, "create fake password service");
+    if (pipe == INVALID_HANDLE_VALUE) return;
+    std::wstring received;
+    std::thread server([&] {
+        OVERLAPPED op{};
+        op.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        DWORD bytes = 0;
+        BOOL immediate = ConnectNamedPipe(pipe, &op);
+        bool connected = !immediate && GetLastError() == ERROR_PIPE_CONNECTED;
+        if (!connected) connected = CompleteIo(pipe, op, immediate, bytes);
+        CloseHandle(op.hEvent);
+        if (connected) ReadMessage(pipe, received);
+        DisconnectNamedPipe(pipe);
+    });
+    facelogin::EnrollmentServiceClient client(name);
+    Check(!client.DeleteEnrollment(L"S-1-5-21-111-222-333-1001"),
+          "deletion rejects a server outside the SCM SYSTEM service");
+    server.join();
+    CloseHandle(pipe);
+    Check(received.empty(), "fake service receives no deletion target");
+    Check(!client.DeleteEnrollment(L"bad-sid"), "malformed deletion target rejected before connection");
+}
+
 void TestPipeClientAuthorization() {
     BYTE adminSid[SECURITY_MAX_SID_SIZE]{};
     DWORD sidSize = sizeof(adminSid);
@@ -530,20 +559,17 @@ void TestAccountMutationOutcomes(const fs::path& dataDir) {
           "renamed label can be reloaded from disk despite missing acknowledgement");
     Check(!accounts.DeleteFace(-1) && accounts.GetSaveStatus() == "failed",
           "failed validation clears a preceding persisted outcome");
-    Check(!accounts.DeleteFace(faceId) && accounts.GetSaveStatus() == "reload_failed" && accounts.GetFaceCount() == 0,
-          "delete distinguishes persisted removal from missing acknowledgement");
-    Check(store.LoadDatabase(), "reload disk after deletion before reseeding");
-    Check(store.AddFace(identity.username, identity.upn, identity.sid, password, embedding,
-                        L"another", &faceId, 0.0f, 0.0f) && store.SaveDatabase(),
-          "seed a face for clear-all verification");
-    Check(!accounts.ClearAllFaces() && accounts.GetSaveStatus() == "reload_failed" && accounts.GetFaceCount() == 0,
-          "clear-all distinguishes persisted removal from missing acknowledgement");
+    Check(!accounts.DeleteFace(faceId) && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 1,
+          "missing service cannot acknowledge deletion or change the database");
+    Check(!accounts.ClearAllFaces() && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 1,
+          "missing service leaves withdrawal incomplete and retryable");
 }
 
 } // namespace
 
 int main() {
     failures += RunPreviewFrameEncoderTests();
+    failures += RunPrivacyWithdrawalTests();
     std::error_code error;
     const auto tempDir = fs::temp_directory_path(error);
     if (error) return 1;
@@ -553,6 +579,7 @@ int main() {
     TestLogs(dataDir);
     TestServiceClient();
     TestPasswordEndpointVerification();
+    TestDeletionEndpointVerification();
     TestPipeClientAuthorization();
     TestSessionIdentity();
     {

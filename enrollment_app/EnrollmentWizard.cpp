@@ -1,3 +1,4 @@
+#include "privacy_withdrawal.h"
 #include "EnrollmentWizard.h"
 #include "preview_exposure.h"
 #include "preview_frame_encoder.h"
@@ -100,6 +101,10 @@ EnrollmentWizard::~EnrollmentWizard() {
 // ============================================================================
 
 bool EnrollmentWizard::StartPreview() {
+    if (PrivacyWithdrawal().Read() != PrivacyWithdrawalState::None) {
+        FACELOGIN_WARN(L"Enrollment camera refused: withdrawal pending or unreadable");
+        return false;
+    }
     if (m_previewRunning) return true;
 
     // The service/credential provider may still be releasing the camera just
@@ -484,6 +489,10 @@ std::string EnrollmentWizard::GetUsername() const {
 }
 
 bool EnrollmentWizard::CaptureFaceSamples(int angleIndex) {
+    if (PrivacyWithdrawal().Read() != PrivacyWithdrawalState::None) {
+        FACELOGIN_WARN(L"Enrollment camera refused: withdrawal pending or unreadable");
+        return false;
+    }
     if (!m_previewRunning || !m_antiSpoof || !m_onnxDetector || !m_onnxRecognizer) {
         FACELOGIN_ERROR(L"CaptureFaceSamples refused: preview or mandatory models are unavailable");
         return false;
@@ -538,6 +547,10 @@ bool EnrollmentWizard::SaveEnrollment(const std::wstring& password,
 bool EnrollmentWizard::SaveEnrollmentImpl(const std::wstring& password,
                                           const std::wstring& label, bool append) {
     m_enrollmentSaveStatus = "failed";
+    if (PrivacyWithdrawal().Read() != PrivacyWithdrawalState::None) {
+        FACELOGIN_WARN(L"Enrollment save refused: withdrawal pending or unreadable");
+        return false;
+    }
     EnrollmentSamples samples;
     if (!m_capture.CopyCompletedSamples(samples)) return false;
     std::vector<EnrollmentTemplate> templates;
@@ -559,6 +572,11 @@ bool EnrollmentWizard::SaveEnrollmentAppend(const std::wstring& label) {
 }
 bool EnrollmentWizard::DeleteFace(int faceId) { return m_accounts->DeleteFace(faceId); }
 bool EnrollmentWizard::ClearAllFaces() { return m_accounts->ClearAllFaces(); }
+bool EnrollmentWizard::WithdrawPrivacyConsent() {
+    StopPreview();
+    m_capture.ClearSavedSamples();
+    return PrivacyWithdrawal().Run([this]() { return m_accounts->ClearAllFaces(); });
+}
 bool EnrollmentWizard::RenameFace(int faceId, const std::wstring& label) {
     return m_accounts->RenameFace(faceId, label);
 }

@@ -1,29 +1,18 @@
 // Cam-screen live preview: frame polling, canvas painting and the preview
 // lifecycle. All state is private to this module — other modules drive it
-// through the returned controller only. deps: {host, showBanner}.
+// through the returned controller only. deps: {host, showBanner, beginPreviewStatus}.
 function createPreview(deps) {
   var H = deps.host;
   var showBanner = deps.showBanner;
+  var beginPreviewStatus = deps.beginPreviewStatus;
 
-  var viewing = false, lastB64 = '', lastFacesJson = '', timer = 0, faceImg = new Image();
+  var viewing = false, lastB64 = '', lastFacesJson = '', timer = 0, faceImg = null;
   var pendingFacesJson = '';
   var lastVersion = '';
   var drawnWidth = -1, drawnHeight = -1, drawnDpr = 0, drawnFacesJson = '';
   var camReady = false;
   var consentGranted = false;
-
-  faceImg.onload = function() {
-    lastFacesJson = pendingFacesJson;
-    drawBackgroundAndOverlay(true);
-    if (!camReady) {
-      camReady = true;
-      document.getElementById('cam-loading').classList.add('fade');
-      setTimeout(function() {
-        var el = document.getElementById('cam-loading');
-        if (el) el.style.display = 'none';
-      }, 350);
-    }
-  };
+  var generation = 0, loadingTimer = 0;
 
   // Compute the contain-fit mapping for the video frame inside the viewport:
   // scale = min(cw/sw, ch/sh), then center the scaled image. Returns {sx,sy,ox,oy}
@@ -115,8 +104,8 @@ function createPreview(deps) {
     drawnFacesJson = lastFacesJson;
   }
 
-  function renderFrame() {
-    if (!viewing) return;
+  function renderFrame(expected) {
+    if (!viewing || generation !== expected) return;
     try {
       // Get the frame AND its face overlay atomically (same frame, no desync).
       // The version stays a string, so even long-running sessions do not
@@ -141,7 +130,7 @@ function createPreview(deps) {
         drawBackgroundAndOverlay(false);
       }
     } catch(e) {}
-    timer = setTimeout(renderFrame, 33);
+    timer = setTimeout(function renderFrameTick() { renderFrame(expected); }, 33);
   }
 
   // Path helper for the guidance pill (arcTo rounding works on every WebView2
@@ -258,15 +247,32 @@ function createPreview(deps) {
   // withdraw → re-grant re-shows it as "正在启动摄像头"), and a camReady left
   // over from the previous session would keep the first new frame from
   // clearing it — live video stuck behind the spinner forever.
-  function beginLoop() {
-    clearTimeout(timer);
+  function beginLoop(status) {
+    stopLoop();
+    var expected = generation;
+    faceImg = new Image();
+    faceImg.onload = function() {
+      if (!viewing || generation !== expected) return;
+      lastFacesJson = pendingFacesJson;
+      drawBackgroundAndOverlay(true);
+      if (!camReady) {
+        camReady = true;
+        status.ready();
+        document.getElementById('cam-loading').classList.add('fade');
+        loadingTimer = setTimeout(function() {
+          if (!viewing || generation !== expected) return;
+          var el = document.getElementById('cam-loading');
+          if (el) el.style.display = 'none';
+        }, 350);
+      }
+    };
     camReady = false;
     // Re-load even an identical first JPEG so the loading overlay is dismissed
     // for every new session, including consent withdrawal and re-grant.
     lastB64 = '';
     lastVersion = '';  // force the first snapshot even if backend data is identical
     viewing = true;
-    renderFrame();
+    renderFrame(expected);
   }
 
   // Start the cam-screen live preview and kick the frame loop. Every restart
@@ -277,9 +283,11 @@ function createPreview(deps) {
   function restartPreview() {
     if (!consentGranted) return false;
     stopLoop();
+    var status = beginPreviewStatus();
     try {
-      if (H.StartPreview()) { beginLoop(); return true; }
+      if (H.StartPreview()) { beginLoop(status); return true; }
     } catch(e) {}
+    status.failed();
     // The startup overlay sits above the banner; dismiss it on failure so
     // the error and its recovery guidance are actually visible.
     document.getElementById('cam-loading').style.display = 'none';
@@ -291,17 +299,20 @@ function createPreview(deps) {
   // stays at the call sites — tab switch and finishCapture wrap H.StopPreview
   // in different try/catch shapes, which is deliberate.
   function stopLoop() {
+    generation++;
     viewing = false;
     clearTimeout(timer);
+    clearTimeout(loadingTimer);
   }
   function startLoop() {
     if (!consentGranted) return;
-    beginLoop();
+    beginLoop(beginPreviewStatus());
   }
 
   return {
     restartPreview: restartPreview,
     isViewing: function() { return viewing; },
+    isReady: function() { return viewing && camReady; },
     stopLoop: stopLoop,
     startLoop: startLoop,
     setConsentGranted: function(value) { consentGranted = !!value; },

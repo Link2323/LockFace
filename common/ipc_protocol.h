@@ -42,6 +42,11 @@ constexpr wchar_t MSG_STATUS_PREFIX[] = L"STATUS:";
 constexpr wchar_t MSG_AUTH_ACK[] = L"AUTH_ACK";
 constexpr wchar_t MSG_RELOAD_DB[] = L"RELOAD_DB";
 constexpr wchar_t MSG_RELOAD_OK[] = L"RELOAD_OK";
+// DELETE_ENROLLMENT:SID:faceId (zero = entire account). Idempotent.
+constexpr wchar_t MSG_DELETE_ENROLLMENT_PREFIX[] = L"DELETE_ENROLLMENT:";
+constexpr wchar_t MSG_DELETE_ENROLLMENT_OK[] = L"DELETE_ENROLLMENT_OK";
+constexpr wchar_t MSG_DELETE_ENROLLMENT_ERROR[] = L"DELETE_ENROLLMENT_ERROR";
+bool ParseDeleteEnrollment(const std::wstring& message, std::wstring& sid, uint32_t& faceId);
 constexpr wchar_t MSG_CONFIG_RELOAD[] = L"CONFIG_RELOAD";
 constexpr wchar_t MSG_CONFIG_RELOAD_OK[] = L"CONFIG_RELOAD_OK";
 constexpr wchar_t MSG_CONFIG_RELOAD_ERROR[] = L"CONFIG_RELOAD_ERROR";

@@ -99,7 +99,11 @@ public:
     ~CredentialStore() = default;
 
     // Set the data directory path. Default: PROGRAMDATA/FaceLogin/
-    void SetDataDir(const std::wstring& dir) { m_dataDir = dir; }
+    void SetDataDir(const std::wstring& dir) {
+        m_dataDir = dir;
+        m_hasDiskSnapshot = false;
+        m_diskSnapshot.clear();
+    }
 
     // Load users.dat from disk. Returns true on success.
     bool LoadDatabase();
@@ -109,7 +113,11 @@ public:
     bool UpgradeLegacyPasswords();
 
     // Save current in-memory records to users.dat. Returns true on success.
-    bool SaveDatabase();
+    bool SaveDatabase(bool refreshBackup = false);
+
+    // Service only, under its store lock. Zero removes the account; otherwise
+    // removes one face. Idempotent, purges the old backup before committing.
+    bool DeletePersistedFace(const std::wstring& sid, uint32_t faceId = 0);
 
     // Get all loaded user records
     const std::vector<UserRecord>& GetUsers() const { return m_users; }
@@ -300,6 +308,10 @@ private:
     uint32_t m_loadedVersion = kCredentialDatabaseVersion;
     std::wstring m_dataDir;  // If empty, uses default
     std::vector<UserRecord> m_users;
+    bool m_hasDiskSnapshot = false;
+    bool m_diskExists = false;
+    std::string m_diskSnapshot;
+    bool m_purgeBackupOnSave = false;
 
     // Slot-coverage shrink warning de-dup: log only when the pair or the
     // distance actually changes (m_lastShrinkDist = -1 re-arms).

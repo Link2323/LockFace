@@ -13,6 +13,26 @@ static bool IsValidSid(const std::wstring& value) {
     return valid == TRUE;
 }
 
+bool ParseDeleteEnrollment(const std::wstring& message, std::wstring& sid, uint32_t& faceId) {
+    sid.clear();
+    faceId = 0;
+    const std::wstring prefix(MSG_DELETE_ENROLLMENT_PREFIX);
+    if (message.compare(0, prefix.size(), prefix) != 0) return false;
+    const auto separator = message.find(L':', prefix.size());
+    if (separator == std::wstring::npos || separator + 1 == message.size()) return false;
+    const auto candidate = message.substr(prefix.size(), separator - prefix.size());
+    if (candidate.find(L'\0') != std::wstring::npos || !IsValidSid(candidate)) return false;
+    uint32_t value = 0;
+    for (size_t i = separator + 1; i < message.size(); ++i) {
+        const wchar_t c = message[i];
+        if (c < L'0' || c > L'9' || value > (UINT32_MAX - (c - L'0')) / 10) return false;
+        value = value * 10 + (c - L'0');
+    }
+    sid = candidate;
+    faceId = value;
+    return true;
+}
+
 AuthResult ParseAuthMessage(const std::wstring& message) {
     AuthResult result;
 

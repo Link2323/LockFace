@@ -229,7 +229,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;line-height:i
    system strip. Rounded + shadowed like every floating card. */
 #cam-banner{
   position:absolute;top:10px;left:50%;transform:translateX(-50%);
-  width:calc(100% - 24px);z-index:4;
+  width:calc(100% - 24px);z-index:11;
   border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);
 }
 

@@ -311,5 +311,5 @@ function createCaptureUi(deps) {
     document.getElementById('fld-pass').focus();
   }
 
-  return { onCapture: onCapture };
+  return { onCapture: onCapture, resetCaptureUi: resetCaptureUi };
 }

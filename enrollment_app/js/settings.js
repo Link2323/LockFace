@@ -1,10 +1,11 @@
 // Settings screen + first-run camera picker. Shared state: the last config
 // loaded by loadSettings (kept whole for onSaveSettings) and the selected
-// unlock tier index. deps: {host, showBanner, previewCtl, syncSelects}.
+// unlock tier index. deps: {host, showBanner, previewCtl, guardCurrent, syncSelects}.
 function createSettingsModule(deps) {
   var H = deps.host;
   var showBanner = deps.showBanner;
   var previewCtl = deps.previewCtl;
+  var guardCurrent = deps.guardCurrent;
   // Re-syncs the custom-select facades after this module re-points a hidden
   // select programmatically (.value writes fire no events).
   var syncSelects = deps.syncSelects || function() {};
@@ -15,7 +16,7 @@ function createSettingsModule(deps) {
   // The host applies settings on its UI thread and starts a bounded service
   // request in the background. Poll only its in-memory status, never the pipe.
   // Both entry points share one gate so a picker save cannot race a tab save.
-  function saveConfig(cfg, done) {
+  function saveConfig(cfg, done, isCurrent) {
     if (saving) return;
     saving = true;
     var ids = ['btn-save-settings', 'btn-reset-settings', 'cam-picker-confirm',
@@ -41,6 +42,7 @@ function createSettingsModule(deps) {
       finish(status);
     }
     setTimeout(function() {
+      if (isCurrent && !isCurrent()) { finish('cancelled'); return; }
       try {
         if (!H.BeginConfigSave(JSON.stringify(cfg))) { finish('save_failed'); return; }
       } catch(e) { finish('unknown'); return; }
@@ -250,19 +252,25 @@ function createSettingsModule(deps) {
     try { cfg = JSON.parse(H.GetConfig()); }
     catch(e) { pickerError('无法读取摄像头设置，请检查日志后重试。'); return; }
     cfg.camera_device = path;
+    var isCurrent = guardCurrent(function() { return true; });
+    var resumePreview = guardCurrent(function() {
+      showBanner('cam', '已选择摄像头，正在启动预览...', 'ok');
+      try { H.StopPreview(); } catch(e) {}
+      setTimeout(guardCurrent(previewCtl.restartPreview), 100);
+    });
     document.getElementById('cam-picker-confirm').textContent = '正在保存，请稍候…';
     saveConfig(cfg, function(status) {
       document.getElementById('cam-picker-confirm').textContent = '使用此摄像头';
+      if (status === 'cancelled') return;
       if (status === 'saved') {
         document.getElementById('cam-picker-overlay').classList.remove('active');
-        showBanner('cam', '已选择摄像头，正在启动预览...', 'ok');
-        // Restart preview with the newly chosen camera.
-        try { H.StopPreview(); } catch(e) {}
-        setTimeout(previewCtl.restartPreview, 100);
+        // Saving settings still completes, but camera work from a withdrawn
+        // consent cannot stop/restart a later preview or capture session.
+        resumePreview();
       } else {
         pickerError(configSaveError(status));
       }
-    });
+    }, isCurrent);
   }
 
   function onCamPickerSkip() {

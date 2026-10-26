@@ -217,18 +217,27 @@ function createUiCommon(deps) {
   // the new banner (a 4s message died at ~2.9s in practice). Timers stay
   // per-screen so a banner on another screen is never cut short.
   var bannerTimers = {};
+  function hideBanner(screen) {
+    if (bannerTimers[screen]) clearTimeout(bannerTimers[screen]);
+    bannerTimers[screen] = 0;
+    var el = document.getElementById(screen + '-banner');
+    el.className = 'banner';
+    el.textContent = '';
+  }
   function showBanner(screen, text, type, durationMs) {
+    hideBanner(screen);
     var el = document.getElementById(screen + '-banner');
     el.className = 'banner ' + type;
     el.textContent = text;
     // Optional duration override; default 4s. Guidance messages (e.g. the
     // lock-screen password-refresh hint) need longer to be readable.
     var ms = (typeof durationMs === 'number') ? durationMs : 4000;
-    if (bannerTimers[screen]) clearTimeout(bannerTimers[screen]);
-    bannerTimers[screen] = setTimeout(function() {
+    var timer = setTimeout(function() {
+      if (bannerTimers[screen] !== timer) return;
       el.className = 'banner';
       bannerTimers[screen] = 0;
     }, ms);
+    bannerTimers[screen] = timer;
   }
 
   function escapeHtml(s) {
@@ -238,8 +247,26 @@ function createUiCommon(deps) {
   // Single status line for the cam screen: an overlay pill on the video. All
   // capture states (guidance, angle/frame counts, liveness, completion) and
   // the idle hint render here — nothing else paints status text on this screen.
+  var captionRevision = 0;
   function setCaption(text) {
+    captionRevision++;
     document.getElementById('cam-caption').textContent = text;
+  }
+
+  // Preview owns starting/first-frame/failure status. A newer capture,
+  // cancellation or consent message takes precedence over its late first frame.
+  function beginPreviewStatus() {
+    setCaption('正在启动摄像头...');
+    var expected = captionRevision;
+    function update(text) {
+      if (captionRevision !== expected) return;
+      setCaption(text);
+      expected = captionRevision;
+    }
+    return {
+      ready: function() { update('准备就绪，点击“开始采集”录入人脸。'); },
+      failed: function() { update('预览启动失败，请检查摄像头和模型。'); }
+    };
   }
 
   // Enter submits the form the field belongs to. All screens share this
@@ -287,8 +314,10 @@ function createUiCommon(deps) {
     onModalCancel: onModalCancel,
     onModalMid: onModalMid,
     showBanner: showBanner,
+    hideBanner: hideBanner,
     escapeHtml: escapeHtml,
     setCaption: setCaption,
+    beginPreviewStatus: beginPreviewStatus,
     bindEnterKey: bindEnterKey,
     withBusy: withBusy
   };

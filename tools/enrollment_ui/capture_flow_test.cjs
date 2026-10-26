@@ -170,14 +170,21 @@ function previewFixture(initialFrame = 'jpeg-a') {
       transport.payloads++;
       return String(version) + '\x1e' + snapshot;
     }
-  }, showBanner() {} });
+  }, showBanner() {}, beginPreviewStatus: () => ({ ready() {}, failed() {} }) });
   preview.setConsentGranted(true);
   preview.restartPreview();
   return { counts, viewport, state, context, preview, loading, transport,
     imageRequests: () => imageRequests,
     load() { image.complete = true; image.onload(); },
+    imageCompletion: () => image.onload,
+    callbacks: () => [...pending.values()],
+    flush() {
+      const queued = [...pending.values()];
+      pending.clear();
+      for (const fn of queued) fn();
+    },
     poll() {
-      const entry = [...pending].find(([, fn]) => fn.name === 'renderFrame');
+      const entry = [...pending].find(([, fn]) => fn.name === 'renderFrameTick');
       assert.ok(entry, 'preview polling is scheduled');
       pending.delete(entry[0]);
       entry[1]();
@@ -373,6 +380,440 @@ test('withdraw revokes the session consent and clears the host record', () => {
   assert.equal(p.element('btn-consent-status').textContent, '未同意隐私说明');
 });
 
+for (const failure of ['refused', 'disconnected']) {
+  test('withdrawal failure remains retryable: ' + failure, () => {
+    let stops = 0, deletes = 0, lateCaptures = 0;
+    const rec = { noticeVersion: '1.0', record: { version: '1.0', time: '2026-01-02T03:04:05+08:00' } };
+    const p = page({ host: {
+      GetPrivacyConsent: () => JSON.stringify(rec),
+      WithdrawPrivacyConsent() {
+        deletes++;
+        if (failure === 'disconnected') throw new Error('service disconnected');
+        return false;
+      },
+      StopPreview() { stops++; }
+    } });
+    p.app.captureCtl.begin(true, 0);
+    p.app.captureCtl.scheduleNext(() => lateCaptures++);
+    const queued = [...p.timeouts.values()];
+    p.element('fld-pass').value = 'unsaved-password';
+    p.app.consent.withdraw();
+    for (const fn of queued) fn();
+    assert.equal(deletes, 1);
+    assert.ok(stops >= 1);
+    assert.equal(p.app.consent.granted(), false);
+    assert.equal(p.app.captureCtl.isActive(), false);
+    assert.equal(lateCaptures, 0);
+    assert.equal(p.element('fld-pass').value, '');
+    assert.ok(rec.record, 'retain consent record until deletion is confirmed');
+    assert.match(p.element('cam-banner').textContent, /未能确认/);
+    p.context.onConsentStatus();
+    assert.equal(p.element('modal-mid').textContent, '重试撤回');
+    p.context.onModalMid();
+    assert.equal(deletes, 2);
+  });
+}
+
+for (const hasRecord of [true, false]) {
+  test('reopened pending withdrawal blocks auto-resume and reconsent, record=' + hasRecord, () => {
+    let starts = 0, accepts = 0, retries = 0;
+    const rec = { noticeVersion: '1.0', withdrawalPending: true,
+      record: hasRecord ? { version: '1.0', time: '2026-01-02T03:04:05+08:00' } : null };
+    const host = {
+      GetPrivacyConsent: () => JSON.stringify(rec),
+      AcceptPrivacyConsent() { accepts++; return true; },
+      StartPreview() { starts++; return true; },
+      StopPreview() {},
+      WithdrawPrivacyConsent() { retries++; return false; }
+    };
+    const first = page({ grantConsent: false, host });
+    // A new page has no in-memory failure flag: only the persisted host state
+    // can stop startup from trusting the old consent record.
+    const p = page({ grantConsent: false, host });
+    for (const fn of [...p.timeouts.values()]) fn();
+    assert.equal(first.app.consent.granted(), false);
+    assert.equal(p.app.consent.granted(), false);
+    assert.equal(starts, 0);
+    assert.equal(p.element('btn-consent-status').textContent, '撤回处理中');
+    assert.equal(p.element('consent-overlay').classList.contains('active'), false);
+    p.element('consent-agree').checked = true;
+    p.context.onConsentAccept();
+    p.context.onCapture();
+    assert.equal(accepts, 0);
+    assert.equal(p.app.captureCtl.isActive(), false);
+    assert.equal(p.element('modal-mid').textContent, '重试撤回');
+    p.context.onModalMid();
+    assert.equal(retries, 1);
+    assert.equal(p.app.consent.granted(), false);
+    p.app.host.WithdrawPrivacyConsent = () => {
+      rec.withdrawalPending = false;
+      rec.record = null;
+      return true;
+    };
+    p.app.consent.withdraw();
+    assert.equal(p.element('btn-consent-status').textContent, '未同意隐私说明');
+    p.context.onConsentStatus();
+    assert.equal(p.element('modal-mid').textContent, '重新同意');
+    assert.equal(starts, 0, 'completed withdrawal never resumes the old preview callback');
+    p.context.onModalMid();
+    p.element('consent-agree').checked = true;
+    p.context.onConsentAccept();
+    assert.equal(accepts, 1);
+    assert.equal(p.app.consent.granted(), true);
+  });
+}
+
+for (const failure of ['write-refused', 'host-error']) {
+  test('failed acceptance never grants preview: ' + failure, () => {
+    let starts = 0;
+    const p = page({ grantConsent: false, host: {
+      GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.0', record: null }),
+      AcceptPrivacyConsent() {
+        if (failure === 'host-error') throw new Error('registry unavailable');
+        return false;
+      },
+      StartPreview() { starts++; return true; }
+    } });
+    p.element('consent-agree').checked = true;
+    p.context.onConsentAccept();
+    for (const fn of [...p.timeouts.values()]) fn();
+    assert.equal(p.app.consent.granted(), false);
+    assert.equal(starts, 0);
+    assert.match(p.element('cam-banner').textContent, /未能保存同意/);
+  });
+}
+
+test('immediate capture and reconsent clears the completed withdrawal banner', () => {
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview: () => true, StopPreview() {}, GetFaceCount: () => 0
+  } });
+  p.app.consent.withdraw();
+  assert.match(p.element('cam-banner').textContent, /已撤回同意/);
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  assert.equal(p.app.captureCtl.isActive(), true);
+  assert.equal(p.app.consent.granted(), true);
+  assert.equal(p.element('cam-banner').className, 'banner', 'old withdrawal message must not remain during new capture');
+});
+
+test('reconsent preserves a new preview failure against the old withdrawal timeout', () => {
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview: () => false, StopPreview() {}
+  } });
+  p.timeouts.clear();
+  p.app.consent.withdraw();
+  const oldTimeouts = [...p.timeouts.values()];
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  for (const fn of oldTimeouts) fn();
+  assert.equal(p.element('cam-banner').className, 'banner error');
+  assert.match(p.element('cam-banner').textContent, /预览启动失败/);
+  assert.equal(p.app.captureCtl.isActive(), false);
+});
+
+test('a late image completion after stopping preview cannot hide the blocked overlay', () => {
+  const p = previewFixture();
+  p.preview.stopLoop();
+  p.loading.style.display = 'flex';
+  p.load();
+  p.flush();
+  assert.equal(p.loading.style.display, 'flex');
+  assert.equal(p.counts.images, 0, 'revoked preview must not paint a late image');
+});
+
+test('old preview polling cannot create an extra loop after restart', () => {
+  const p = previewFixture();
+  const queued = p.callbacks();
+  p.preview.restartPreview();
+  const polls = p.transport.polls;
+  for (const fn of queued) fn();
+  assert.equal(p.transport.polls, polls, 'old poll must not access the host in the new session');
+});
+
+test('old preview image and overlay callbacks cannot finish a new viewing session', () => {
+  const p = previewFixture();
+  const oldImageLoaded = p.imageCompletion();
+  p.load();
+  const oldTimers = p.callbacks();
+  p.preview.stopLoop();
+  p.loading.style.display = 'flex';
+  p.preview.restartPreview();
+  const images = p.counts.images;
+  oldImageLoaded();
+  for (const fn of oldTimers) fn();
+  assert.equal(p.counts.images, images, 'old image must not repaint after a restart');
+  assert.equal(p.loading.style.display, 'flex', 'old hide timer must not dismiss the new loading overlay');
+  p.load();
+  p.flush();
+  assert.equal(p.loading.style.display, 'none', 'the new frame still completes the new session');
+});
+
+test('startup callbacks from the withdrawn consent cannot restart a newly granted capture', () => {
+  let starts = 0;
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview() { starts++; return true; }, StopPreview() {}, GetFaceCount: () => 0
+  } });
+  const queuedStartup = [...p.timeouts.values()];
+  p.app.consent.withdraw();
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  assert.equal(starts, 1);
+  for (const fn of queuedStartup) fn();
+  assert.equal(starts, 1, 'old startup work must not restart the new preview session');
+});
+
+for (const action of ['onSave', 'onAppendConfirm']) {
+  test('queued enrollment write is discarded across withdrawal and reconsent: ' + action, () => {
+    let validations = 0, writes = 0;
+    const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+    const p = page({ host: {
+      GetPrivacyConsent: () => JSON.stringify(rec),
+      WithdrawPrivacyConsent() { rec.record = null; return true; },
+      AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+      StartPreview: () => true, StopPreview() {},
+      ValidatePassword() { validations++; return true; },
+      SaveEnrollment() { writes++; return true; },
+      SaveEnrollmentAppend() { writes++; return true; }
+    } });
+    p.timeouts.clear();
+    p.element('fld-pass').value = 'synthetic-test-password';
+    p.app.enrollSave[action]();
+    const queuedWrites = [...p.timeouts.values()];
+    p.app.consent.withdraw();
+    p.context.onConsentStatus();
+    p.context.onModalMid();
+    p.element('consent-agree').checked = true;
+    p.context.onConsentAccept();
+    for (const fn of queuedWrites) fn();
+    assert.equal(validations, 0);
+    assert.equal(writes, 0);
+    assert.equal(p.element(action === 'onSave' ? 'btn-save' : 'btn-append').disabled, false);
+  });
+}
+
+test('a previous camera save cannot stop or restart capture after reconsent', () => {
+  let status = 'pending', starts = 0, stops = 0;
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview() { starts++; return true; }, StopPreview() { stops++; },
+    BeginConfigSave: () => true, GetConfigSaveStatus: () => status, GetFaceCount: () => 0
+  } });
+  p.timeouts.clear();
+  p.element('cam-picker-select').value = 'test-camera';
+  p.app.settings.onCamPickerConfirm();
+  runDeferred(p);
+  p.app.consent.withdraw();
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  const before = { starts, stops };
+  status = 'saved';
+  runDeferred(p);
+  runDeferred(p);
+  assert.deepEqual({ starts, stops }, before, 'old camera result must not change the new camera session');
+  assert.equal(p.app.captureCtl.isActive(), true);
+  assert.equal(p.element('cam-banner').className, 'banner');
+  assert.equal(p.element('cam-picker-confirm').disabled, false, 'old settings operation must still release its controls');
+});
+
+test('a queued camera change is cancelled before reaching the native host after withdrawal', () => {
+  let writes = 0;
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview: () => true, StopPreview() {}, GetFaceCount: () => 0,
+    BeginConfigSave() { writes++; return true; }
+  } });
+  p.timeouts.clear();
+  p.element('cam-picker-select').value = 'test-camera';
+  p.app.settings.onCamPickerConfirm();
+  const queued = [...p.timeouts.values()];
+  p.app.consent.withdraw();
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  for (const fn of queued) fn();
+  assert.equal(writes, 0, 'native config save would restart the camera before the JS completion guard');
+  assert.equal(p.element('cam-picker-confirm').disabled, false);
+  assert.equal(p.app.captureCtl.isActive(), true);
+});
+
+for (const action of ['withdraw', 'decline']) {
+  for (const outcome of ['frame-later', 'frame-immediate', 'start-failed']) {
+    test('status-button reconsent updates the caption: ' + action + ' / ' + outcome, () => {
+      let frameReady = outcome === 'frame-immediate';
+      const rec = { noticeVersion: '1.1', record: action === 'withdraw' ? { version: '1.1' } : null };
+      const p = page({ grantConsent: false, host: {
+        GetPrivacyConsent: () => JSON.stringify(rec),
+        WithdrawPrivacyConsent() { rec.record = null; return true; },
+        AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+        StartPreview: () => outcome !== 'start-failed', StopPreview() {},
+        GetLatestFrameAndFaces: () => frameReady ? '1\x1edata:image/jpeg;base64,FRAME\x1e[]' : ''
+      } });
+      p.timeouts.clear();
+      p.app.consent[action]();
+      assert.equal(p.element('cam-caption').textContent, '未同意隐私说明，摄像头已停止。');
+      p.context.onConsentStatus();
+      p.context.onModalMid();
+      p.element('consent-agree').checked = true;
+      p.context.onConsentAccept();
+      assert.equal(p.app.consent.granted(), true);
+      assert.equal(rec.record.version, '1.1');
+      assert.equal(p.app.captureCtl.isActive(), false, 'status reconsent resumes only preview');
+      if (outcome === 'start-failed') {
+        assert.match(p.element('cam-caption').textContent, /预览启动失败/);
+        return;
+      }
+      if (!frameReady) {
+        assert.match(p.element('cam-caption').textContent, /正在启动摄像头/);
+        frameReady = true;
+        const tick = [...p.timeouts.values()].find(fn => fn.name === 'renderFrameTick');
+        assert.ok(tick);
+        tick();
+      }
+      assert.match(p.element('cam-caption').textContent, /准备就绪/);
+      assert.doesNotMatch(p.element('cam-caption').textContent, /需要同意|撤回处理中/);
+    });
+  }
+}
+
+test('first preview frame must preserve newer capture instructions after reconsent', () => {
+  let frameReady = false;
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+    StartPreview: () => true, StopPreview() {}, GetFaceCount: () => 0,
+    GetLatestFrameAndFaces: () => frameReady ? '1\x1edata:image/jpeg;base64,FRAME\x1e[]' : ''
+  } });
+  p.app.consent.withdraw();
+  p.context.onCapture();
+  p.element('consent-agree').checked = true;
+  p.context.onConsentAccept();
+  assert.equal(p.app.captureCtl.isActive(), true);
+  const instruction = p.element('cam-caption').textContent;
+  assert.match(instruction, /请正对摄像头/);
+  frameReady = true;
+  [...p.timeouts.values()].find(fn => fn.name === 'renderFrameTick')();
+  assert.equal(p.element('cam-caption').textContent, instruction);
+});
+
+for (const remembered of [false, true]) {
+  test('startup caption follows first-frame readiness and survives idle polling: ' + remembered, () => {
+    let frameReady = false;
+    const rec = { noticeVersion: '1.1', record: remembered ? { version: '1.1' } : null };
+    const p = page({ grantConsent: false, host: {
+      GetPrivacyConsent: () => JSON.stringify(rec),
+      AcceptPrivacyConsent() { rec.record = { version: '1.1' }; return true; },
+      StartPreview: () => true,
+      GetCaptureStatus: () => JSON.stringify({ done: true, total: 0 }),
+      GetLatestFrameAndFaces: () => frameReady ? '1\x1edata:image/jpeg;base64,FRAME\x1e[]' : ''
+    } });
+    if (!remembered) {
+      p.element('consent-agree').checked = true;
+      p.context.onConsentAccept();
+    }
+    assert.match(p.element('cam-caption').textContent, /正在启动摄像头/);
+    runDeferred(p);
+    for (const fn of [...p.intervals.values()]) fn();
+    assert.equal(p.app.previewCtl.isReady(), false);
+    assert.match(p.element('cam-caption').textContent, /正在启动摄像头/);
+    frameReady = true;
+    [...p.timeouts.values()].find(fn => fn.name === 'renderFrameTick')();
+    for (const fn of [...p.intervals.values()]) fn();
+    assert.equal(p.app.previewCtl.isReady(), true);
+    assert.match(p.element('cam-caption').textContent, /准备就绪/);
+  });
+}
+
+for (const outcome of ['cancelled', 'failed']) {
+  test('late first frame preserves the terminal capture caption: ' + outcome, () => {
+    let frameReady = false;
+    const p = page({ host: {
+      StartPreview: () => true, GetFaceCount: () => 0,
+      GetLatestFrameAndFaces: () => frameReady ? '1\x1edata:image/jpeg;base64,FRAME\x1e[]' : ''
+    } });
+    p.app.previewCtl.restartPreview();
+    p.context.onCapture();
+    if (outcome === 'cancelled') p.context.onCapture();
+    else {
+      p.state.status = { done: true, livenessPassed: false, failureReason: 'no_face' };
+      [...p.intervals.values()].at(-1)();
+    }
+    const caption = p.element('cam-caption').textContent;
+    assert.match(caption, outcome === 'cancelled' ? /已采 0 帧/ : /采集失败/);
+    frameReady = true;
+    [...p.timeouts.values()].find(fn => fn.name === 'renderFrameTick')();
+    assert.equal(p.element('cam-caption').textContent, caption);
+  });
+}
+
+test('returning to preview replaces an old camera failure caption', () => {
+  let available = false;
+  const p = page({ host: {
+    StartPreview: () => available, StopPreview() {},
+    GetLatestFrameAndFaces: () => '1\x1edata:image/jpeg;base64,FRAME\x1e[]'
+  } });
+  p.app.previewCtl.restartPreview();
+  assert.match(p.element('cam-caption').textContent, /预览启动失败/);
+  p.app.nav.switchTab('logs');
+  available = true;
+  p.app.nav.switchTab('cam');
+  assert.match(p.element('cam-caption').textContent, /准备就绪/);
+});
+
+test('declining consent and returning to camera share one persistent state without duplicate banners', () => {
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.1', record: null }),
+    StopPreview() {}
+  } });
+  p.app.consent.decline();
+  const caption = p.element('cam-caption').textContent;
+  assert.equal(caption, '未同意隐私说明，摄像头已停止。');
+  assert.equal(p.element('cam-banner').className, 'banner');
+  p.app.nav.switchTab('logs');
+  p.app.nav.switchTab('cam');
+  assert.equal(p.element('cam-caption').textContent, caption);
+  assert.equal(p.element('cam-banner').className, 'banner');
+});
+
+test('returning to the camera does not replace a confirmed withdrawal result with a generic consent warning', () => {
+  const rec = { noticeVersion: '1.1', record: { version: '1.1' } };
+  const p = page({ host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { rec.record = null; return true; },
+    StopPreview() {}
+  } });
+  p.app.consent.withdraw();
+  const result = p.element('cam-banner').textContent;
+  assert.match(result, /已撤回同意/);
+  p.app.nav.switchTab('logs');
+  p.app.nav.switchTab('cam');
+  assert.equal(p.element('cam-banner').textContent, result);
+  assert.equal(p.element('cam-caption').textContent, '未同意隐私说明，摄像头已停止。');
+});
+
 test('the consent pill opens a status dialog with view and withdraw actions', () => {
   const rec = { noticeVersion: '1.0', record: { version: '1.0', time: '2026-01-02T03:04:05+08:00' } };
   const p = page({ host: {
@@ -387,13 +828,27 @@ test('the consent pill opens a status dialog with view and withdraw actions', ()
   assert.ok(!p.element('modal-overlay').classList.contains('active'));
 });
 
+test('an outdated notice can be withdrawn without accepting the new version', () => {
+  let withdrawn = 0;
+  const rec = { noticeVersion: '1.1', record: { version: '1.0', time: '2026-01-02T03:04:05+08:00' } };
+  const p = page({ grantConsent: false, host: {
+    GetPrivacyConsent: () => JSON.stringify(rec),
+    WithdrawPrivacyConsent() { withdrawn++; rec.record = null; return true; }
+  } });
+  p.context.onConsentStatus();
+  assert.equal(p.element('modal-mid').textContent, '撤回同意');
+  p.context.onModalMid();
+  assert.equal(withdrawn, 1);
+  assert.equal(p.app.consent.granted(), false);
+});
+
 test('the status dialog offers consent without a current record', () => {
   const p = page({ host: {
     GetPrivacyConsent: () => JSON.stringify({ noticeVersion: '1.0', record: null })
   } });
   p.app.consent.statusMenu();
   assert.equal(p.element('modal-message').textContent,
-               '尚未同意隐私说明；摄像头和采集启动前会先征求同意。');
+               '未同意隐私说明，摄像头已停止。点击“重新同意”可恢复预览。');
   assert.equal(p.element('modal-mid').textContent, '重新同意');
   assert.notEqual(p.element('modal-mid').style.display, 'none');
 });
@@ -404,8 +859,8 @@ for (const action of ['decline', 'withdraw']) {
     const rec = { noticeVersion: '1.0', record: null };
     const p = page({ grantConsent: false, host: {
       GetPrivacyConsent: () => JSON.stringify(rec),
-      AcceptPrivacyConsent() { accepts++; rec.record = { version: '1.0' }; },
-      WithdrawPrivacyConsent() { rec.record = null; },
+      AcceptPrivacyConsent() { accepts++; rec.record = { version: '1.0' }; return true; },
+      WithdrawPrivacyConsent() { rec.record = null; return true; },
       StartPreview() { starts++; return true; },
       StopPreview() {}
     } });

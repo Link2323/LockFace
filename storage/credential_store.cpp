@@ -5,6 +5,7 @@
 #include <shlobj.h>
 #include <fstream>
 #include <algorithm>
+#include <iterator>
 
 namespace facelogin {
 
@@ -20,6 +21,75 @@ static constexpr float kAmbiguousRatioLimit = 0.75f;
 
 // Helpers for V6 serialization
 namespace {
+
+// All product readers/writers use the same short-lived file lock. An obsolete
+// UI or learner snapshot must not restore records removed by another writer.
+class DatabaseLock {
+public:
+    explicit DatabaseLock(const std::wstring& root) {
+        const auto dir = root + L"\\data";
+        CreateDirectoryW(dir.c_str(), nullptr);
+        const auto path = dir + L"\\users.dat.lock";
+        for (unsigned i = 0; i < 80; ++i) {
+            handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE,
+                0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+            if (handle != INVALID_HANDLE_VALUE) break;
+            const DWORD error = GetLastError();
+            if (error != ERROR_SHARING_VIOLATION && error != ERROR_ACCESS_DENIED) break;
+            Sleep(25);
+        }
+    }
+    ~DatabaseLock() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+    bool valid() const { return handle != INVALID_HANDLE_VALUE; }
+private:
+    HANDLE handle = INVALID_HANDLE_VALUE;
+};
+
+bool ReadDiskSnapshot(const std::wstring& path, bool& exists, std::string& bytes) {
+    bytes.clear();
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        const DWORD error = GetLastError();
+        exists = false;
+        return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+    }
+    exists = true;
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file || file.tellg() < 0 || file.tellg() > 1024 * 1024) return false;
+    bytes.resize(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    if (!bytes.empty()) file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    return static_cast<bool>(file);
+}
+
+bool PurgeRecoveryFiles(const std::wstring& path) {
+    if (!DeleteFileW((path + L".bak").c_str())) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return false;
+    }
+    // Crash leftovers from our atomic saves, including legacy backup upgrades.
+    for (const auto& pattern : {path + L".tmp.*", path + L".bak.tmp.*"}) {
+        WIN32_FIND_DATAW entry{};
+        HANDLE search = FindFirstFileW(pattern.c_str(), &entry);
+        if (search == INVALID_HANDLE_VALUE) {
+            const DWORD error = GetLastError();
+            if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) continue;
+            return false;
+        }
+        bool ok = true;
+        do {
+            const auto candidate = path.substr(0, path.find_last_of(L"\\/") + 1) + entry.cFileName;
+            if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !DeleteFileW(candidate.c_str())) {
+                ok = false;
+                break;
+            }
+        } while (FindNextFileW(search, &entry));
+        if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = false;
+        FindClose(search);
+        if (!ok) return false;
+    }
+    return true;
+}
 
 // Default label for a face: L"脸N" where N = face id.
 inline std::wstring DefaultFaceLabel(uint32_t id) {
@@ -46,7 +116,14 @@ std::wstring CredentialStore::GetDataDir() const {
 }
 
 bool CredentialStore::LoadDatabase() {
-    return LoadDatabaseFile(GetDataDir() + L"\\data\\users.dat", false);
+    m_users.clear();
+    m_purgeBackupOnSave = false;
+    DatabaseLock lock(GetDataDir());
+    const auto path = GetDataDir() + L"\\data\\users.dat";
+    m_hasDiskSnapshot = false;
+    if (!lock.valid() || !LoadDatabaseFile(path, false)) return false;
+    m_hasDiskSnapshot = ReadDiskSnapshot(path, m_diskExists, m_diskSnapshot);
+    return m_hasDiskSnapshot;
 }
 
 bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegacy) {
@@ -224,11 +301,63 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
     return true;
 }
 
-bool CredentialStore::SaveDatabase() {
-    return SaveDatabaseFile(GetDataDir() + L"\\data\\users.dat");
+bool CredentialStore::SaveDatabase(bool refreshBackup) {
+    DatabaseLock lock(GetDataDir());
+    const auto path = GetDataDir() + L"\\data\\users.dat";
+    bool exists = false;
+    std::string bytes;
+    if (!lock.valid() || !ReadDiskSnapshot(path, exists, bytes)) return false;
+    if ((m_hasDiskSnapshot && (exists != m_diskExists || bytes != m_diskSnapshot)) ||
+        (!m_hasDiskSnapshot && exists)) {
+        FACELOGIN_ERROR(L"Database changed on disk; reload before saving stale records");
+        return false;
+    }
+    if (m_purgeBackupOnSave && !PurgeRecoveryFiles(path)) {
+        FACELOGIN_ERROR(L"Database save refused: recovery files could not be removed");
+        return false;
+    }
+    if (refreshBackup && !m_purgeBackupOnSave && exists &&
+        !CopyFileW(path.c_str(), (path + L".bak").c_str(), FALSE)) {
+        FACELOGIN_WARN(L"users.dat.bak refresh failed (%lu)", GetLastError());
+    }
+    if (!SaveDatabaseFile(path)) return false;
+    m_purgeBackupOnSave = false;
+    m_hasDiskSnapshot = ReadDiskSnapshot(path, m_diskExists, m_diskSnapshot);
+    return m_hasDiskSnapshot;
+}
+
+bool CredentialStore::DeletePersistedFace(const std::wstring& sid, uint32_t faceId) {
+    if (sid.empty()) return false;
+    DatabaseLock lock(GetDataDir());
+    const auto path = GetDataDir() + L"\\data\\users.dat";
+    if (!lock.valid() || !LoadDatabaseFile(path, false)) return false;
+    // Purge first: a successful primary commit must never leave recoverable
+    // application-owned backup records. Missing backup is already clean.
+    if (!PurgeRecoveryFiles(path)) {
+        FACELOGIN_ERROR(L"Privacy deletion refused: recovery file removal failed (%lu)", GetLastError());
+        return false;
+    }
+    const auto idx = FindUserIndex(sid);
+    if (idx < m_users.size()) {
+        if (faceId == 0) DeleteUserBySid(sid);
+        else {
+            const auto& faces = m_users[idx].faces;
+            const auto found = std::find_if(faces.begin(), faces.end(),
+                [faceId](const FaceRecord& face) { return face.id == faceId; });
+            if (found != faces.end()) DeleteFace(sid, faceId);
+        }
+    }
+    // Keep the deletion in memory even on commit failure; report failure so the
+    // UI can retry. Repeated requests are safe after a lost acknowledgement.
+    if (!SaveDatabaseFile(path)) return false;
+    m_purgeBackupOnSave = false;
+    m_hasDiskSnapshot = ReadDiskSnapshot(path, m_diskExists, m_diskSnapshot);
+    return m_hasDiskSnapshot;
 }
 
 bool CredentialStore::UpgradeLegacyPasswords() {
+    DatabaseLock lock(GetDataDir());
+    if (!lock.valid()) return false;
     if (!DpapiUtil::IsSystemContext()) {
         FACELOGIN_ERROR(L"Credential migration requires the SYSTEM service identity");
         return false;
@@ -493,6 +622,7 @@ bool CredentialStore::UpdateAccountIdentity(size_t idx,
         rec.upn      = upn;
         rec.sid      = sid;
         rec.encryptedPassword = encryptedPassword;
+        m_purgeBackupOnSave = true;
         FACELOGIN_INFO(L"Updated identity of '%s' → username=%s SID=%s UPN=%s (faces preserved)",
                        username.c_str(), username.c_str(), sid.c_str(), upn.c_str());
         return true;
@@ -532,6 +662,7 @@ bool CredentialStore::DeleteFace(const std::wstring& sid, uint32_t faceId) {
         return false;
     }
     rec.faces.erase(it, rec.faces.end());
+    m_purgeBackupOnSave = true;
     FACELOGIN_INFO(L"Deleted face #%u from %s (%zu remaining)",
                    faceId, rec.username.c_str(), rec.faces.size());
     if (rec.faces.empty()) {
@@ -559,6 +690,7 @@ bool CredentialStore::ClearFacesForAccount(const std::wstring& sid) {
     }
     size_t removed = m_users[idx].faces.size();
     m_users[idx].faces.clear();
+    m_purgeBackupOnSave = true;
     FACELOGIN_INFO(L"Cleared %zu face(s) from %s (SID=%s), account identity preserved",
                    removed, m_users[idx].username.c_str(), sid.c_str());
     return true;
@@ -572,6 +704,7 @@ bool CredentialStore::DeleteUserBySid(const std::wstring& sid) {
     }
     std::wstring username = m_users[idx].username;
     m_users.erase(m_users.begin() + static_cast<ptrdiff_t>(idx));
+    m_purgeBackupOnSave = true;
     FACELOGIN_INFO(L"Deleted user %s (SID=%s)", username.c_str(), sid.c_str());
     return true;
 }

@@ -202,9 +202,26 @@ void TestMalformedMessagesFailClosed() {
           "unknown message fails closed");
 }
 
+void TestDeletionMessages() {
+    std::wstring sid;
+    uint32_t id = 0;
+    const std::wstring prefix = L"DELETE_ENROLLMENT:S-1-5-21-111-222-333-1001:";
+    Check(facelogin::ipc::ParseDeleteEnrollment(prefix + L"0", sid, id) && id == 0 &&
+          sid == L"S-1-5-21-111-222-333-1001", "zero requests whole-account deletion");
+    Check(facelogin::ipc::ParseDeleteEnrollment(prefix + L"3", sid, id) && id == 3,
+          "positive id requests single-face deletion");
+    for (const auto& suffix : {L"", L"-1", L"+1", L"1:2", L"4294967296", L"1junk"}) {
+        Check(!facelogin::ipc::ParseDeleteEnrollment(prefix + suffix, sid, id) && sid.empty(),
+              "malformed deletion cannot yield a target");
+    }
+    Check(!facelogin::ipc::ParseDeleteEnrollment(L"DELETE_ENROLLMENT:bad-sid:0", sid, id),
+          "invalid SID fails closed");
+}
+
 } // namespace
 
 int wmain() {
+    TestDeletionMessages();
     TestMsaRoundTrip();
     TestLocalAccountRoundTrip();
     TestNonAsciiPasswordRoundTrip();

@@ -16,6 +16,7 @@ public:
     // Database reload retries busy/broken connections; configuration reload
     // allows worker startup. True requires the corresponding service OK.
     bool ReloadDatabase() const;
+    bool DeleteEnrollment(const std::wstring& sid, uint32_t faceId = 0) const;
     bool ReloadConfig() const;
     bool ProtectPassword(const std::wstring& password, std::vector<uint8_t>& encrypted) const;
     // Returns the service JSON snapshot or the existing JSON error response.

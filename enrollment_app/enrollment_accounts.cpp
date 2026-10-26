@@ -174,16 +174,16 @@ std::string EnrollmentAccounts::GetFacesJson() {
 bool EnrollmentAccounts::DeleteFace(int faceId) {
     m_saveStatus = "failed";
     if (faceId <= 0) return false;
-    if (!m_store.LoadDatabase()) return false;
-    if (!m_store.DeleteFace(m_identity.sid, static_cast<uint32_t>(faceId))) return false;
-    return SaveAndReload();
+    const bool confirmed = m_serviceClient.DeleteEnrollment(m_identity.sid, static_cast<uint32_t>(faceId));
+    m_saveStatus = confirmed ? "saved" : "failed";
+    return confirmed;
 }
 
 bool EnrollmentAccounts::ClearAllFaces() {
     m_saveStatus = "failed";
-    if (!m_store.LoadDatabase()) return false;
-    if (!m_store.ClearAllFaces(m_identity.sid)) return false;
-    return SaveAndReload();
+    const bool confirmed = m_serviceClient.DeleteEnrollment(m_identity.sid);
+    m_saveStatus = confirmed ? "saved" : "failed";
+    return confirmed;
 }
 
 bool EnrollmentAccounts::RenameFace(int faceId, const std::wstring& label) {

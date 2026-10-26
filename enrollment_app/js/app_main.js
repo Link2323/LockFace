@@ -23,11 +23,14 @@ function buildEnrollmentApp(deps) {
   var timers = deps.timers || window;
 
   var ui = createUiCommon({host: H});
-  var previewCtl = createPreview({host: H, showBanner: ui.showBanner});
-  var consent = createConsentGate({host: H, previewCtl: previewCtl, ui: ui});
+  var previewCtl = createPreview({host: H, showBanner: ui.showBanner,
+                                  beginPreviewStatus: ui.beginPreviewStatus});
   var captureCtl = createCaptureCtl({timers: timers});
+  var consent = createConsentGate({host: H, previewCtl: previewCtl, ui: ui,
+    onWithdraw: function() { captureUi.resetCaptureUi(); }});
   var nav = createNavigation({host: H, captureCtl: captureCtl,
-                              previewCtl: previewCtl, showBanner: ui.showBanner});
+                              previewCtl: previewCtl, showBanner: ui.showBanner,
+                              showConsentRequired: consent.showConsentRequired});
   var accountRefresh = createAccountRefreshModule({host: H, showBanner: ui.showBanner,
                                                    withBusy: ui.withBusy});
   var faces = createFacesModule({host: H, showBanner: ui.showBanner,
@@ -37,7 +40,9 @@ function buildEnrollmentApp(deps) {
                                  checkAccountRefresh: accountRefresh.check});
   var enrollSave = createEnrollSaveModule({host: H, showBanner: ui.showBanner,
                                            setCaption: ui.setCaption,
-                                           withBusy: ui.withBusy,
+                                           withBusy: function(buttons, spinner, work) {
+                                             ui.withBusy(buttons, spinner, consent.guardCurrent(work));
+                                           },
                                            captureCtl: captureCtl,
                                            showScreen: nav.showScreen,
                                            previewCtl: previewCtl});
@@ -52,6 +57,7 @@ function buildEnrollmentApp(deps) {
                                    showRefreshPrompt: accountRefresh.showRefreshPrompt});
   var settings = createSettingsModule({host: H, showBanner: ui.showBanner,
                                        previewCtl: previewCtl,
+                                       guardCurrent: consent.guardCurrent,
                                        syncSelects: deps.syncSelects});
   var logs = createLogsModule({host: H, escapeHtml: ui.escapeHtml});
   var theme = createThemeCtl({host: H});
@@ -156,27 +162,27 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
     // who switched away within the delay from powering the camera on
     // behind another screen. The prompt timers below keep their head start
     // so they still land before the camera takes over.
-    setTimeout(function() {
+    setTimeout(consent.guardCurrent(function() {
       if (nav.tab() === 'cam') previewCtl.restartPreview();
-    }, 450);
+    }), 450);
 
     // If the account was converted from MSA→local with a stale record, surface
     // the refresh prompt at startup (before the camera preview takes over).
-    setTimeout(function() { accountRefresh.check(); }, 150);
+    setTimeout(consent.guardCurrent(function() { accountRefresh.check(); }), 150);
 
     // First-run camera picker: if config has no camera_device AND multiple
     // cameras exist, prompt the user to choose one. Fresh installs (or users
     // who never touched settings) may not know the camera dropdown exists.
-    setTimeout(function() {
+    setTimeout(consent.guardCurrent(function() {
       try {
         var cfg = JSON.parse(H.GetConfig());
         if (!cfg.camera_device) settings.showCamPicker();
       } catch(e) {}
-    }, 300);
+    }), 300);
   });
 
   setInterval(function() {
-    if (!previewCtl.isViewing()) return;
+    if (!previewCtl.isReady()) return;
     if (captureCtl.isActive()) return;  // sequence in flight — the capture poll owns the tag
     try {
       var st = JSON.parse(H.GetCaptureStatus());
@@ -185,7 +191,7 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
       // don't resurrect it after the user asked to reset to zero. Same for
       // an ended capture flow: the total is stale once the
       // confirm/cancel/save screen was left.
-      if (st.done && !st.livenessChecking && !st.cancelled && captureCtl.canShowIdleTotal()) {
+      if (st.done && st.total > 0 && !st.livenessChecking && !st.cancelled && captureCtl.canShowIdleTotal()) {
         ui.setCaption('已采 ' + st.total + ' 帧');
       }
     } catch(e) {}

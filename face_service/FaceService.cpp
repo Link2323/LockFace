@@ -191,20 +191,51 @@ void FaceService::FlushLearnedTemplates() {
     if (!m_store) return;
     const int today = LocalDayStamp();
     EnterCriticalSection(&m_storeLock);
-    if (m_learningBakDay != today) {
-        m_learningBakDay = today;
-        const std::wstring src = m_dataDir + L"\\data\\users.dat";
-        const std::wstring dst = src + L".bak";
-        if (!CopyFileW(src.c_str(), dst.c_str(), FALSE)) {
-            FACELOGIN_WARN(L"users.dat.bak refresh failed (%lu) — updates still saved",
-                           GetLastError());
-        }
-    }
-    if (!m_store->SaveDatabase()) {
+    if (!m_store->SaveDatabase(m_learningBakDay != today)) {
         FACELOGIN_ERROR(L"Template learning flush: SaveDatabase failed "
                         L"(updates retained in memory)");
-    }
+    } else m_learningBakDay = today;
     LeaveCriticalSection(&m_storeLock);
+}
+
+void FaceService::StartTemplateLearner() {
+    {
+        TemplateLearner::Hooks hooks;
+        hooks.fetchTemplate = [this](const std::wstring& sid, uint32_t faceId,
+                                     TemplateLearner::TemplateSnapshot& out) {
+            EnterCriticalSection(&m_storeLock);
+            const auto& users = m_store->GetUsers();
+            for (const auto& u : users) {
+                if (u.sid != sid) continue;
+                for (const auto& f : u.faces) {
+                    if (f.id == faceId) {
+                        out.embedding = f.embedding;
+                        out.nominalYaw = f.nominalYaw;
+                        out.nominalPitch = f.nominalPitch;
+                        LeaveCriticalSection(&m_storeLock);
+                        return true;
+                    }
+                }
+            }
+            LeaveCriticalSection(&m_storeLock);
+            return false;
+        };
+        hooks.commit = [this](const LearningSample& s, const std::vector<float>& blended,
+                              float) {
+            EnterCriticalSection(&m_storeLock);
+            const bool ok = m_store->UpdateTemplateFace(s.sid, s.faceId, blended);
+            LeaveCriticalSection(&m_storeLock);
+            return ok;
+        };
+        hooks.flush = [this]() { FlushLearnedTemplates(); };
+        LearningConfig learning;
+        learning.enabled = m_config.ema_learning;
+        learning.alpha = m_config.learning_alpha;
+        learning.distanceGate = m_config.learning_distance_gate;
+        learning.normFloor = m_config.learning_norm_floor;
+        learning.minIntervalSec = m_config.learning_min_interval_sec;
+        m_learner = std::make_unique<TemplateLearner>(learning, std::move(hooks));
+    }
 }
 
 // Learner handoff. Public-pipe thread only. The era distance windows live
@@ -356,43 +387,7 @@ bool FaceService::Initialize() {
     // serialize CredentialStore access under m_storeLock (single writer).
     InitializeCriticalSection(&m_storeLock);
     m_storeLockReady = true;
-    {
-        TemplateLearner::Hooks hooks;
-        hooks.fetchTemplate = [this](const std::wstring& sid, uint32_t faceId,
-                                     TemplateLearner::TemplateSnapshot& out) {
-            EnterCriticalSection(&m_storeLock);
-            const auto& users = m_store->GetUsers();
-            for (const auto& u : users) {
-                if (u.sid != sid) continue;
-                for (const auto& f : u.faces) {
-                    if (f.id == faceId) {
-                        out.embedding = f.embedding;
-                        out.nominalYaw = f.nominalYaw;
-                        out.nominalPitch = f.nominalPitch;
-                        LeaveCriticalSection(&m_storeLock);
-                        return true;
-                    }
-                }
-            }
-            LeaveCriticalSection(&m_storeLock);
-            return false;
-        };
-        hooks.commit = [this](const LearningSample& s, const std::vector<float>& blended,
-                              float) {
-            EnterCriticalSection(&m_storeLock);
-            const bool ok = m_store->UpdateTemplateFace(s.sid, s.faceId, blended);
-            LeaveCriticalSection(&m_storeLock);
-            return ok;
-        };
-        hooks.flush = [this]() { FlushLearnedTemplates(); };
-        LearningConfig learning;
-        learning.enabled = m_config.ema_learning;
-        learning.alpha = m_config.learning_alpha;
-        learning.distanceGate = m_config.learning_distance_gate;
-        learning.normFloor = m_config.learning_norm_floor;
-        learning.minIntervalSec = m_config.learning_min_interval_sec;
-        m_learner = std::make_unique<TemplateLearner>(learning, std::move(hooks));
-    }
+    StartTemplateLearner();
 
     m_pipeServer = std::make_unique<PipeServer>();
 
@@ -482,6 +477,25 @@ void FaceService::Run() {
             }
             SecureClearWString(request);
             SendControlResponse(response);
+            m_pipeServer->Disconnect();
+        }
+        else if (request.compare(0, wcslen(ipc::MSG_DELETE_ENROLLMENT_PREFIX),
+                                 ipc::MSG_DELETE_ENROLLMENT_PREFIX) == 0) {
+            std::wstring sid;
+            uint32_t faceId = 0;
+            bool deleted = false;
+            if (m_pipeServer->IsClientPrivileged() &&
+                ipc::ParseDeleteEnrollment(request, sid, faceId)) {
+                // Join before deletion so queued/in-flight samples and historical
+                // embeddings cannot survive withdrawal or a later re-enrollment.
+                m_learner.reset();
+                EnterCriticalSection(&m_storeLock);
+                deleted = m_store->DeletePersistedFace(sid, faceId);
+                LeaveCriticalSection(&m_storeLock);
+                StartTemplateLearner();
+            }
+            SendControlResponse(deleted ? ipc::MSG_DELETE_ENROLLMENT_OK
+                                        : ipc::MSG_DELETE_ENROLLMENT_ERROR);
             m_pipeServer->Disconnect();
         }
         else if (request == ipc::MSG_RELOAD_DB) {

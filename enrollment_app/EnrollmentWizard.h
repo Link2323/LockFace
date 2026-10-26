@@ -78,6 +78,8 @@ public:
     bool DeleteFace(int faceId);
     // Remove all faces of the current account (= remove the account).
     bool ClearAllFaces();
+    // Stops capture, discards unsaved proof, then removes this account via service.
+    bool WithdrawPrivacyConsent();
     // Rename one face of the current account.
     bool RenameFace(int faceId, const std::wstring& label);
     std::string GetAccountSaveStatus() const;

@@ -147,6 +147,34 @@ static bool IsSystemServicePipe(HANDLE pipe) {
     return system;
 }
 
+bool EnrollmentServiceClient::DeleteEnrollment(const std::wstring& sid, uint32_t faceId) const {
+    const std::wstring request = std::wstring(ipc::MSG_DELETE_ENROLLMENT_PREFIX) +
+        sid + L":" + std::to_wstring(faceId);
+    std::wstring parsedSid;
+    uint32_t parsedId = 0;
+    if (!ipc::ParseDeleteEnrollment(request, parsedSid, parsedId)) return false;
+    // Retry is safe even if the first acknowledgement was lost.
+    for (unsigned attempt = 0; attempt < 5; ++attempt) {
+        HANDLE pipe = CreateFileW(m_pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+            nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+        if (pipe == INVALID_HANDLE_VALUE) {
+            if (GetLastError() != ERROR_PIPE_BUSY) return false;
+            WaitNamedPipeW(m_pipeName.c_str(), 1000);
+            continue;
+        }
+        DWORD mode = PIPE_READMODE_MESSAGE;
+        if (!IsSystemServicePipe(pipe) || !SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
+            CloseHandle(pipe);
+            FACELOGIN_ERROR(L"Privacy deletion refused: unverified service endpoint");
+            return false;
+        }
+        const auto outcome = RequestAckRoundTrip(pipe, request, 5000, 25, L"privacy deletion");
+        CloseHandle(pipe);
+        if (outcome.ok) return outcome.response == ipc::MSG_DELETE_ENROLLMENT_OK;
+    }
+    return false;
+}
+
 bool EnrollmentServiceClient::ProtectPassword(const std::wstring& password,
                                              std::vector<uint8_t>& encrypted) const {
     encrypted.clear();

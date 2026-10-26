@@ -1,5 +1,5 @@
 // Screen and tab navigation; owns the current-tab tracker. deps:
-// {host, captureCtl, previewCtl, showBanner}. Tab-entry loaders (settings/
+// {host, captureCtl, previewCtl, showBanner, showConsentRequired}. Tab-entry loaders (settings/
 // faces/logs) are deliberately NOT deps — each of those modules needs
 // switchTab, so depending on them here would be a cycle; they register their
 // loaders through onEnter in the composition root instead.
@@ -58,7 +58,7 @@ function createNavigation(deps) {
       if (previewCtl.consentGranted()) {
         previewCtl.restartPreview();
       } else {
-        showBanner('cam', '请先同意隐私说明，摄像头才会启动。', 'error', 6000);
+        deps.showConsentRequired();
       }
     }
     if (enterHooks[name]) enterHooks[name]();

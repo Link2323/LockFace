@@ -11,7 +11,7 @@ import (
 // ConsentVersion is the version of docs/legal/privacy-notice.txt the installer
 // requires the user to accept. consent_test.go pins it to the canonical text so
 // the recorded version cannot drift from what the installer displayed.
-const ConsentVersion = "1.0"
+const ConsentVersion = "1.1"
 
 const (
 	// Registry values written under HKLM\SOFTWARE\LockFace. The key is

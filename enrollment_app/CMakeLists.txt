@@ -39,6 +39,7 @@ add_library(facelogin_enrollment_support STATIC
     service_client.cpp
     log_viewer.cpp
     enrollment_accounts.cpp
+    privacy_withdrawal.cpp
 )
 target_link_libraries(facelogin_enrollment_support
     PUBLIC facelogin_common facelogin_credential_store)

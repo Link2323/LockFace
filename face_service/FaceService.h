@@ -72,6 +72,7 @@ private:
     // service shutdown: takes the store lock, writes the daily users.dat.bak
     // on the first flush of a local day, then SaveDatabase().
     void FlushLearnedTemplates();
+    void StartTemplateLearner();
 
     // Record the round's distance in the user's rolling window, compute the
     // era p20 for the adaptive update gate, and hand the sample to the

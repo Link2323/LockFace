@@ -605,6 +605,72 @@ void TestLegacyPasswordMigration() {
     CleanupTempRoot(root);
 }
 
+void TestPrivacyDeletion() {
+    const auto root = MakeTempRoot();
+    Check(!root.empty(), "create privacy fixture");
+    if (root.empty()) return;
+    const auto path = root + L"\\data\\users.dat";
+    facelogin::CredentialStore service;
+    service.SetDataDir(root);
+    Check(service.AddFace(L"alice", L"", L"SID-A", {1, 2}, Basis(0)) &&
+          service.AddFace(L"alice", L"", L"SID-A", {}, Basis(1)) &&
+          service.AddFace(L"bob", L"", L"SID-B", {3, 4}, Basis(2)) && service.SaveDatabase(),
+          "seed two independent accounts");
+    facelogin::CredentialStore staleUi, staleLearner;
+    staleUi.SetDataDir(root);
+    staleLearner.SetDataDir(root);
+    Check(staleUi.LoadDatabase() && staleLearner.LoadDatabase(), "retain old UI and learner snapshots");
+    Check(CopyFileW(path.c_str(), (path + L".bak").c_str(), FALSE), "seed old backup");
+    // Locked backups must fail explicitly and leave the primary unchanged.
+    const auto before = ReadDatabaseBytes(root);
+    HANDLE held = CreateFileW((path + L".bak").c_str(), GENERIC_READ, FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, 0, nullptr);
+    Check(held != INVALID_HANDLE_VALUE, "hold backup to simulate deletion failure");
+    Check(!service.DeletePersistedFace(L"SID-A") && ReadDatabaseBytes(root) == before,
+          "backup failure cannot acknowledge a completed deletion");
+    if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
+    for (const auto& suffix : {L".tmp.crash", L".bak.tmp.crash"}) {
+        Check(CopyFileW(path.c_str(), (path + suffix).c_str(), FALSE), "seed interrupted-save residue");
+    }
+    Check(service.DeletePersistedFace(L"SID-A", 1), "service deletes a single face");
+    Check(service.GetFaceCount(L"SID-A") == 1 && service.GetFaceCount(L"SID-B") == 1,
+          "single-face deletion preserves other faces and other accounts");
+    Check(GetFileAttributesW((path + L".bak").c_str()) == INVALID_FILE_ATTRIBUTES &&
+          GetFileAttributesW((path + L".tmp.crash").c_str()) == INVALID_FILE_ATTRIBUTES &&
+          GetFileAttributesW((path + L".bak.tmp.crash").c_str()) == INVALID_FILE_ATTRIBUTES,
+          "deletion removes backups and interrupted-save residues");
+    Check(!staleUi.SaveDatabase() && !staleLearner.SaveDatabase(true),
+          "stale UI and learner cannot restore a deleted face or recreate an old backup");
+    Check(service.DeletePersistedFace(L"SID-A", 1), "lost single-delete ACK can be retried");
+    Check(service.DeletePersistedFace(L"SID-A") && service.DeletePersistedFace(L"SID-A"),
+          "withdrawal is idempotent even when the account is already absent");
+    Check(service.LoadDatabase() && service.GetUserCount() == 1 &&
+          service.GetUsers()[0].sid == L"SID-B" && service.GetUsers()[0].encryptedPassword == std::vector<uint8_t>({3, 4}),
+          "withdrawal removes the entire target credential and preserves other credentials");
+    Check(service.SaveDatabase(true), "learning can resume after deletion");
+    facelogin::CredentialStore copy;
+    const auto backupRoot = MakeTempRoot();
+    copy.SetDataDir(backupRoot);
+    CreateDirectoryW((backupRoot + L"\\data").c_str(), nullptr);
+    Check(CopyFileW((path + L".bak").c_str(), (backupRoot + L"\\data\\users.dat").c_str(), FALSE) &&
+          copy.LoadDatabase() && copy.GetFaceCount(L"SID-A") == 0 && copy.GetFaceCount(L"SID-B") == 1,
+          "later daily backup cannot retain the withdrawn account");
+    Check(CopyFileW(path.c_str(), (path + L".bak").c_str(), FALSE) &&
+          service.ClearFacesForAccount(L"SID-B") &&
+          service.AddFace(L"bob", L"", L"SID-B", {}, Basis(3)) && service.SaveDatabase() &&
+          GetFileAttributesW((path + L".bak").c_str()) == INVALID_FILE_ATTRIBUTES,
+          "multi-angle replacement also purges the superseded template backup");
+    // A failed primary replacement never reports success; retry completes later.
+    held = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    Check(held != INVALID_HANDLE_VALUE, "hold primary to simulate commit failure");
+    Check(!service.DeletePersistedFace(L"SID-B"), "failed primary commit is reported");
+    if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
+    Check(service.DeletePersistedFace(L"SID-B") && service.LoadDatabase() && service.GetUserCount() == 0,
+          "retry after commit failure persists an empty database");
+    CleanupTempRoot(backupRoot);
+    CleanupTempRoot(root);
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -638,6 +704,7 @@ int wmain(int argc, wchar_t** argv) {
         return rejected ? 0 : 1;
     }
     if (argc != 1) return 2;
+    TestPrivacyDeletion();
     TestIdentityScopedProtection();
     TestAtomicSaveFailure();
     TestLegacyPasswordMigration();
