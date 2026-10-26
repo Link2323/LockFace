@@ -70,6 +70,24 @@ function createUiCommon(deps) {
     return blocks;
   }
 
+  function modelLicenseBlocks(text) {
+    var blocks = [];
+    text.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/).forEach(function(paragraph, index) {
+      var lines = paragraph.split('\n').map(function(line) { return line.trim(); }).filter(Boolean);
+      if (!lines.length) return;
+      if (index === 0) {
+        blocks.push({ kind: 'title', text: normalizeParagraph(paragraph) });
+      } else if (lines[0].indexOf('模型：') === 0) {
+        blocks.push({ kind: 'heading', text: lines[0] });
+        if (lines.length > 1) blocks.push({ kind: 'items', items: lines.slice(1) });
+      } else {
+        blocks.push({ kind: lines[0].indexOf('LockFace 自有代码') === 0 ? 'callout' : 'paragraph',
+                      text: normalizeParagraph(paragraph) });
+      }
+    });
+    return blocks;
+  }
+
   function makeDocumentBlock(block) {
     var el;
     if (block.kind === 'items') {
@@ -97,17 +115,17 @@ function createUiCommon(deps) {
     return el;
   }
 
-  function renderLicenseDocument(content, text, isPrivacy) {
-    if (!isPrivacy) {
-      // Upstream license texts must display verbatim; PRIVACY.txt is the only
-      // document written for structured rendering.
+  function renderLicenseDocument(content, text, path) {
+    if (path !== 'PRIVACY.txt' && path !== 'MODEL_LICENSES.txt') {
+      // Upstream license texts display verbatim. Our privacy notice and model
+      // license summary share structured document typography.
       content.classList.remove('license-document');
       content.textContent = text;
       return;
     }
     content.classList.add('license-document');
     content.textContent = '';
-    var blocks = privacyBlocks(text);
+    var blocks = path === 'PRIVACY.txt' ? privacyBlocks(text) : modelLicenseBlocks(text);
     var fragment = document.createDocumentFragment();
     blocks.forEach(function(block) {
       fragment.appendChild(makeDocumentBlock(block));
@@ -124,7 +142,7 @@ function createUiCommon(deps) {
     content.textContent = '正在读取许可文件…';
     try {
       var text = H.GetLicenseDocument(button.dataset.license);
-      renderLicenseDocument(content, text, button.dataset.license === 'PRIVACY.txt');
+      renderLicenseDocument(content, text, button.dataset.license);
     } catch (e) {
       content.textContent = '无法读取许可文件：' + (e && e.message ? e.message : String(e));
     }

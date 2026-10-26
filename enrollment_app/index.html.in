@@ -422,7 +422,7 @@
   <div class="license-modal">
     <div class="license-head">
       <h2 id="license-title">许可声明</h2>
-      <button onclick="closeLicenseViewer()">关闭</button>
+      <button class="btn btn-secondary" onclick="closeLicenseViewer()">关闭</button>
     </div>
     <div class="license-docs" role="tablist" aria-label="许可文件">
       <button class="active" data-license="LICENSE.txt" onclick="showLicenseDocument(this)">项目许可</button>
