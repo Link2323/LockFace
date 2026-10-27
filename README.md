@@ -4,7 +4,7 @@
 
 <h1 align="center">LockFace</h1>
 
-<p align="center">用普通摄像头登录 Windows</p>
+<p align="center">Sign in to Windows with an ordinary camera</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4" alt="Windows 10 / 11 x64">
@@ -12,50 +12,53 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
-LockFace 给 Windows 登录界面加了一个“人脸登录”选项。按下任意键，人脸识别通过后进入桌面。USB 摄像头或笔记本内置摄像头都可以使用，不需要专用红外摄像头。
+English · [简体中文](README.zh-CN.md)
 
-- **本地运行**：检测、人脸匹配和活体判断都在本机完成，不上传人脸信息，不保存照片或视频。
-- **多角度录入**：支持正面、左转和右转三个角度。
-- **按需开相机**：发起识别后才打开摄像头，锁屏等待时不采集画面。
-- **支持本地和微软账户**：需要账户有 Windows 登录密码；原有密码登录方式保留。
+LockFace adds a "face sign-in" option to the Windows sign-in screen. Press any key, and once your face is recognized you are on the desktop. A USB webcam or a laptop's built-in camera works — no dedicated infrared camera required.
 
-## 使用
+- **Runs locally.** Face detection, matching and liveness checks all happen on your PC. Face data never leaves the machine, and no photos or videos are saved.
+- **Multi-angle enrollment.** Front, left and right views.
+- **Camera on demand.** The camera is activated only when recognition starts; the lock screen captures nothing while it waits.
+- **Local and Microsoft accounts.** Accounts need a Windows sign-in password; the normal password sign-in path stays untouched.
+- **Bilingual interface.** English and Simplified Chinese, chosen automatically from the system language or set manually.
 
-需要 Windows 10 21H2+ / Windows 11（x64）、摄像头和管理员权限。识别速度与稳定性受 CPU、摄像头和光线影响。
+## Getting started
 
-1. 从 [Releases](https://github.com/Link2323/LockFace/releases) 下载 `LockFaceSetup.exe` 并安装，建议保留默认安装目录。
-2. 以管理员身份打开 `LockFaceConsole.exe`，阅读隐私说明，按提示采集人脸并输入 Windows 账户密码保存。
-3. 按 `Win + L` 锁屏，按下任意普通按键开始识别。
+You need Windows 10 21H2+ or Windows 11 (x64), a camera, and administrator rights. Recognition speed and reliability depend on your CPU, camera and lighting.
 
-安装或识别遇到问题，参阅[故障排查](docs/operations/operations.md)，其中包含相机占用、日志位置和 Windows 智能应用控制拦截等情况。
+1. Download `LockFaceSetup.exe` from [Releases](https://github.com/Link2323/LockFace/releases) and install it. Keeping the default installation directory is recommended.
+2. Run `LockFaceConsole.exe` as administrator, read the privacy notice, then follow the prompts to capture your face and save your Windows account password.
+3. Press `Win + L` to lock the screen, then press any key to start recognition.
 
-卸载时重新运行安装程序，切换到“卸载”页，或运行卸载程序，会清理程序和保存的人脸数据。
+If installation or recognition misbehaves, see [troubleshooting](docs/operations/operations.md) (in Chinese) — it covers camera conflicts, log locations, Smart App Control blocks and more.
 
-## 密码与隐私
+To uninstall, run the installer again and switch to its "Uninstall" page, or run the uninstaller; both remove the program and the saved face data.
 
-LockFace 通过 Windows Credential Provider 完成登录，因此需要在本机保存账户凭据。保存的内容包括账户标识、人脸特征向量和加密后的 Windows 密码。密码由 SYSTEM 服务使用 Windows DPAPI 用户作用域保护，数据目录仅允许 SYSTEM 和管理员访问。
+## Passwords and privacy
 
-普通摄像头配合双模型活体检测，可以降低照片和屏幕回放攻击的成功率，但不保证防住所有攻击。密码加密无法抵抗 SYSTEM 权限被攻破或整盘离线攻击。请保留账户密码，不要在高安全要求的环境中依赖本软件。
+LockFace signs you in through a Windows Credential Provider, which is why account credentials must be stored on the machine: account identifiers, face templates (feature vectors) and the encrypted Windows password. The password is protected by the SYSTEM service with Windows DPAPI in user scope, and the data directory grants access only to SYSTEM and Administrators.
 
-[完整隐私说明](docs/legal/privacy-notice.txt) · [凭据存储与保护](docs/contracts/users-dat.md)
+Liveness detection on an ordinary camera uses two models, which lowers — but does not eliminate — the success rate of photo and screen-replay attacks. Password encryption does not hold up against a compromised SYSTEM account or offline full-disk attacks. Keep your account password, and do not rely on this software in high-security settings.
 
-## 开发与反馈
+[Privacy notice (English)](docs/legal/privacy-notice.en.txt) · [Privacy notice (Chinese, canonical)](docs/legal/privacy-notice.txt) · [Credential storage and protection](docs/contracts/users-dat.md) (in Chinese)
 
-核心使用 C++20，安装器使用 Go / Wails 和 Vue，录入界面使用 WebView2。模型推理基于 ONNX Runtime。
+## Development and feedback
 
-| 文档 | 内容 |
+The core is C++20; the installer is Go/Wails with a Vue frontend; the enrollment UI runs on WebView2. Inference is powered by ONNX Runtime. The deeper documentation is currently written in Chinese.
+
+| Document | Contents |
 |---|---|
-| [开发导航](DEVELOPMENT.md) | 代码入口、模块边界、验证命令 |
-| [构建指南](docs/BUILD.md) | 编译、模型准备、安装包构建 |
-| [认证服务](docs/modules/face-service.md) | 认证流程与摄像头生命周期 |
-| [Windows 客户端](docs/modules/windows-clients.md) | 登录界面与人脸录入 |
-| [安装器](docs/modules/installer.md) | 安装、升级与卸载 |
-| [模型许可](docs/model-licenses.md) | 模型来源与分发条件 |
+| [Development navigation](DEVELOPMENT.md) (in Chinese) | code entry points, module boundaries, verification commands |
+| [Build guide](docs/BUILD.md) (in Chinese) | compiling, model preparation, building the installer |
+| [Authentication service](docs/modules/face-service.md) (in Chinese) | authentication flow and camera lifecycle |
+| [Windows clients](docs/modules/windows-clients.md) (in Chinese) | lock screen and enrollment |
+| [Installer](docs/modules/installer.md) (in Chinese) | installing, upgrading and uninstalling |
+| [Model licenses](docs/model-licenses.md) (in Chinese) | model provenance and redistribution terms |
 
-欢迎提交 Issue 或 PR。报告识别问题时，请附上摄像头型号、CPU、Windows 版本、光线条件和复现步骤，便于排查。日志中可能含账户标识，提交前请先脱敏，不要上传密码、人脸数据或凭据数据库。
+Issues and pull requests are welcome. When reporting recognition problems, please include your camera model, CPU, Windows version, lighting conditions and reproduction steps. Logs may contain account identifiers — redact them before submitting, and never upload passwords, face data or the credential database.
 
-## 致谢与许可
+## Credits and license
 
-LockFace 源自 [EthanZer0/FaceLogin](https://github.com/EthanZer0/FaceLogin)，自 2026 年 10 月起独立维护。
+LockFace started from [EthanZer0/FaceLogin](https://github.com/EthanZer0/FaceLogin) and has been maintained independently since October 2026.
 
-自有代码使用 [MIT License](LICENSE)，© 2026 Link2323 & EthanZer0。第三方代码与预训练模型遵守各自许可，详见[第三方声明](THIRD_PARTY_NOTICES.txt)和[模型许可](docs/model-licenses.md)。
+The project's own code is released under the [MIT License](LICENSE), © 2026 Link2323 & EthanZer0. Third-party code and pretrained models keep their own licenses — see [third-party notices](THIRD_PARTY_NOTICES.txt) and [model licenses](docs/model-licenses.md).

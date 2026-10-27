@@ -1,12 +1,12 @@
-﻿# Sync the version string across ALL 5 locations (docs/BUILD.md "版本号与版本资源"):
-#   in git    : CMakeLists.txt project(VERSION), wails.json Info, main.go appVersion, README badge
+﻿# Sync the version string across ALL 4 locations (docs/BUILD.md "版本号与版本资源"):
+#   in git    : CMakeLists.txt project(VERSION), wails.json Info, main.go appVersion
 #   disk-only : installer/LockFaceSetup/build/windows/info.json (gitignored)
 #
 #   powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 1.8.1-multi-angle
 #   add -Dry to preview every replacement without writing.
 #
 # Numeric part (x.y.z) goes into exe/registry version resources; the -suffix
-# only shows up in the README badge and the release tag. Every pattern is
+# only shows up in the release tag. Every pattern is
 # count-validated: a missed location fails loudly instead of silently drifting.
 # (AGENTS.md carried a version tag once, but its 2026-10 rewrite dropped the
 # marker text entirely — it is no longer a sync target.)
@@ -23,9 +23,6 @@ if ($Version -notmatch '^(?<num>\d+\.\d+\.\d+)(?:-(?<suf>[A-Za-z0-9.-]+))?$') {
 $num = $Matches['num']
 $display = if ($Matches['suf']) { "$num-$($Matches['suf'])" } else { $num }
 $root = Split-Path $PSScriptRoot -Parent
-
-# README badge text: shields.io escaping ('-' -> '--', ' ' -> '%20'), trailing product note kept.
-$badge = ($display + " (LockFace)").Replace('-', '--').Replace(' ', '%20')
 
 function Update-File {
     param([string]$Path, [object[]]$Rules)
@@ -66,10 +63,6 @@ Update-File "installer/LockFaceSetup/main.go" @(
     @{ Pattern = 'const appVersion = "[^"]+"'; Replacement = "const appVersion = `"$num`""; Expect = 1 }
 )
 
-Update-File "README.md" @(
-    @{ Pattern = 'version-[^" ]*?-green'; Replacement = "version-$badge-green"; Expect = 1 }
-)
-
 Update-File "installer/LockFaceSetup/build/windows/info.json" @(
     @{ Pattern = '"file_version":\s*"[\d.]+"'; Replacement = "`"file_version`": `"$num`""; Expect = 1 },
     @{ Pattern = '"ProductVersion":\s*"[\d.]+"'; Replacement = "`"ProductVersion`": `"$num`""; Expect = 1 },
@@ -78,6 +71,6 @@ Update-File "installer/LockFaceSetup/build/windows/info.json" @(
 
 Write-Host ""
 Write-Host "notes:"
-Write-Host "  - info.json is gitignored (disk-only); the other 4 changes are committable."
+Write-Host "  - info.json is gitignored (disk-only); the other 3 changes are committable."
 Write-Host "  - run scripts/build_installer.ps1 to bake the new version into the binaries/installer."
 Write-Host "  - release tag: $display (no v prefix; push tags to the fork only)."
