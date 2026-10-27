@@ -1,5 +1,5 @@
 // Native UI catalog. Each entry is {source Chinese, English}.
-{L"按下任意按键以开始人脸识别", L"Press any key to scan your face"},
+{L"按下任意按键以开始人脸识别", L"Press any key to start face sign-in"},
 {L"识别超时，请重试", L"Recognition timed out. Try again"},
 {L"人脸登录服务不可用", L"Face sign-in service unavailable"},
 {L"人脸登录", L"Face sign-in"},

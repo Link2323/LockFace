@@ -2,7 +2,7 @@ LockFace Face Recognition Privacy Notice and Informed Consent
 
 Version: 1.1
 Effective date: October 26, 2026
-Applicable software: LockFace 1.9.0 and later (including the installer, LockFaceService, LockFaceCredentialProvider, LockFaceConsole and related components)
+Applicable software: LockFace 1.9.1 and later (including the installer, LockFaceService, LockFaceCredentialProvider, LockFaceConsole and related components)
 
 Important: Face information used to identify a person is sensitive personal information or special-category personal data under applicable law. Read and acknowledge this notice before enrollment. Installation requires acknowledgment of reading; processing your own face requires separate consent during enrollment. Article 6 describes the scope of consent; Article 7 describes deletion and withdrawal.
 
@@ -36,7 +36,7 @@ Article 3. Information processed and camera activation
 
 3.2 The Software does not save face photos, videos or raw camera frames. It does not collect fingerprints, identity documents, location, contacts, messages or other personal information unrelated to sign-in verification.
 3.3 Face detection, feature extraction, liveness detection and matching all take place on this computer. The camera is activated only during face authentication or enrollment preview and capture.
-3.4 Once you have consented to the current privacy notice and no withdrawal is pending, the enrollment interface may start a preview automatically, before you click “Start capture”. A valid existing consent record allows preview to resume when you reopen enrollment. During pending withdrawal, preview does not resume, renewed consent and new enrollment saves are blocked. See Article 7.
+3.4 Once you have consented to the current privacy notice and no withdrawal is pending, the enrollment interface may start a preview automatically, before you click “Start capture”. A valid existing consent record allows preview to resume when you reopen enrollment. During pending withdrawal, preview does not resume, and renewed consent and new enrollment saves are blocked. See Article 7.
 
 Article 4. Storage location and retention
 
@@ -55,7 +55,7 @@ Article 5. Security measures and recognition risks
 5.4 Liveness detection can reduce the success rate of attacks using photos, videos, screen replays or masks. It cannot fully prevent attacks using high-quality masks, 3D printing, deepfakes, camera injection or compromised drivers or operating systems.
 5.5 Lighting, obstruction, distance, angle, aging, makeup, twins or similar-looking individuals may cause recognition failures (false rejections) or incorrect acceptance (false matches).
 5.6 An attacker with elevated administrator or SYSTEM access, or offline access to the system drive, may still decrypt or steal relevant data. Malware, physical access by others, compromised account privileges or coercion may also lead to data disclosure or unauthorized sign-in.
-5.7 The Software does not promise 100% recognition accuracy or security and cannot guarantee absolute safety. Face sign-in is a convenience feature and should not be relied upon as protection in high-security situations, including storage of highly sensitive data, shared computers or unattended environments. If recognition fails, sign in with your password.
+5.7 The Software does not guarantee recognition accuracy or absolute security. Face sign-in is a convenience feature and should not be relied upon as protection in high-security situations, including storage of highly sensitive data, shared computers or unattended environments. If recognition fails, sign in with your password.
 
 Article 6. Your choices and authorization for face processing
 

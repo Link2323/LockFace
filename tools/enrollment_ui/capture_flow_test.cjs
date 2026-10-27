@@ -1354,7 +1354,7 @@ test('English service reload failure remains a saved enrollment rather than a re
   p.element('fld-pass').value = 'synthetic-test-password';
   p.app.enrollSave.onSave();
   for (const fn of [...p.timeouts.values()]) fn();
-  assert.match(p.element('cam-banner').textContent, /service has not confirmed/);
+  assert.match(p.element('cam-banner').textContent, /hasn.t confirmed loading/);
   assert.equal(p.element('fld-pass').value, '');
 });
 
