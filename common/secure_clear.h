@@ -11,6 +11,7 @@
 
 #include <windows.h>
 #include <string>
+#include <vector>
 
 namespace facelogin {
 
@@ -21,6 +22,20 @@ inline void SecureClearWString(std::wstring& s) {
         s.clear();
     }
 }
+
+template<class T> inline void SecureClearVector(std::vector<T>& values) {
+    if (!values.empty()) SecureZeroMemory(values.data(), values.size() * sizeof(T));
+    values.clear();
+}
+template<class T> class SecureVectorGuard {
+public:
+    explicit SecureVectorGuard(std::vector<T>& values) : values(values) {}
+    ~SecureVectorGuard() { SecureClearVector(values); }
+    SecureVectorGuard(const SecureVectorGuard&) = delete;
+    SecureVectorGuard& operator=(const SecureVectorGuard&) = delete;
+private:
+    std::vector<T>& values;
+};
 
 // RAII guard: clears the bound wstring on destruction, covering every exit
 // path from the enclosing scope. Call release() to hand off ownership (the

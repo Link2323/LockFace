@@ -12,6 +12,9 @@
 #include <iterator>
 #include <string>
 #include <vector>
+#include <cstring>
+#include <algorithm>
+#include <chrono>
 
 namespace {
 
@@ -107,6 +110,31 @@ void WriteLegacyDatabase(const std::wstring& root, uint32_t version) {
 std::string ReadDatabaseBytes(const std::wstring& root) {
     std::ifstream file(root + L"\\data\\users.dat", std::ios::binary);
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+
+// These conversions touch synthetic fixtures only, never a product database.
+void WrapV8Fixture(const std::wstring& root) {
+    auto bytes = ReadDatabaseBytes(root);
+    bytes.insert(16, 4, '\0');
+    auto cipher = facelogin::DpapiUtil::Protect(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+    const auto length = static_cast<uint32_t>(cipher.size());
+    memcpy(bytes.data() + 16, &length, 4);
+    cipher = facelogin::DpapiUtil::Protect(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+    std::ofstream file(root + L"\\data\\users.dat", std::ios::binary | std::ios::trunc);
+    file.write(bytes.data(), 20);
+    file.write(reinterpret_cast<const char*>(cipher.data()), cipher.size());
+    if (!bytes.empty()) SecureZeroMemory(bytes.data(), bytes.size());
+}
+void MakePlainLegacyFixture(const std::wstring& root, uint32_t version) {
+    const auto bytes = ReadDatabaseBytes(root);
+    auto plain = facelogin::DpapiUtil::Unprotect(reinterpret_cast<const uint8_t*>(bytes.data() + 20), bytes.size() - 20);
+    Check(plain.size() >= 16, "decrypt synthetic legacy fixture");
+    if (plain.size() < 20) return;
+    plain.erase(plain.begin() + 16, plain.begin() + 20);
+    memcpy(plain.data() + 4, &version, sizeof(version));
+    std::ofstream file(root + L"\\data\\users.dat", std::ios::binary | std::ios::trunc);
+    file.write(reinterpret_cast<const char*>(plain.data()), plain.size());
+    SecureZeroMemory(plain.data(), plain.size());
 }
 
 void WriteValidV7Record(std::ofstream& file, const std::wstring& username,
@@ -359,6 +387,7 @@ void TestV7RoundTripAndReload() {
         Write(file, count);
         Write(file, facelogin::kRecognizerModelTag);
     }
+    WrapV8Fixture(root);
     Check(reader.LoadDatabase() && reader.GetUserCount() == 0,
           "valid empty database atomically clears old records");
     Check(!reader.LoadCredentialForSid(L"SID-R"),
@@ -447,7 +476,7 @@ void TestUnsupportedVersionsAreRejected() {
     Check(!root.empty(), "unsupported-version fixture directory is created");
     if (root.empty()) return;
 
-    for (uint32_t version : {1u, 2u, 3u, 8u}) {
+    for (uint32_t version : {1u, 2u, 3u, 9u}) {
         WriteUnsupportedDatabase(root, version);
         facelogin::CredentialStore store;
         store.SetDataDir(root);
@@ -478,6 +507,7 @@ void TestMalformedReloadIsTransactional() {
         const uint32_t secondNameLength = 8;
         Write(file, secondNameLength);
     }
+    WrapV8Fixture(root);
     facelogin::CredentialStore store;
     store.SetDataDir(root);
     Check(!store.LoadDatabase(), "truncated database reload is rejected");
@@ -495,6 +525,7 @@ void TestMalformedReloadIsTransactional() {
         Write(file, count);
         Write(file, facelogin::kRecognizerModelTag);
     }
+    WrapV8Fixture(root);
     Check(!store.LoadDatabase() && store.GetUserCount() == 0,
           "oversized database user count fails closed");
     CleanupTempRoot(root);
@@ -542,6 +573,63 @@ void TestAtomicSaveFailure() {
     CleanupTempRoot(root);
 }
 
+void TestEncryptedTemplateBoundary() {
+    const auto root = MakeTempRoot();
+    if (root.empty()) { Check(false, "encrypted boundary fixture created"); return; }
+    facelogin::CredentialStore store;
+    store.SetDataDir(root);
+    const auto password = facelogin::DpapiUtil::Protect(L"synthetic-secret");
+    const std::wstring name = L"unmistakable-private-account";
+    const auto embedding = Midpoint(7, 29);
+    Check(store.AddFace(name, L"private@example.invalid", L"SID-PRIVATE", password,
+                        embedding, L"private-template", nullptr, 30, 0) && store.SaveDatabase(),
+          "encrypted template database saves");
+    const auto original = ReadDatabaseBytes(root);
+    Check(original.find(std::string(reinterpret_cast<const char*>(name.data()), name.size() * 2)) == std::string::npos &&
+          original.find(std::string(reinterpret_cast<const char*>(embedding.data()), embedding.size() * 4)) == std::string::npos,
+          "account and exact template bytes are absent from disk");
+    store.ReleasePlaintext();
+    Check(store.GetUsers().empty() && store.GetUserCount() == 1 && !store.SaveDatabase(),
+          "sealed store exposes only count and cannot accidentally save an empty database");
+    Check(store.RestorePlaintext() && store.GetUsers().size() == 1 && store.GetUsers()[0].faces[0].embedding == embedding,
+          "a round restores the encrypted cached snapshot");
+    store.ReleasePlaintext();
+    const bool impersonated = ImpersonateAnonymousToken(GetCurrentThread()) != FALSE;
+    Check(impersonated, "enter another identity for template decryption test");
+    if (impersonated) {
+        const bool rejected = !store.RestorePlaintext() && store.GetUsers().empty();
+        if (!RevertToSelf()) TerminateProcess(GetCurrentProcess(), ERROR_CANNOT_IMPERSONATE);
+        Check(rejected, "copied templates cannot be unsealed by another identity");
+        Check(store.RestorePlaintext(), "failed unseal never makes subsequent restore a false success");
+    }
+    auto write = [&](const std::string& data) {
+        std::ofstream file(root + L"\\data\\users.dat", std::ios::binary | std::ios::trunc);
+        file.write(data.data(), data.size());
+    };
+    for (int corruption = 0; corruption < 4; ++corruption) {
+        auto damaged = original;
+        if (corruption == 0) damaged[8] = 0; // syntactically valid but unauthenticated count
+        if (corruption == 1) damaged[damaged.size() / 2] ^= 0x41;
+        if (corruption == 2) damaged.pop_back();
+        if (corruption == 3) damaged.push_back('x');
+        write(damaged);
+        Check(!store.LoadDatabase() && store.GetUsers().empty(), "tampered header/ciphertext, truncation and trailing bytes fail closed");
+    }
+    write(original);
+    MakePlainLegacyFixture(root, 7);
+    const auto old = ReadDatabaseBytes(root);
+    Check(!store.LoadDatabase(), "ordinary reads refuse unencrypted V7 templates");
+    if (facelogin::DpapiUtil::IsSystemContext()) {
+        Check(store.UpgradeLegacyPasswords() && store.LoadDatabase() && store.GetUsers().size() == 1 &&
+              store.GetUsers()[0].faces[0].embedding == embedding && store.GetUsers()[0].encryptedPassword == password,
+              "SYSTEM migrates V7 without re-enrollment or changing password protection");
+    } else {
+        Check(!store.UpgradeLegacyPasswords() && ReadDatabaseBytes(root) == old,
+              "non-SYSTEM cannot migrate templates or modify the legacy file");
+    }
+    CleanupTempRoot(root);
+}
+
 void TestLegacyPasswordMigration() {
     const auto root = MakeTempRoot();
     Check(!root.empty(), "migration fixture directory created");
@@ -561,12 +649,7 @@ void TestLegacyPasswordMigration() {
                          L"left", nullptr, 30.0f, 0.0f) && writer.SaveDatabase(),
           "migration fixture records saved");
     const auto main = root + L"\\data\\users.dat";
-    {
-        std::fstream file(main, std::ios::binary | std::ios::in | std::ios::out);
-        file.seekp(sizeof(uint32_t));
-        const uint32_t version = 6;
-        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-    }
+    MakePlainLegacyFixture(root, 6);
     Check(CopyFileW(main.c_str(), (main + L".bak").c_str(), FALSE), "legacy backup created");
     const auto original = ReadDatabaseBytes(root);
     facelogin::CredentialStore reader;
@@ -664,6 +747,9 @@ void TestPrivacyDeletion() {
     held = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     Check(held != INVALID_HANDLE_VALUE, "hold primary to simulate commit failure");
     Check(!service.DeletePersistedFace(L"SID-B"), "failed primary commit is reported");
+    service.ReleasePlaintext();
+    Check(!service.RestorePlaintext() && service.GetUsers().empty(),
+          "failed deletion cannot resurrect its old encrypted cache during the next authentication");
     if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
     Check(service.DeletePersistedFace(L"SID-B") && service.LoadDatabase() && service.GetUserCount() == 0,
           "retry after commit failure persists an empty database");
@@ -672,6 +758,36 @@ void TestPrivacyDeletion() {
 }
 
 } // namespace
+
+int BenchmarkTemplateUnseal() {
+    const auto root = MakeTempRoot();
+    if (root.empty()) return 1;
+    facelogin::CredentialStore store;
+    store.SetDataDir(root);
+    const auto password = facelogin::DpapiUtil::Protect(L"synthetic-benchmark-password");
+    bool ok = true;
+    for (int user = 0; user < 5; ++user) {
+        for (int face = 0; face < 3; ++face) {
+            ok = ok && store.AddFace(L"synthetic-" + std::to_wstring(user), L"", L"SID-" + std::to_wstring(user),
+                password, Basis(face), L"angle", nullptr, float(face * 30), 0);
+        }
+    }
+    ok = ok && store.SaveDatabase() && store.LoadDatabase();
+    std::vector<double> times;
+    times.reserve(1000);
+    for (int i = 0; ok && i < 1000; ++i) {
+        store.ReleasePlaintext();
+        const auto start = std::chrono::steady_clock::now();
+        ok = store.RestorePlaintext() && store.GetUsers().size() == 5;
+        store.ReleasePlaintext();
+        times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+    std::sort(times.begin(), times.end());
+    if (ok) std::printf("V8 actual RestorePlaintext + ReleasePlaintext (5 accounts/15 templates, n=1000, current-user identity): median=%.4f ms p95=%.4f ms max=%.4f ms\n",
+        times[499], times[949], times.back());
+    CleanupTempRoot(root);
+    return ok ? 0 : 1;
+}
 
 int wmain(int argc, wchar_t** argv) {
     // Synthetic cross-identity probe, never uses the installed database.
@@ -703,7 +819,9 @@ int wmain(int argc, wchar_t** argv) {
         std::puts(rejected ? "Cross-identity probe: decryption rejected" : "Cross-identity probe: FAILED");
         return rejected ? 0 : 1;
     }
+    if (argc == 2 && std::wstring(argv[1]) == L"--benchmark-unseal") return BenchmarkTemplateUnseal();
     if (argc != 1) return 2;
+    TestEncryptedTemplateBoundary();
     TestPrivacyDeletion();
     TestIdentityScopedProtection();
     TestAtomicSaveFailure();

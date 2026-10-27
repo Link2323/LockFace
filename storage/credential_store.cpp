@@ -6,6 +6,8 @@
 #include <fstream>
 #include <algorithm>
 #include <iterator>
+#include <sstream>
+#include <cstring>
 
 namespace facelogin {
 
@@ -18,6 +20,37 @@ static constexpr uint32_t FILE_VERSION = kCredentialDatabaseVersion;
 static constexpr float kInitDistance = 1e10f;
 static constexpr float kNoFaceDistance = 1e9f;
 static constexpr float kAmbiguousRatioLimit = 0.75f;
+
+namespace {
+class MemoryReader : public std::streambuf {
+public:
+    explicit MemoryReader(std::string_view bytes) { auto p = const_cast<char*>(bytes.data()); setg(p, p, p + bytes.size()); }
+};
+class SensitiveWriter : public std::streambuf {
+public:
+    SensitiveWriter() : storage(1024 * 1024) { setp(storage.data(), storage.data() + storage.size()); }
+    ~SensitiveWriter() { SecureClearVector(storage); }
+    void SetCipherLength(uint32_t size) { memcpy(pbase() + 16, &size, sizeof(size)); }
+    std::string_view view() const { return {pbase(), static_cast<size_t>(pptr() - pbase())}; }
+private:
+    std::vector<char> storage;
+};
+}
+
+void CredentialStore::ReleasePlaintext() {
+    if (!m_recordsSealed) m_cachedUserCount = m_users.size();
+    m_users.clear();
+    m_recordsSealed = true;
+}
+
+bool CredentialStore::RestorePlaintext() {
+    if (!m_recordsSealed) return true;
+    if (!m_hasDiskSnapshot) return false;
+    if (!m_diskExists) { m_recordsSealed = false; m_users.clear(); return true; }
+    const bool ok = LoadDatabaseBytes(m_diskSnapshot, false);
+    if (!ok) { m_recordsSealed = true; m_cachedUserCount = 0; }
+    return ok;
+}
 
 // Helpers for V6 serialization
 namespace {
@@ -127,19 +160,35 @@ bool CredentialStore::LoadDatabase() {
 }
 
 bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegacy) {
-    // Reload is transactional and fail-closed. Never expose a prefix of a
-    // malformed database: authentication must see either the complete newly
-    // validated file or no identities at all.
-    m_users.clear();
-    m_loadedVersion = FILE_VERSION;
+    bool exists = false;
+    std::string bytes;
+    struct WipeBytes { std::string& bytes; ~WipeBytes() { if (!bytes.empty()) SecureZeroMemory(bytes.data(), bytes.size()); } } wipe{bytes};
+    if (!ReadDiskSnapshot(path, exists, bytes)) return false;
+    if (!exists) { m_users.clear(); m_recordsSealed = false; m_loadedVersion = FILE_VERSION; return true; }
+    return LoadDatabaseBytes(bytes, allowLegacy);
+}
 
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        const DWORD attributes = GetFileAttributesW(path.c_str());
-        const DWORD error = GetLastError();
-        return attributes == INVALID_FILE_ATTRIBUTES &&
-            (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
+bool CredentialStore::LoadDatabaseBytes(std::string_view bytes, bool allowLegacy) {
+    m_users.clear();
+    m_recordsSealed = false;
+    m_cachedUserCount = 0;
+    m_loadedVersion = FILE_VERSION;
+    if (bytes.size() < 12 || bytes.size() > 1024 * 1024) return false;
+    uint32_t outer[5]{};
+    memcpy(outer, bytes.data(), (std::min)(bytes.size(), sizeof(outer)));
+    std::vector<uint8_t> plain;
+    SecureVectorGuard<uint8_t> plainGuard(plain);
+    if (outer[1] == FILE_VERSION) {
+        if (bytes.size() <= sizeof(outer) || outer[0] != FILE_MAGIC ||
+            outer[2] > kMaxUsers || outer[3] != kRecognizerModelTag || outer[4] != bytes.size() - sizeof(outer)) return false;
+        plain = DpapiUtil::Unprotect(reinterpret_cast<const uint8_t*>(bytes.data() + sizeof(outer)), bytes.size() - sizeof(outer));
+        if (plain.size() < sizeof(outer) || memcmp(plain.data(), outer, sizeof(outer)) != 0) return false;
+        bytes = std::string_view(reinterpret_cast<const char*>(plain.data()), plain.size());
+    } else if (!allowLegacy && outer[1] != 4 && outer[1] != 5) {
+        return false;
     }
+    MemoryReader buffer(bytes);
+    std::istream file(&buffer);
 
     // Read header
     uint32_t magic = 0, version = 0, count = 0;
@@ -158,7 +207,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
         FACELOGIN_WARN(L"R50 database v%u is inactive: re-enroll all users with SFace", version);
         return true; // Empty active database; old bytes remain until new enrollment saves.
     }
-    if (version != FILE_VERSION && !(allowLegacy && version == 6)) {
+    if (version != FILE_VERSION && !(allowLegacy && (version == 6 || version == 7))) {
         FACELOGIN_ERROR(L"Unsupported database version: %u", version);
         return false;
     }
@@ -167,6 +216,9 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
     if (!file.good() || modelTag != kRecognizerModelTag) {
         FACELOGIN_ERROR(L"Database recognizer mismatch: re-enrollment required");
         return false;
+    }
+    if (version == FILE_VERSION) {
+        file.read(reinterpret_cast<char*>(&outer[4]), sizeof(uint32_t));
     }
     if (count > kMaxUsers) {
         FACELOGIN_ERROR(L"Invalid database user count: %u", count);
@@ -187,6 +239,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
             return false;
         }
         std::vector<wchar_t> nameBuf(nameLen + 1, 0);
+        SecureVectorGuard<wchar_t> nameGuard(nameBuf);
         file.read(reinterpret_cast<char*>(nameBuf.data()), nameLen * sizeof(wchar_t));
         rec.username = nameBuf.data();
 
@@ -199,6 +252,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
         }
         if (upnLen > 0) {
             std::vector<wchar_t> upnBuf(upnLen + 1, 0);
+            SecureVectorGuard<wchar_t> upnGuard(upnBuf);
             file.read(reinterpret_cast<char*>(upnBuf.data()), upnLen * sizeof(wchar_t));
             rec.upn = upnBuf.data();
         }
@@ -212,6 +266,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
         }
         if (sidLen > 0) {
             std::vector<wchar_t> sidBuf(sidLen + 1, 0);
+            SecureVectorGuard<wchar_t> sidGuard(sidBuf);
             file.read(reinterpret_cast<char*>(sidBuf.data()), sidLen * sizeof(wchar_t));
             rec.sid = sidBuf.data();
         }
@@ -253,6 +308,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
             }
             if (labelLen > 0) {
                 std::vector<wchar_t> labelBuf(labelLen + 1, 0);
+                SecureVectorGuard<wchar_t> labelGuard(labelBuf);
                 file.read(reinterpret_cast<char*>(labelBuf.data()),
                           labelLen * sizeof(wchar_t));
                 face.label = labelBuf.data();
@@ -294,6 +350,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
         }
     }
 
+    if (file.peek() != std::char_traits<char>::eof()) return false;
     m_users = std::move(loadedUsers);
     m_loadedVersion = version;
     FACELOGIN_INFO(L"Loaded %zu user(s) from database (v%u)", m_users.size(),
@@ -302,6 +359,7 @@ bool CredentialStore::LoadDatabaseFile(const std::wstring& path, bool allowLegac
 }
 
 bool CredentialStore::SaveDatabase(bool refreshBackup) {
+    if (m_recordsSealed) return false;
     DatabaseLock lock(GetDataDir());
     const auto path = GetDataDir() + L"\\data\\users.dat";
     bool exists = false;
@@ -331,6 +389,10 @@ bool CredentialStore::DeletePersistedFace(const std::wstring& sid, uint32_t face
     DatabaseLock lock(GetDataDir());
     const auto path = GetDataDir() + L"\\data\\users.dat";
     if (!lock.valid() || !LoadDatabaseFile(path, false)) return false;
+    // A failed deletion must not later restore its pre-delete cached ciphertext.
+    // Until a successful retry/reload, releasing this operation makes auth fail closed.
+    m_hasDiskSnapshot = false;
+    m_diskSnapshot.clear();
     // Purge first: a successful primary commit must never leave recoverable
     // application-owned backup records. Missing backup is already clean.
     if (!PurgeRecoveryFiles(path)) {
@@ -363,12 +425,11 @@ bool CredentialStore::UpgradeLegacyPasswords() {
         return false;
     }
     const std::wstring main = GetDataDir() + L"\\data\\users.dat";
-    // Upgrade the independent rollback copy too. A partial upgrade is safe to
-    // retry: V7 is left unchanged, V6 is never accepted by a normal load.
+    // Migrate the backup first. V8 is idempotent; ordinary reads reject V6/V7.
     for (const auto& path : {main + L".bak", main}) {
         if (!LoadDatabaseFile(path, true)) { m_users.clear(); return false; }
         if (m_loadedVersion == FILE_VERSION) continue;
-        for (auto& user : m_users) {
+        if (m_loadedVersion == 6) for (auto& user : m_users) {
             auto plain = DpapiUtil::Unprotect(user.encryptedPassword);
             auto encrypted = plain.empty() ? std::vector<uint8_t>{} : DpapiUtil::Protect(plain);
             if (!plain.empty()) SecureZeroMemory(plain.data(), plain.size());
@@ -379,12 +440,30 @@ bool CredentialStore::UpgradeLegacyPasswords() {
             }
             user.encryptedPassword = std::move(encrypted);
         }
-        // V4/V5 remain inactive and become an empty V7 database, retiring
+        // V4/V5 remain inactive and become an empty V8 database, retiring
         // passwords for the obsolete recognizer without importing old faces.
         m_loadedVersion = FILE_VERSION;
         if (!SaveDatabaseFile(path)) { m_users.clear(); return false; }
         FACELOGIN_INFO(L"Upgraded credential file to service-identity protection");
     }
+    for (const auto& pattern : {main + L".tmp.*", main + L".bak.tmp.*"}) {
+        WIN32_FIND_DATAW entry{};
+        HANDLE search = FindFirstFileW(pattern.c_str(), &entry);
+        if (search == INVALID_HANDLE_VALUE) {
+            const auto error = GetLastError();
+            if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return false;
+            continue;
+        }
+        bool ok = true;
+        do {
+            const auto candidate = main.substr(0, main.find_last_of(L"\\/") + 1) + entry.cFileName;
+            if ((entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) || !DeleteFileW(candidate.c_str())) { ok = false; break; }
+        } while (FindNextFileW(search, &entry));
+        if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = false;
+        FindClose(search);
+        if (!ok) return false;
+    }
+    m_users.clear();
     return true;
 }
 
@@ -392,9 +471,17 @@ bool CredentialStore::SaveDatabaseFile(const std::wstring& path) {
     if (m_loadedVersion != FILE_VERSION && m_loadedVersion != 4 && m_loadedVersion != 5)
         return false;
     // Validate before opening with truncation. Never persist mixed model spaces.
+    if (m_users.size() > kMaxUsers) return false;
     for (const auto& user : m_users) {
-        for (const auto& face : user.faces) {
-            if (face.embedding.size() != kRecognizerDimension) return false;
+        if (user.username.empty() || user.username.size() > 256 || user.upn.size() > 256 ||
+            user.sid.size() > 256 || user.encryptedPassword.size() < 2 ||
+            user.encryptedPassword.size() > 4096 || user.faces.size() > 16) return false;
+        for (size_t i = 0; i < user.faces.size(); ++i) {
+            const auto& face = user.faces[i];
+            if (!face.id || face.label.size() > 64 || face.embedding.size() != kRecognizerDimension ||
+                !std::isfinite(face.nominalYaw) || !std::isfinite(face.nominalPitch) ||
+                !std::all_of(face.embedding.begin(), face.embedding.end(), [](float v) { return std::isfinite(v); })) return false;
+            for (size_t j = 0; j < i; ++j) if (user.faces[j].id == face.id) return false;
         }
     }
     std::wstring dataDir = GetDataDir() + L"\\data";
@@ -403,13 +490,8 @@ bool CredentialStore::SaveDatabaseFile(const std::wstring& path) {
         return false;
     }
 
-    const std::wstring temporary = path + L".tmp." + std::to_wstring(GetCurrentProcessId()) +
-        L"." + std::to_wstring(GetTickCount64());
-    std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) {
-        FACELOGIN_ERROR(L"Failed to open database for writing: %s", path.c_str());
-        return false;
-    }
+    SensitiveWriter buffer;
+    std::ostream file(&buffer);
 
     // Write header
     uint32_t magic = FILE_MAGIC;
@@ -425,6 +507,8 @@ bool CredentialStore::SaveDatabaseFile(const std::wstring& path) {
     file.write(reinterpret_cast<const char*>(&count), sizeof(count));
     const uint32_t modelTag = kRecognizerModelTag;
     file.write(reinterpret_cast<const char*>(&modelTag), sizeof(modelTag));
+    const uint32_t unknownCipherLength = 0;
+    file.write(reinterpret_cast<const char*>(&unknownCipherLength), sizeof(unknownCipherLength));
 
     for (const auto& rec : m_users) {
         if (rec.faces.empty()) continue;  // defensive: never persist 0-face account
@@ -485,14 +569,27 @@ bool CredentialStore::SaveDatabaseFile(const std::wstring& path) {
         }
     }
 
-    file.close();
-    if (!file || !MoveFileExW(temporary.c_str(), path.c_str(),
+    if (!file || buffer.view().size() > 1024 * 1024 - 4096) return false;
+    const auto plain = buffer.view();
+    auto encrypted = DpapiUtil::Protect(reinterpret_cast<const uint8_t*>(plain.data()), plain.size());
+    if (encrypted.empty()) return false;
+    const auto cipherLength = static_cast<uint32_t>(encrypted.size());
+    buffer.SetCipherLength(cipherLength);
+    encrypted = DpapiUtil::Protect(reinterpret_cast<const uint8_t*>(plain.data()), plain.size());
+    if (encrypted.size() != cipherLength) return false;
+    const std::wstring temporary = path + L".tmp." + std::to_wstring(GetCurrentProcessId()) +
+        L"." + std::to_wstring(GetTickCount64());
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    output.write(plain.data(), 20);
+    output.write(reinterpret_cast<const char*>(encrypted.data()), encrypted.size());
+    output.close();
+    if (!output || !MoveFileExW(temporary.c_str(), path.c_str(),
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         DeleteFileW(temporary.c_str());
-        FACELOGIN_ERROR(L"Failed to commit credential database");
+        FACELOGIN_ERROR(L"Failed to commit encrypted credential database");
         return false;
     }
-    FACELOGIN_INFO(L"Saved %zu user(s) to database (v%u)", count, FILE_VERSION);
+    FACELOGIN_INFO(L"Saved %u user(s) to database (v%u)", count, FILE_VERSION);
     return true;
 }
 

@@ -89,15 +89,20 @@ static DWORD ReadUserCountFromDatabase() {
         return 0;  // No database → no users
     }
 
-    // V7 header: magic, version, count, SFace model tag (four uint32 values).
-    uint32_t magic = 0, version = 0, count = 0, modelTag = 0;
+    // V8 public header (metadata only; the service verifies its protected copy): magic, version, count, SFace model tag (four uint32 values).
+    uint32_t magic = 0, version = 0, count = 0, modelTag = 0, cipherLength = 0;
     file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     file.read(reinterpret_cast<char*>(&version), sizeof(version));
     file.read(reinterpret_cast<char*>(&count), sizeof(count));
     file.read(reinterpret_cast<char*>(&modelTag), sizeof(modelTag));
+    file.read(reinterpret_cast<char*>(&cipherLength), sizeof(cipherLength));
+    const bool completeHeader = file.good();
+    file.seekg(0, std::ios::end);
+    const auto fileBytes = file.tellg();
 
     // Old database versions cannot create an active face-login tile.
-    if (!file.good() || magic != 0x474F4C46 ||
+    if (!completeHeader || !file.good() || fileBytes < 20 || fileBytes > 1024 * 1024 ||
+        cipherLength == 0 || cipherLength != fileBytes - std::streamoff{20} || magic != 0x474F4C46 ||
         version != facelogin::kCredentialDatabaseVersion ||
         modelTag != facelogin::kRecognizerModelTag || count > facelogin::kMaxUsers) {
         return 0;  // Invalid database → treat as no users

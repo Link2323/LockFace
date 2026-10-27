@@ -7,7 +7,8 @@
 // LockFace IPC Protocol Definitions
 //
 // Transport: Named pipe \\.\pipe\LockFacePipe
-// Framing: UTF-16LE text, null-terminated
+// Framing: UTF-16LE message boundaries; senders may append a NUL.
+// Enrollment V1 has a separately bounded 64 KiB management-message limit.
 // Security: DACL restricted to SYSTEM + Administrators, PIPE_REJECT_REMOTE_CLIENTS
 
 namespace facelogin {

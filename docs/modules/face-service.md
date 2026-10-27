@@ -2,11 +2,13 @@
 
 本文说明 `face_service/` 的进程边界和认证约束。实现入口为 [`FaceService.cpp`](../../face_service/FaceService.cpp)。公共 IPC、worker 私有 IPC 和数据库格式分别以 [`IPC 契约`](../contracts/ipc.md)、[`worker IPC 契约`](../contracts/auth-worker-ipc.md) 和 [`users.dat 契约`](../contracts/users-dat.md) 为准。
 
-服务目录保留生命周期、认证流程、worker、管道和学习调度。相机、模型推理、对齐与曝光控制由共享目录 [`vision/`](../../vision/) 提供；凭据数据库与匹配由 [`storage/`](../../storage/) 提供。服务和注册程序链接同一份静态库实现，各进程仍独立持有实例和运行状态；构建依赖见 [`BUILD.md`](../BUILD.md#c-构建)。
+服务目录保留生命周期、认证流程、worker、管道和学习调度。相机、模型推理、对齐与曝光控制由共享目录 [`vision/`](../../vision/) 提供；凭据数据库与匹配由 [`storage/`](../../storage/) 提供。服务和注册程序链接同一份静态库实现，数据库运行状态由父服务持有，注册程序仅使用服务客户端；构建依赖见 [`BUILD.md`](../BUILD.md#c-构建)。
 
 ## 职责与生命周期
 
-服务以 SYSTEM 启动时，先将 V6 主库和每日备份升级为 V7：仅重新保护密码，保留 SFace 身份、人脸和角度；任何文件解析、解密或提交失败都会阻止服务启动。旧 V4/V5 不导入人脸或密码，清为空 V7 后要求重录。生产凭据的用户作用域 DPAPI 加密只在父服务执行；注册端通过加密专用 IPC 获取密文。迁移顺序、原子提交及兼容边界见 `users.dat` 契约。
+服务以 SYSTEM 启动时，先将 V6/V7 主库和每日备份迁移为 V8：V6 重新保护密码，V7 保持密码 blob，两者均保留 SFace 身份、人脸和角度，并以 SYSTEM 用户作用域 DPAPI 保护整个内层。V4/V5 清为空 V8 后重录。任何解析、解密、原子提交或旧临时文件清理失败均阻止启动。注册端通过经验证的管理 IPC 读写，只获得本人元数据。迁移顺序及兼容边界见 `users.dat` 契约。
+
+父服务启动及重载完成后只保留密文快照与计数；认证在原截止时间内恢复一次明文模板并复用，成功、失败、取消、断管和超时均通过作用域清理。模型预载不解密模板。成功交付凭据后记录 `Authentication template decrypt/parse` 分项时间，不增加公共管道请求。
 
 服务父进程负责 DataPath、配置、`users.dat`、公开命名管道和身份匹配。锁屏期间异步预载一个 `-auth-worker`，worker 持有 ONNX 模型并在认证请求后打开摄像头，完成一次请求即退出。父进程不持有 ONNX Session，也不会在认证前打开摄像头。
 

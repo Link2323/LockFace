@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cmath>
 #include "../common/recognizer_profile.h"
+#include "../common/secure_clear.h"
+#include <string_view>
 
 namespace facelogin {
 
@@ -18,37 +20,9 @@ inline float EmbeddingThresholdForDim(float baseThreshold, size_t dim) {
 
 // Stores and retrieves encrypted user credentials and face embeddings.
 //
-// File format (DataPath\data\users.dat), version 7 (SFace + SYSTEM user-scope DPAPI):
-//   Header:
-//     Magic:  4 bytes ("FLOG")
-//     Version: 4 bytes (uint32, 7 only)
-//     Count:   4 bytes (uint32, number of records)
-//     Model tag: 4 bytes (uint32, kRecognizerModelTag = "SFC1")
-//   Records (Count times):
-//     Username length: 4 bytes (uint32, in wchar_t units)
-//     Username:        N*2 bytes (UTF-16LE)
-//     UPN length:      4 bytes (uint32, in wchar_t units)
-//     UPN:             N*2 bytes (UTF-16LE)
-//     SID length:      4 bytes (uint32, in wchar_t units)
-//     SID:             N*2 bytes (UTF-16LE)
-//     Password length: 4 bytes (uint32, in bytes, encrypted)
-//     Password:        N bytes (DPAPI encrypted)
-//     Face count:      4 bytes (uint32, >= 1)             ← V4
-//     Faces (Face count times):                            ← V4
-//       Face id:       4 bytes (uint32, >= 1, per-account unique)
-//       Label length:  4 bytes (uint32, in wchar_t units, may be 0)
-//       Label:         N*2 bytes (UTF-16LE, e.g. L"脸1" or a custom name)
-//       Embedding length: 4 bytes (uint32, in floats)
-//       Embedding:     D*4 bytes (D floats * 4 bytes)
-//       Nominal yaw:   4 bytes (float, degrees)            ← V5
-//       Nominal pitch: 4 bytes (float, degrees)            ← V5
-// V4/V5 faces are never loaded or converted; every account must re-enroll.
-// Full layout: docs/contracts/users-dat.md.
-// The service enforces the data-directory DACL at startup — SYSTEM and
-// Administrators full control everywhere, Users read-only on the data root
-// and no Users ACE inside data\ (mirroring the installer's posture); see
-// common/acl_util.h. Passwords are encrypted with user-scope DPAPI by the
-// SYSTEM service.
+// V8 stores a minimal 20-byte header and one SYSTEM-user-scope DPAPI blob.
+// Its protected payload repeats that header and contains all account/face data.
+// See docs/contracts/users-dat.md for migration and persistence semantics.
 
 // Maximum number of user accounts in the database. One Windows machine
 // typically has ≤5 local accounts; this cap keeps the lock-screen tile list
@@ -78,6 +52,34 @@ inline constexpr float kNominalAngleInvalid = 1000.0f;
 // In-memory faces added without angles carry kNominalAngleInvalid; the learner's cone gate treats that as "no cone
 // information" (pass) until re-enrollment.
 struct FaceRecord {
+    ~FaceRecord() { SecureClearVector(embedding); SecureClearWString(label); }
+    FaceRecord() = default;
+    FaceRecord(const FaceRecord&) = default;
+    FaceRecord(FaceRecord&&) noexcept = default;
+    FaceRecord& operator=(const FaceRecord& other) {
+        if (this != &other) {
+            SecureClearVector(embedding);
+            SecureClearWString(label);
+            id = other.id;
+            label = other.label;
+            embedding = other.embedding;
+            nominalYaw = other.nominalYaw;
+            nominalPitch = other.nominalPitch;
+        }
+        return *this;
+    }
+    FaceRecord& operator=(FaceRecord&& other) noexcept {
+        if (this != &other) {
+            SecureClearVector(embedding);
+            SecureClearWString(label);
+            id = other.id;
+            label = std::move(other.label);
+            embedding = std::move(other.embedding);
+            nominalYaw = other.nominalYaw;
+            nominalPitch = other.nominalPitch;
+        }
+        return *this;
+    }
     uint32_t           id = 0;
     std::wstring       label;              // display name; "脸N" if user left blank
     std::vector<float> embedding;          // pinned SFace embedding is 128-D
@@ -86,6 +88,12 @@ struct FaceRecord {
 };
 
 struct UserRecord {
+    ~UserRecord() { SecureClearWString(username); SecureClearWString(upn); SecureClearWString(sid); }
+    UserRecord() = default;
+    UserRecord(const UserRecord&) = default;
+    UserRecord(UserRecord&&) noexcept = default;
+    UserRecord& operator=(const UserRecord&) = default;
+    UserRecord& operator=(UserRecord&&) noexcept = default;
     std::wstring username;
     std::wstring upn;      // UserPrincipalName (e.g. "john@outlook.com")
     std::wstring sid;      // Security Identifier (e.g. "S-1-5-21-...")
@@ -97,9 +105,17 @@ class CredentialStore {
 public:
     CredentialStore() = default;
     ~CredentialStore() = default;
+    CredentialStore(const CredentialStore&) = delete;
+    CredentialStore& operator=(const CredentialStore&) = delete;
+    // Service owns synchronization. Retain only encrypted disk snapshot at rest.
+    void ReleasePlaintext();
+    bool RestorePlaintext();
 
     // Set the data directory path. Default: PROGRAMDATA/FaceLogin/
     void SetDataDir(const std::wstring& dir) {
+        ReleasePlaintext();
+        m_recordsSealed = false;
+        m_cachedUserCount = 0;
         m_dataDir = dir;
         m_hasDiskSnapshot = false;
         m_diskSnapshot.clear();
@@ -108,8 +124,8 @@ public:
     // Load users.dat from disk. Returns true on success.
     bool LoadDatabase();
 
-    // SYSTEM-service startup only: re-protect V6 passwords, including .bak,
-    // and retire inactive V4/V5 secrets. Normal loads reject unmigrated V6.
+    // SYSTEM-service startup only: seal V6/V7 main and backup databases;
+    // re-protect V6 passwords and retire inactive V4/V5 secrets.
     bool UpgradeLegacyPasswords();
 
     // Save current in-memory records to users.dat. Returns true on success.
@@ -297,13 +313,16 @@ public:
                                                      float distance = 0.0f);
 
     // Get the number of registered users
-    size_t GetUserCount() const { return m_users.size(); }
+    size_t GetUserCount() const { return m_recordsSealed ? m_cachedUserCount : m_users.size(); }
 
     // Get the full path to the database file
     std::wstring GetDataDir() const;
 
 private:
     bool LoadDatabaseFile(const std::wstring& path, bool allowLegacy);
+    bool LoadDatabaseBytes(std::string_view bytes, bool allowLegacy);
+    bool m_recordsSealed = false;
+    size_t m_cachedUserCount = 0;
     bool SaveDatabaseFile(const std::wstring& path);
     uint32_t m_loadedVersion = kCredentialDatabaseVersion;
     std::wstring m_dataDir;  // If empty, uses default

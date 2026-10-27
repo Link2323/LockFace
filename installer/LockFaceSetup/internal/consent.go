@@ -12,7 +12,7 @@ import (
 // requires the installer to acknowledge. This is not biometric consent.
 // consent_test.go pins it to the canonical text so
 // the recorded version cannot drift from what the installer displayed.
-const ConsentVersion = "1.1"
+const ConsentVersion = "1.2"
 
 const (
 	// Registry values written under HKLM\SOFTWARE\LockFace. The key is

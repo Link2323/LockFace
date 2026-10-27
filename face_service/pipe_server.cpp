@@ -3,6 +3,7 @@
 #include "../common/ipc_protocol.h"
 #include <sddl.h>
 #include <vector>
+#include "../storage/enrollment_protocol.h"
 
 namespace facelogin {
 
@@ -52,6 +53,24 @@ PipeServer::~PipeServer() {
         CloseHandle(m_hShutdownEvent);
         m_hShutdownEvent = nullptr;
     }
+}
+
+bool PipeServer::GetClientSid(std::wstring& sid) const {
+    sid.clear();
+    if (!m_connected || !ImpersonateNamedPipeClient(m_hPipe)) return false;
+    HANDLE token = nullptr;
+    const bool opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token) != FALSE;
+    if (!RevertToSelf()) { TerminateProcess(GetCurrentProcess(), ERROR_CANNOT_IMPERSONATE); if (token) CloseHandle(token); return false; }
+    if (!opened) return false;
+    BYTE data[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE]{};
+    DWORD size = 0;
+    LPWSTR text = nullptr;
+    const bool ok = GetTokenInformation(token, TokenUser, data, sizeof(data), &size) &&
+        ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(data)->User.Sid, &text);
+    if (ok) sid = text;
+    if (text) LocalFree(text);
+    CloseHandle(token);
+    return ok;
 }
 
 bool PipeServer::IsClientPrivileged() const {
@@ -285,7 +304,7 @@ bool PipeServer::ReadMessage(std::wstring& outMessage, DWORD timeoutMs) {
     if (!m_connected || m_hPipe == INVALID_HANDLE_VALUE || !m_hShutdownEvent ||
         m_shutdownRequested.load()) return false;
 
-    wchar_t buffer[ipc::PIPE_BUFFER_SIZE / sizeof(wchar_t)] = {};
+    wchar_t buffer[enrollment::kMaxMessageBytes / sizeof(wchar_t)] = {};
     HANDLE readEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!readEvent) {
         FACELOGIN_ERROR(L"CreateEvent for pipe read failed: %lu", GetLastError());
@@ -316,7 +335,7 @@ bool PipeServer::ReadMessage(std::wstring& outMessage, DWORD timeoutMs) {
     }
     CloseHandle(readEvent);
 
-    if (!result || bytesRead == 0) {
+    if (!result || bytesRead == 0 || bytesRead % sizeof(wchar_t) != 0) {
         if (error == ERROR_SEM_TIMEOUT) {
             FACELOGIN_WARN(L"ReadMessage timed out after %lu ms with no data", timeoutMs);
         } else if (m_shutdownRequested.load() || error == ERROR_OPERATION_ABORTED) {
@@ -328,7 +347,7 @@ bool PipeServer::ReadMessage(std::wstring& outMessage, DWORD timeoutMs) {
             // Message larger than the fixed buffer; the protocol has no
             // fragmentation. Fail closed and let the caller disconnect.
             FACELOGIN_ERROR(L"ReadMessage: message exceeds %u bytes; "
-                            L"closing connection", ipc::PIPE_BUFFER_SIZE);
+                            L"closing connection", static_cast<unsigned>(enrollment::kMaxMessageBytes));
             m_connected = false;
         } else {
             FACELOGIN_ERROR(L"Overlapped ReadFile failed: %lu", error);

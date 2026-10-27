@@ -299,7 +299,7 @@ func TestEnrollmentUIConstantsMatchCpp(t *testing.T) {
 		{"capture_ui.js single-angle pre-check", captureUI, `faceCount >= (\d+)`},
 		{"Chinese cap banner copy", zhCopy, `上限（(\d+) 张脸）`},
 		{"English counter text", enCopy, `/ (\d+) faces`},
-		{"English cap copy", enCopy, `limit of (\d+) faces`},
+		{"English cap copy", enCopy, `limit is (\d+) faces`},
 	} {
 		got := mustParseOne(site.name, site.src, regexp.MustCompile(site.re))
 		if got != "" && got != maxFaces {

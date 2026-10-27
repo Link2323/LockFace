@@ -11,9 +11,8 @@ struct EnrollmentSaveOutcome {
     bool persisted = false;
 };
 
-// UI-thread account operations. Owns the enrollment-side database and keeps
-// persistence followed by service acknowledgement together. Session lookup and
-// password validation remain in session_identity; no plaintext is retained.
+// UI-thread account operations. The SYSTEM service owns database access;
+// only account metadata is returned. No existing template or password is read.
 class EnrollmentAccounts {
 public:
     EnrollmentAccounts(const std::wstring& dataDir,
@@ -45,9 +44,9 @@ private:
         std::wstring currentUpn;
     };
     AccountChange ReadAccountChange();
-    bool SaveAndReload(bool* persisted = nullptr);
-
-    CredentialStore m_store;
+    bool QueryAccount(enrollment::Snapshot& account) const;
+    bool UpdateIdentity(const enrollment::Snapshot& account, const std::wstring& upn,
+                        const std::vector<uint8_t>& password = {});
     std::string m_saveStatus = "failed";
     const session_identity::SessionIdentity m_identity;
     const EnrollmentServiceClient& m_serviceClient;

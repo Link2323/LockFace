@@ -74,6 +74,7 @@ public:
     bool IsClientDisconnected() const;
     // Verify the connected client's effective token, never a client-supplied ID.
     bool IsClientPrivileged() const;
+    bool GetClientSid(std::wstring& sid) const;
 
 private:
     // Absolute-format security descriptor + its separately-allocated DACL.

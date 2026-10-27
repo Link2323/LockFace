@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include "../storage/enrollment_protocol.h"
 
 namespace facelogin {
 
@@ -16,6 +17,7 @@ public:
     // Database reload retries busy/broken connections; configuration reload
     // allows worker startup. True requires the corresponding service OK.
     bool ReloadDatabase() const;
+    bool AccountRequest(const enrollment::Request& request, enrollment::Snapshot& snapshot) const;
     bool DeleteEnrollment(const std::wstring& sid, uint32_t faceId = 0) const;
     bool ReloadConfig() const;
     bool ProtectPassword(const std::wstring& password, std::vector<uint8_t>& encrypted) const;

@@ -6,6 +6,7 @@
 #include "enrollment_accounts.h"
 #include "enrollment_capture_health.h"
 #include "ipc_protocol.h"
+#include "dpapi_util.h"
 
 #include <windows.h>
 #include <sddl.h>
@@ -15,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <limits>
 
 int RunPreviewFrameEncoderTests();
 int RunPrivacyWithdrawalTests();
@@ -276,6 +278,60 @@ void TestPasswordEndpointVerification() {
     Check(!client.ProtectPassword(std::wstring(L"a\0b", 3), encrypted), "embedded NUL password rejected");
 }
 
+void TestEnrollmentReconnectGap() {
+    const std::wstring name = L"\\\\.\\pipe\\LockFace.ReconnectGap." + std::to_wstring(GetCurrentProcessId());
+    facelogin::PipeServer server;
+    bool connected = false;
+    std::thread peer([&] {
+        Sleep(75); // Public service closes/recreates its one instance after each ACK.
+        connected = server.WaitForClient(500, name.c_str());
+        if (connected) {
+            std::wstring received;
+            server.ReadMessage(received, 500);
+            Check(received.empty(), "reconnected fake endpoint still receives no biometric bytes");
+            server.Disconnect();
+        }
+    });
+    facelogin::EnrollmentServiceClient client(name);
+    facelogin::enrollment::Request request;
+    facelogin::enrollment::Snapshot snapshot;
+    Check(!client.AccountRequest(request, snapshot), "reconnected endpoint still requires SCM SYSTEM verification");
+    peer.join();
+    Check(connected, "enrollment waits through missing pipe instance between consecutive requests");
+}
+
+void TestEnrollmentEndpointVerification() {
+    const std::wstring name = L"\\\\.\\pipe\\LockFace.FakeEnrollmentService." + std::to_wstring(GetCurrentProcessId());
+    HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, 65536, 65536, 0, nullptr);
+    Check(pipe != INVALID_HANDLE_VALUE, "create fake enrollment endpoint");
+    if (pipe == INVALID_HANDLE_VALUE) return;
+    std::wstring received;
+    std::thread server([&] {
+        OVERLAPPED op{};
+        op.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        DWORD bytes = 0;
+        BOOL immediate = ConnectNamedPipe(pipe, &op);
+        bool connected = !immediate && GetLastError() == ERROR_PIPE_CONNECTED;
+        if (!connected) connected = CompleteIo(pipe, op, immediate, bytes);
+        CloseHandle(op.hEvent);
+        if (connected) ReadMessage(pipe, received);
+        DisconnectNamedPipe(pipe);
+    });
+    facelogin::EnrollmentServiceClient client(name);
+    facelogin::enrollment::Request request;
+    request.operation = facelogin::enrollment::Operation::SaveTemplates;
+    request.username = L"synthetic";
+    facelogin::FaceRecord face;
+    face.embedding.resize(128); face.embedding[0] = 1; face.nominalYaw = 0; face.nominalPitch = 0;
+    request.faces.push_back(std::move(face));
+    facelogin::enrollment::Snapshot snapshot;
+    Check(!client.AccountRequest(request, snapshot), "enrollment request refuses a non-SYSTEM SCM endpoint");
+    server.join();
+    CloseHandle(pipe);
+    Check(received.empty(), "fake endpoint receives no biometric request bytes");
+}
+
 void TestDeletionEndpointVerification() {
     const std::wstring name = L"\\\\.\\pipe\\LockFace.FakeDeletionService." +
         std::to_wstring(GetCurrentProcessId());
@@ -315,12 +371,14 @@ void TestPipeClientAuthorization() {
             std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(level);
         facelogin::PipeServer pipeServer;
         bool exchange = false, privileged = false, restored = false;
+        std::wstring clientSid;
         std::thread server([&] {
             std::wstring request;
             if (!pipeServer.WaitForClient(5000, name.c_str()) ||
                 !pipeServer.ReadMessage(request, 5000)) return;
             exchange = request == L"AUTHORIZATION_TEST";
             privileged = pipeServer.IsClientPrivileged();
+            pipeServer.GetClientSid(clientSid);
             HANDLE token = nullptr;
             const BOOL opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token);
             restored = !opened && GetLastError() == ERROR_NO_TOKEN;
@@ -348,6 +406,8 @@ void TestPipeClientAuthorization() {
             std::fprintf(stderr, "Authorization level=%lu, elevated=%d: expected=%d actual=%d\n",
                          level, elevated, expected, privileged);
         }
+        if (level != SECURITY_ANONYMOUS) Check(clientSid == facelogin::session_identity::GetCurrentProcessUserSid(),
+            "pipe owner SID comes from the client's token and not its message");
         Check(privileged == expected,
               "Identification/Impersonation accept enabled admins; anonymous and unelevated clients are denied");
     }
@@ -461,37 +521,21 @@ void TestMachineSidRepair(const fs::path& dataDir) {
           "create untouched record keyed by a genuine user SID");
     Check(store.SaveDatabase(), "persist polluted fixture");
 
-    // One-shot service stub answering the single RELOAD_DB the repair issues.
-    const std::wstring pipeName = L"\\\\.\\pipe\\FaceLogin.EnrollmentSupportTest.SidRepair." +
-        std::to_wstring(GetCurrentProcessId());
-    HANDLE pipe = CreateNamedPipeW(pipeName.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-                                   PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                                   1, 65536, 65536, 0, nullptr);
-    Check(pipe != INVALID_HANDLE_VALUE, "create sid-repair test pipe");
-    if (pipe == INVALID_HANDLE_VALUE) return;
-    std::thread server([&] {
-        OVERLAPPED operation{};
-        operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        if (!operation.hEvent) return;
-        DWORD bytes = 0;
-        BOOL immediate = ConnectNamedPipe(pipe, &operation);
-        bool connected = !immediate && GetLastError() == ERROR_PIPE_CONNECTED;
-        if (!connected) connected = CompleteIo(pipe, operation, immediate, bytes);
-        CloseHandle(operation.hEvent);
-        std::wstring request, acknowledgement;
-        if (connected && ReadMessage(pipe, request)) {
-            WriteMessage(pipe, ipc::MSG_RELOAD_OK);
-            ReadMessage(pipe, acknowledgement);
-        }
-        DisconnectNamedPipe(pipe);
-    });
-
-    facelogin::EnrollmentServiceClient client(pipeName);
-    facelogin::EnrollmentAccounts accounts(dataDir.wstring(), identity, client);
-    const bool repaired = accounts.AutoRepairMachineSidOnStartup();
-    server.join();
-    CloseHandle(pipe);
-    Check(repaired, "machine-SID record repaired and reload confirmed");
+    facelogin::enrollment::Request query;
+    facelogin::enrollment::Snapshot metadata;
+    Check(facelogin::enrollment::Execute(store, tokenSid, query, metadata) && metadata.found &&
+              metadata.sid == machineSid && metadata.faces.size() == 1 && metadata.faces[0].embedding.empty(),
+          "service returns only the caller's repairable metadata, never templates");
+    facelogin::enrollment::Request repair;
+    repair.operation = facelogin::enrollment::Operation::UpdateIdentity;
+    repair.sid = tokenSid;
+    repair.previousSid = machineSid;
+    repair.username = identity.username;
+    Check(facelogin::enrollment::Execute(store, tokenSid, repair, metadata),
+          "service repairs authenticated caller's machine SID atomically");
+    repair.sid = adminSid;
+    Check(!facelogin::enrollment::Execute(store, tokenSid, repair, metadata),
+          "client-supplied target SID cannot select another account");
 
     facelogin::CredentialStore verify;
     verify.SetDataDir(dataDir.wstring());
@@ -511,6 +555,73 @@ void TestMachineSidRepair(const fs::path& dataDir) {
     Check(untouchedIdx < users.size() && users[untouchedIdx].sid == adminSid &&
               users[untouchedIdx].faces.size() == 1,
           "genuine user-SID record is untouched");
+}
+
+void TestServiceTemplateTransactions(const fs::path& root) {
+    namespace en = facelogin::enrollment;
+    std::error_code error;
+    Check(fs::create_directory(root, error) && !error, "create service template transaction fixture");
+    const auto sid = facelogin::session_identity::GetCurrentProcessUserSid();
+    std::wstring domain, username;
+    Check(facelogin::account_identity::ResolveUserSid(sid, domain, username), "resolve transaction caller from token");
+    facelogin::CredentialStore store;
+    store.SetDataDir(root.wstring());
+    // Mirror first enrollment after deletion: query an empty sealed V8 store,
+    // then protect the password and save all three prepared angles together.
+    Check(store.LoadDatabase() && store.SaveDatabase(), "seed empty V8 enrollment database");
+    store.ReleasePlaintext();
+    en::Request query;
+    query.sid = sid;
+    en::Snapshot first;
+    Check(en::Execute(store, sid, query, first) && !first.found, "query empty sealed enrollment database");
+    store.ReleasePlaintext();
+    en::Request save;
+    save.operation = en::Operation::SaveTemplates;
+    save.sid = sid; save.username = username;
+    save.encryptedPassword = facelogin::DpapiUtil::Protect(L"synthetic-transaction-password");
+    facelogin::FaceRecord face;
+    face.embedding.resize(128); face.embedding[0] = 1;
+    face.label = L"front"; face.nominalYaw = 0; face.nominalPitch = 0;
+    save.faces.resize(3, face);
+    save.faces[1].label = L"左转"; save.faces[1].nominalYaw = 30;
+    save.faces[2].label = L"右转"; save.faces[2].nominalYaw = -30;
+    save.replace = true;
+    std::wstring message;
+    en::Request decoded;
+    Check(en::EncodeRequest(save, message) && en::DecodeRequest(message, decoded), "template request codec round-trips");
+    en::Snapshot snapshot;
+    Check(en::Execute(store, sid, decoded, snapshot) && snapshot.found && snapshot.faces.size() == 3 &&
+          snapshot.faces[0].embedding.empty(), "service atomically saves templates and returns metadata only");
+    Check(en::EncodeSnapshot(snapshot, message) && en::DecodeSnapshot(message, snapshot) &&
+          snapshot.faces[0].embedding.empty(), "snapshot codec cannot expose stored templates");
+    auto credential = store.LoadCredentialForSid(sid);
+    Check(credential && credential->password == L"synthetic-transaction-password", "service save preserves protected credential");
+    if (credential) facelogin::SecureClearWString(credential->password);
+    const auto originalPassword = store.GetUsers()[0].encryptedPassword;
+    save.replace = true;
+    save.faces.resize(3, face);
+    save.faces[1].label = L"left"; save.faces[1].nominalYaw = 30;
+    save.faces[2].label = L"right"; save.faces[2].nominalYaw = -30;
+    save.encryptedPassword.clear();
+    Check(en::Execute(store, sid, save, snapshot) && snapshot.faces.size() == 3 &&
+          store.GetUsers()[0].encryptedPassword == originalPassword, "multi-angle replacement commits all angles and retains password");
+    save.replace = false;
+    save.faces[0].embedding[0] = 0;
+    save.faces[0].embedding[1] = 1;
+    Check(!en::Execute(store, sid, save, snapshot) && store.LoadDatabase() && store.GetFaceCount(sid) == 3,
+          "capacity failure cannot commit a partial batch");
+    en::Request spoof;
+    spoof.sid = L"S-1-5-21-111-222-333-9999";
+    Check(!en::Execute(store, sid, spoof, snapshot), "token binding rejects queries for another SID");
+    Check(en::EncodeRequest(save, message), "encode bounded three-template request");
+    const auto validMessage = message;
+    message.pop_back(); Check(!en::DecodeRequest(message, decoded), "truncated template transport rejected");
+    message = validMessage + L"00"; Check(!en::DecodeRequest(message, decoded), "trailing template transport rejected");
+    message = validMessage; message.back() = L'Z'; Check(!en::DecodeRequest(message, decoded), "non-hex template transport rejected");
+    message.assign(en::kMaxMessageBytes, L'0'); Check(!en::DecodeRequest(message, decoded), "oversized template transport rejected");
+    save.faces[0].embedding[0] = std::numeric_limits<float>::quiet_NaN();
+    Check(!en::EncodeRequest(save, message) && !en::Execute(store, sid, save, snapshot), "non-finite templates cannot be encoded or committed");
+    facelogin::SecureClearWString(message);
 }
 
 void TestCaptureFrameWatchdog() {
@@ -553,15 +664,15 @@ void TestAccountMutationOutcomes(const fs::path& dataDir) {
         std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(GetTickCount64());
     facelogin::EnrollmentServiceClient client(pipeName);
     facelogin::EnrollmentAccounts accounts(dataDir.wstring(), identity, client);
-    Check(!accounts.RenameFace(faceId, L"renamed") && accounts.GetSaveStatus() == "reload_failed",
-          "rename distinguishes persisted change from missing service acknowledgement");
-    Check(accounts.GetFacesJson().find("renamed") != std::string::npos,
-          "renamed label can be reloaded from disk despite missing acknowledgement");
+    Check(!accounts.RenameFace(faceId, L"renamed") && accounts.GetSaveStatus() == "failed",
+          "rename requires a verified service and never falls back to direct disk writes");
+    Check(store.LoadDatabase() && store.GetUsers()[0].faces[0].label == L"original" && accounts.GetFacesJson() == "[]",
+          "unavailable service cannot change the persisted label or expose stored metadata");
     Check(!accounts.DeleteFace(-1) && accounts.GetSaveStatus() == "failed",
           "failed validation clears a preceding persisted outcome");
-    Check(!accounts.DeleteFace(faceId) && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 1,
+    Check(!accounts.DeleteFace(faceId) && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 0,
           "missing service cannot acknowledge deletion or change the database");
-    Check(!accounts.ClearAllFaces() && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 1,
+    Check(!accounts.ClearAllFaces() && accounts.GetSaveStatus() == "failed" && accounts.GetFaceCount() == 0,
           "missing service leaves withdrawal incomplete and retryable");
 }
 
@@ -580,6 +691,8 @@ int main() {
     TestServiceClient();
     TestPasswordEndpointVerification();
     TestDeletionEndpointVerification();
+    TestEnrollmentEndpointVerification();
+    TestEnrollmentReconnectGap();
     TestPipeClientAuthorization();
     TestSessionIdentity();
     {
@@ -590,6 +703,7 @@ int main() {
         Check(!facelogin::account_identity::ResolveUserSid(L"S-1-5-32-544", domain, sam), "group SID rejected as login identity");
     }
     TestMachineSidRepair(dataDir / L"sidrepair");
+    TestServiceTemplateTransactions(dataDir / L"transactions");
     TestCaptureFrameWatchdog();
     TestAccountMutationOutcomes(dataDir / L"mutations");
     // Only remove the unique directory successfully created by this test.

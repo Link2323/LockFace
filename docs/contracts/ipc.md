@@ -6,7 +6,7 @@
 
 - 服务端：`LockFaceService.exe`
 - 认证客户端：LogonUI 中加载的 `LockFaceCredentialProvider.dll`
-- 管理客户端：`LockFaceConsole.exe`，通过管道发送 `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS` / `PROTECT_PASSWORD:...` / `DELETE_ENROLLMENT:...`
+- 管理客户端：`LockFaceConsole.exe`，通过管道发送 `ENROLLMENT_V1:...` / `RELOAD_DB` / `CONFIG_RELOAD` / `LEARNING_STATUS` / `PROTECT_PASSWORD:...` / `DELETE_ENROLLMENT:...`
 
 安装器不参与运行期 IPC。注册控制台的服务日志页面直接读取 `<DataPath>\log\service.log`，以避开固定消息缓冲区限制。
 
@@ -19,7 +19,7 @@
 | 实例数 | 1，串行处理客户端 |
 | 编码 | Windows `wchar_t`，即 UTF-16LE |
 | 分帧 | 使用命名管道消息边界，无长度前缀 |
-| 服务端缓冲区 | `ipc::PIPE_BUFFER_SIZE = 4096` 字节 |
+| 服务端消息读取上限 | 65536 字节（UTF-16，含 NUL）；管道内核缓冲提示仍为 `ipc::PIPE_BUFFER_SIZE = 4096` |
 | 远程访问 | `PIPE_REJECT_REMOTE_CLIENTS` |
 
 服务端的 `ConnectNamedPipe` / `ReadFile` / `WriteFile` 与 Credential Provider
@@ -30,7 +30,7 @@
 
 通用客户端和服务端写入时包含结尾 `NUL`，接收端会剥离尾随 `NUL`。注册控制台的部分单向通知按 `msg.size() * sizeof(wchar_t)` 写入，不携带 `NUL`，因此任何接收端都不得把 `NUL` 当作唯一消息边界。
 
-当前没有分片/重组层。新增大载荷前必须同时检查服务端、Credential Provider 和注册控制台的固定缓冲区及 `ERROR_MORE_DATA` 路径。
+当前没有应用层分片/重组；服务单条读取上限 65536 字节，注册端有界拼接 message-mode 的 `ERROR_MORE_DATA` 响应，拒绝奇数字节及超限。认证消息及 CP 缓冲区保持原上限；新增大载荷须检查所有消费者。
 
 ## 访问控制
 
@@ -60,6 +60,16 @@
 | `PROTECT_PASSWORD:password` / `PROTECT_PASSWORD_OK:HEX` / `PROTECT_PASSWORD_ERROR` | 控制台 ↔ 服务 | 仅加密，SYSTEM 服务使用用户作用域 DPAPI；密码为前缀之后全部字符（可含冒号），1..256 个 UTF-16 code units，不含内嵌 NUL。响应为 2..4096 字节密文的大写十六进制编码，客户端读取后回 `CONTROL_ACK`；无解密接口，无机器作用域回退 |
 | `LEARNING_STATUS` | 控制台 ↔ 服务 | 只读查询渐进式学习状态；响应为单条 JSON（`enabled`/`gate_cap`/`faces[]`/`recent[]`，无 OK/ERROR 后缀），服务端同步组装。数据为内存快照，服务重启清零（持久事实源是日志）。客户端读取后回 `CONTROL_ACK`。管道单实例，控制台侧按 10s 节流，不得变成高频轮询 |
 | `CONTROL_ACK` | 控制台 → 服务 | 控制台已读取 reload 响应；服务最多等待 2 秒 |
+
+## 注册管理 V1
+
+`ENROLLMENT_V1:` 后为二进制载荷的大写十六进制，每个字节对应两个 UTF-16 字符。请求及响应含终止 NUL 均不得超过 65536 字节；无网络或新管道。注册端发送前验证 SCM PID 和 SYSTEM 令牌，服务端验证启用的管理员/SYSTEM 权限、取得实际客户端 TokenUser SID，并恢复服务身份后进行 DPAPI 操作。请求中 SID 不得选择他人账户。
+
+请求按 Windows x64 小端编码：uint32 操作（1 查询、2 批量模板保存、3 改名、4 身份更新）；四个长度前缀 UTF-16 字符串 username/upn/sid/previousSid（上限 256/256/512/512）；uint32 密码密文字节数及 blob（0 或 2..4096）；uint32 replace（0/1）；uint32 faceId；长度前缀 label（≤64）；uint32 模板数（≤3）；逐模板的长度前缀 label（≤64）、float yaw/pitch、128 个 float。向量须有限且范数在 [0.9,1.1]，角度有限且绝对值≤90。字符串不得含内嵌 NUL，拒绝尾随字节。
+
+成功响应 `ENROLLMENT_OK:` 后同样编码：uint32 found（0/1）；长度前缀 username/upn/sid；uint32 faceCount（≤16）；逐条 uint32 id 和长度前缀 label。**响应不含模板、密码或密码密文**。失败为 `ENROLLMENT_ERROR`。客户端收到后发送 `CONTROL_ACK`。服务原子保存成功后才返回成功；响应丢失时结果未知，界面不能报告完成。追加完全相同的模板请求不会重复增加记录；批量替换在同一提交中完成。注册端不能回退直接写库。
+
+所有查询及修改绑定客户端实际 SID；历史非用户 SID 只在记录 SAM 名与实际用户 SID 解析出的 SAM 名相同时进入修复，不能用 UPN 或自报用户名选择其他账户。身份更新携带 previousSid，密码 blob 为空表示保持原密码。旧 `RELOAD_DB` 保留用于显式重校验，注册保存不再依赖它确认第二次重载。
 
 ## `AUTH_SUCCESS` 当前格式
 

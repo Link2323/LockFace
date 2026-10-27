@@ -5,6 +5,7 @@
 #include "../common/secure_clear.h"
 
 #include <utility>
+#include <algorithm>
 
 namespace facelogin {
 
@@ -85,18 +86,25 @@ static RequestAckOutcome RequestAckRoundTrip(HANDLE hPipe,
     // ERROR_MORE_DATA with a partial chunk; keep reading until ReadFile
     // reports the message complete.
     std::wstring response;
-    wchar_t buffer[4096];
+    response.reserve(enrollment::kMaxMessageBytes / sizeof(wchar_t));
+    SecureWStringGuard responseGuard(response);
+    wchar_t buffer[4096]{};
     DWORD bytesRead = 0;
     for (;;) {
         const BOOL ok = ReadFile(hPipe, buffer,
                                  static_cast<DWORD>(sizeof(buffer) - sizeof(wchar_t)),
                                  &bytesRead, nullptr);
         if (ok || GetLastError() == ERROR_MORE_DATA) {
+            if (bytesRead % sizeof(wchar_t) || response.size() + bytesRead / sizeof(wchar_t) > enrollment::kMaxMessageBytes / sizeof(wchar_t) - 1) {
+                SecureZeroMemory(buffer, sizeof(buffer)); outcome.error = ERROR_MORE_DATA; return outcome;
+            }
             response.append(buffer, bytesRead / sizeof(wchar_t));
+            SecureZeroMemory(buffer, sizeof(buffer));
             if (ok) break;
             continue;
         }
         outcome.error = GetLastError();
+        SecureZeroMemory(buffer, sizeof(buffer));
         return outcome;
     }
     while (!response.empty() && response.back() == L'\0') {
@@ -147,6 +155,58 @@ static bool IsSystemServicePipe(HANDLE pipe) {
     return system;
 }
 
+// The service owns one instance and closes/recreates it after CONTROL_ACK.
+// Both BUSY and FILE_NOT_FOUND are transient between consecutive operations.
+static HANDLE ConnectEnrollmentPipe(const std::wstring& name) {
+    const ULONGLONG deadline = GetTickCount64() + 5000;
+    DWORD error = ERROR_FILE_NOT_FOUND;
+    do {
+        HANDLE pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+            OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE) return pipe;
+        error = GetLastError();
+        if (error != ERROR_PIPE_BUSY && error != ERROR_FILE_NOT_FOUND) break;
+        const auto now = GetTickCount64();
+        if (now >= deadline) break;
+        const DWORD remaining = static_cast<DWORD>(deadline - now);
+        if (error == ERROR_PIPE_BUSY) WaitNamedPipeW(name.c_str(), (std::min)(remaining, DWORD{100}));
+        // WaitNamedPipe returns immediately if no instance exists. Avoid a spin
+        // and let the server finish replacing the instance before retrying.
+        Sleep((std::min)(remaining, DWORD{10}));
+    } while (GetTickCount64() < deadline);
+    SetLastError(error);
+    return INVALID_HANDLE_VALUE;
+}
+
+bool EnrollmentServiceClient::AccountRequest(const enrollment::Request& request,
+                                             enrollment::Snapshot& snapshot) const {
+    snapshot = {};
+    std::wstring message;
+    SecureWStringGuard guard(message);
+    if (!enrollment::EncodeRequest(request, message)) {
+        FACELOGIN_ERROR(L"Enrollment request encoding failed (operation=%u)", static_cast<unsigned>(request.operation));
+        return false;
+    }
+    HANDLE pipe = ConnectEnrollmentPipe(m_pipeName);
+    if (pipe == INVALID_HANDLE_VALUE) {
+        FACELOGIN_ERROR(L"Enrollment connection failed: %lu", GetLastError());
+        return false;
+    }
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    if (!IsSystemServicePipe(pipe) || !SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
+        CloseHandle(pipe);
+        FACELOGIN_ERROR(L"Enrollment operation refused: unverified service endpoint");
+        return false;
+    }
+    auto outcome = RequestAckRoundTrip(pipe, message, 5000, 25, L"enrollment operation");
+    CloseHandle(pipe);
+    SecureWStringGuard responseGuard(outcome.response);
+    const bool ok = outcome.ok && enrollment::DecodeSnapshot(outcome.response, snapshot);
+    if (!ok) FACELOGIN_ERROR(L"Enrollment operation failed (operation=%u, transport=%lu, rejected=%d)",
+        static_cast<unsigned>(request.operation), outcome.error, outcome.response == enrollment::kError);
+    return ok;
+}
+
 bool EnrollmentServiceClient::DeleteEnrollment(const std::wstring& sid, uint32_t faceId) const {
     const std::wstring request = std::wstring(ipc::MSG_DELETE_ENROLLMENT_PREFIX) +
         sid + L":" + std::to_wstring(faceId);
@@ -155,8 +215,7 @@ bool EnrollmentServiceClient::DeleteEnrollment(const std::wstring& sid, uint32_t
     if (!ipc::ParseDeleteEnrollment(request, parsedSid, parsedId)) return false;
     // Retry is safe even if the first acknowledgement was lost.
     for (unsigned attempt = 0; attempt < 5; ++attempt) {
-        HANDLE pipe = CreateFileW(m_pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
-            nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+        HANDLE pipe = ConnectEnrollmentPipe(m_pipeName);
         if (pipe == INVALID_HANDLE_VALUE) {
             if (GetLastError() != ERROR_PIPE_BUSY) return false;
             WaitNamedPipeW(m_pipeName.c_str(), 1000);
@@ -180,15 +239,11 @@ bool EnrollmentServiceClient::ProtectPassword(const std::wstring& password,
     encrypted.clear();
     if (password.empty() || password.size() > ipc::MAX_PASSWORD_CHARS ||
         password.find(L'\0') != std::wstring::npos) return false;
-    HANDLE pipe = INVALID_HANDLE_VALUE;
-    for (unsigned attempt = 0; attempt < 5; ++attempt) {
-        pipe = CreateFileW(m_pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
-                          nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
-                          nullptr);
-        if (pipe != INVALID_HANDLE_VALUE || GetLastError() != ERROR_PIPE_BUSY) break;
-        WaitNamedPipeW(m_pipeName.c_str(), 1000);
+    HANDLE pipe = ConnectEnrollmentPipe(m_pipeName);
+    if (pipe == INVALID_HANDLE_VALUE) {
+        FACELOGIN_ERROR(L"Password protection connection failed: %lu", GetLastError());
+        return false;
     }
-    if (pipe == INVALID_HANDLE_VALUE) return false;
     DWORD mode = PIPE_READMODE_MESSAGE;
     if (!IsSystemServicePipe(pipe) || !SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
         CloseHandle(pipe);

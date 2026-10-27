@@ -68,11 +68,13 @@ cmake --build build --config Release --target EnrollmentSupportTest IpcProtocolT
 
 `EnrollmentSupportTest` 使用独立命名管道和自动清理的临时日志目录，覆盖服务请求/ACK、拒绝与断开响应，以及日志编码、截尾和正在写入的日志清空；另以可控时钟验证注册采集断流超时和重复缓存帧不续期，并验证人脸管理更改已落盘但服务未确认时的结果和重载。
 
-凭据保护回归：`CredentialStoreTest` 验证当前身份 DPAPI 往返、其他身份拒绝和未升级 V6 拒绝；SYSTEM 专用迁移用例在普通用户进程中明确跳过。`EnrollmentSupportTest` 验证假服务管道在端点身份验证失败时收不到任何密码字节。
+凭据保护回归：`CredentialStoreTest` 验证 V8 加密模板往返、缓存清理、其他身份拒绝、密文/外层 header 篡改拒绝和未升级 V6/V7 拒绝；SYSTEM 专用迁移用例在普通用户进程中明确跳过。`EnrollmentSupportTest` 验证假服务管道在端点身份验证失败时收不到密码或模板字节，并验证管理消息编解码、本人元数据、批量保存、容量失败及 SID 冒用拒绝。
+
+可用 `build/tools/credential_store/Release/CredentialStoreTest.exe --benchmark-unseal` 测量真实 V8 `RestorePlaintext` 加清理：仅创建临时合成数据，5 账户/15 模板、1,000 轮，输出中位数/P95/最大值，结束自动清理；当前身份的基准不能代替 SYSTEM/Session 0 锁屏对照。
 
 `EnrollmentSupportTest` 还编译真实 `PipeServer`，验证 Identification/Impersonation 客户端的启用管理员组授权、普通/deny-only 令牌和匿名客户端拒绝，以及每次检查后恢复服务线程身份。需分别在未提升权限和提升后的管理员进程中运行；仅普通用户用例无法发现管理员也被错误拒绝的回归。
 
-发布 V7 前仍需在 SYSTEM 身份下运行 `CredentialStoreTest.exe`，覆盖 V6 主库/备份迁移、幂等和损坏密文不覆盖原文件；再完成跨账号验证：SYSTEM 运行 `CredentialStoreTest.exe --write-scope-probe <绝对路径>` 生成仅含合成测试数据的密文，将文件复制到普通账号可读目录，该账号运行 `CredentialStoreTest.exe --reject-scope-probe <绝对路径>` 必须成功报告解密被拒绝。完成后删除探针文件。此项及真实 GUI 注册、密码更新、重启后锁屏登录不能由同账号单元测试替代。
+发布 V8 前仍需在 SYSTEM 身份下运行 `CredentialStoreTest.exe`，覆盖 V6/V7 主库/备份迁移及 V8 模板清理、完整性验证、幂等和损坏密文不覆盖原文件；再完成跨账号验证：SYSTEM 运行 `CredentialStoreTest.exe --write-scope-probe <绝对路径>` 生成仅含合成测试数据的密文，将文件复制到普通账号可读目录，该账号运行 `CredentialStoreTest.exe --reject-scope-probe <绝对路径>` 必须成功报告解密被拒绝。完成后删除探针文件。此项及真实 GUI 注册、密码更新、重启后锁屏登录不能由同账号单元测试替代。
 
 ## 安装包构建
 

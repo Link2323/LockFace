@@ -1,4 +1,6 @@
 add_library(facelogin_credential_store STATIC
+    enrollment_protocol.cpp
+    enrollment_protocol.h
     credential_store.cpp
     credential_store.h
 )

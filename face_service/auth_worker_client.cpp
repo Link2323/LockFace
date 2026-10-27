@@ -1,4 +1,5 @@
 #include "auth_worker_client.h"
+#include "../common/secure_clear.h"
 
 #include "timer_resolution.h"
 
@@ -279,6 +280,7 @@ AuthWorkerResult AuthWorkerClient::Authenticate(AuthWorkerCallbacks callbacks,
             return result;
         }
         auth_worker::Message message;
+        SecureVectorGuard<uint8_t> payloadGuard(message.payload);
         // Active authentication has only a handful of short private messages.
         // Poll at 1 ms here to avoid adding a 5 ms quantum to every status,
         // binding and terminal frame; the idle preloaded worker keeps the
@@ -308,6 +310,7 @@ AuthWorkerResult AuthWorkerClient::Authenticate(AuthWorkerCallbacks callbacks,
         if (message.type == auth_worker::MessageType::MatchProbe) {
             unsigned int bindingIndex = 0;
             std::vector<float> embedding;
+            SecureVectorGuard<float> embeddingGuard(embedding);
             float preNorm = 0.0f;
             float yawDeg = 0.0f, pitchDeg = 0.0f;
             if (!auth_worker::DecodeMatchProbe(message.payload, bindingIndex, embedding,

@@ -4,10 +4,17 @@
 
 #include <string>
 #include <vector>
+#include "../common/secure_clear.h"
 
 namespace facelogin {
 
 struct EnrollmentTemplate {
+    ~EnrollmentTemplate() { SecureClearVector(embedding); }
+    EnrollmentTemplate() = default;
+    EnrollmentTemplate(const EnrollmentTemplate&) = default;
+    EnrollmentTemplate(EnrollmentTemplate&&) noexcept = default;
+    EnrollmentTemplate& operator=(const EnrollmentTemplate&) = default;
+    EnrollmentTemplate& operator=(EnrollmentTemplate&&) noexcept = default;
     std::vector<float> embedding;
     std::wstring label;
     int targetYaw = 0;

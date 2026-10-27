@@ -25,7 +25,7 @@
 | 摄像头/Session 0 | `vision/webcam_capture_dshow.*`、`face_service/auth_worker.cpp` | [`face-service.md`](docs/modules/face-service.md) | `CameraLifecycleTest` child 100 轮 + 服务 Session 0 |
 | 稳定预热帧复用、帧采集节奏 | `face_service/auth_pipeline.cpp`、`face_service/auth_frame_preparation.*`、`face_service/auth_frame_stream.*`、`vision/webcam_capture_dshow.*`、`tools/auth_pipeline/`、`tools/camera_lifecycle/` | [`face-service.md`](docs/modules/face-service.md)、[优化记录](docs/work/completed/unlock-performance.md) | Service/Console Release + `AuthPipelineTest --warmup-seed` + 完整 `AuthPipelineTest` + 指定设备 child 100 轮；桌面对照不能替代锁屏 |
 | IPC 字段、终态、缓冲区、ACK/取消 | `common/ipc_protocol.*`、`face_service/pipe_server.*`、`credential_provider/pipe_client.*`、`enrollment_app/service_client.*` | [`ipc.md`](docs/contracts/ipc.md) | 三端构建 + `IpcProtocolTest` + `EnrollmentSupportTest` + 断开/超长消息 |
-| 人脸匹配、多人脸、`users.dat` | `storage/credential_store.*`、`enrollment_app/EnrollmentWizard.*`、`enrollment_app/enrollment_templates.*`、`enrollment_app/enrollment_accounts.*`、`credential_provider/LockFaceProvider.cpp`（header） | [`users-dat.md`](docs/contracts/users-dat.md) | `CredentialStoreTest` + 保存/重载/匹配 |
+| 人脸匹配、多人脸、`users.dat` | `storage/credential_store.*`、`storage/enrollment_protocol.*`、`enrollment_app/EnrollmentWizard.*`、`enrollment_app/enrollment_templates.*`、`enrollment_app/enrollment_accounts.*`、`credential_provider/LockFaceProvider.cpp`（header） | [`users-dat.md`](docs/contracts/users-dat.md) | `CredentialStoreTest` + 保存/重载/匹配 |
 | 锁屏磁贴、输入触发、COM、LSA、卡死 | `credential_provider/LockFaceCredential.*`、`credential_provider/input_trigger_policy.h`、`credential_provider/waiting_prompt_policy.h`、`credential_provider/auth_interaction_policy.h`、`credential_provider/LockFaceProvider.*`、`credential_provider/pipe_client.*` | [`windows-clients.md`](docs/modules/windows-clients.md)；消息问题再读 IPC 契约 | Release 构建 + `CredentialSerializationTest` + `CredentialDomainRoutingTest` + `CredentialConcurrencyTest` + 锁屏登录/解锁 |
 | 注册、人脸管理、WebView2 | `enrollment_app/EnrollmentWizard.*`、`enrollment_app/enrollment_capture.*`、`enrollment_app/enrollment_capture_health.h`、`enrollment_app/WebviewHost.*`、`enrollment_app/index.html.in`、`enrollment_app/js/` 下 JS 模块（`ui_common`/`preview`/`capture_ui`/`navigation`/`consent`/`settings`/`faces`/`account_refresh`/`enroll_save`/`logs`/`app_main`，另加 `capture_flow.js`）、`enrollment_app/styles.css` | [`windows-clients.md`](docs/modules/windows-clients.md)；落盘变化再读 users.dat 契约 | Console Release 构建 + `EnrollmentSupportTest`（断流计时、人脸管理落盘结果）+ `node tools/enrollment_ui/capture_flow_test.cjs` + 管理员 GUI |
 | 注册预览 CPU 占用、重复帧、重绘与模型复用 | `enrollment_app/EnrollmentWizard.cpp`、`enrollment_app/js/preview.js`、`enrollment_app/preview_frame_encoder.*`、`vision/webcam_capture_dshow.*`、`vision/onnx_models.*` | [`windows-clients.md`](docs/modules/windows-clients.md) | Console/Service Release 构建 + `EnrollmentSupportTest`（含 WIC JPEG 颜色/尺寸）+ 页面回归（含版本传输与 DPI/布局）+ 管理员 GUI、CPU 前后对照；模型维持 CPU 推理 |
@@ -73,7 +73,7 @@
 - 安装包载荷白名单（唯一事实源）：[`docs/BUILD.md`](docs/BUILD.md)
 - 命名管道线格式：[`docs/contracts/ipc.md`](docs/contracts/ipc.md)
 - 父服务/认证 worker 私有线格式：[`docs/contracts/auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md)
-- `users.dat` V7（SYSTEM 身份保护；服务启动升级 V6 主库及备份，保留 SFace 人脸；V4/V5 停用重录）：[`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)
+- `users.dat` V8（SYSTEM DPAPI 保护身份与模板；服务启动升级 V6/V7 主库及备份，保留 SFace 人脸；V4/V5 停用重录）：[`docs/contracts/users-dat.md`](docs/contracts/users-dat.md)
 
 <a id="sec-paths"></a>
 ## 路径与配置

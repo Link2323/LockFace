@@ -14,6 +14,7 @@
 #include "../common/json_util.h"
 #include "../common/embedding_math.h"
 #include "../common/time_util.h"
+#include "../storage/enrollment_protocol.h"
 #include <shlobj.h>
 #include <algorithm>
 #include <chrono>
@@ -26,6 +27,26 @@
 #pragma comment(lib, "wtsapi32.lib")
 
 namespace facelogin {
+
+// The public pipe serializes auth and administration. The store lock still
+// protects the boundary against learner callbacks; learning is disabled for
+// the current recognizer. Every auth return path scrubs the plaintext records.
+class AuthTemplateLease {
+public:
+    AuthTemplateLease(CredentialStore& store, CRITICAL_SECTION& lock) : store(store), lock(lock) {
+        EnterCriticalSection(&lock);
+        const auto start = std::chrono::steady_clock::now();
+        valid = store.RestorePlaintext();
+        decryptMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        LeaveCriticalSection(&lock);
+    }
+    ~AuthTemplateLease() { EnterCriticalSection(&lock); store.ReleasePlaintext(); LeaveCriticalSection(&lock); }
+    bool valid = false;
+    double decryptMs = 0;
+private:
+    CredentialStore& store;
+    CRITICAL_SECTION& lock;
+};
 
 static constexpr wchar_t SERVICE_NAME[] = L"LockFaceService";
 
@@ -243,7 +264,7 @@ void FaceService::StartTemplateLearner() {
 // inside the learner (per-slot, keyed by the pose-selected target —
 // 2026-09-05 revision); this side carries no learning statistics anymore.
 void FaceService::SubmitLearningCandidate(const LearningSample& best) {
-    if (!best.faceId) return;
+    if (!best.faceId || !m_config.ema_learning) return;
     if (m_learner) {
         m_learner->Enqueue(best);
     }
@@ -382,6 +403,7 @@ bool FaceService::Initialize() {
         return false;
     }
     FACELOGIN_INFO(L"Loaded %zu registered user(s)", m_store->GetUserCount());
+    m_store->ReleasePlaintext();
 
     // Progressive template learning (docs/work/in-progress/progressive-learning-v2.md §3).
     // The learner thread owns all post-auth EMA work; the hooks below
@@ -457,6 +479,27 @@ void FaceService::Run() {
         // Requests can contain a plaintext enrollment password. Never log payloads.
         FACELOGIN_DEBUG(L"Received pipe request");
 
+        if (request.compare(0, wcslen(enrollment::kRequestPrefix), enrollment::kRequestPrefix) == 0) {
+            std::wstring response(enrollment::kError);
+            enrollment::Request operation;
+            enrollment::Snapshot snapshot;
+            std::wstring callerSid;
+            if (m_pipeServer->IsClientPrivileged() && DpapiUtil::IsSystemContext() &&
+                m_pipeServer->GetClientSid(callerSid) && enrollment::DecodeRequest(request, operation)) {
+                m_learner.reset();
+                EnterCriticalSection(&m_storeLock);
+                const bool ok = enrollment::Execute(*m_store, callerSid, operation, snapshot);
+                if (!ok) m_store->LoadDatabase(); // discard an uncommitted in-memory edit
+                m_store->ReleasePlaintext();
+                LeaveCriticalSection(&m_storeLock);
+                if (ok && !enrollment::EncodeSnapshot(snapshot, response)) response = enrollment::kError;
+                StartTemplateLearner();
+            }
+            SecureClearWString(request);
+            SendControlResponse(response);
+            m_pipeServer->Disconnect();
+            continue;
+        }
         const std::wstring protectPrefix(ipc::MSG_PROTECT_PASSWORD_PREFIX);
         if (request.compare(0, protectPrefix.size(), protectPrefix) == 0) {
             std::wstring response(ipc::MSG_PROTECT_PASSWORD_ERROR);
@@ -492,6 +535,7 @@ void FaceService::Run() {
                 m_learner.reset();
                 EnterCriticalSection(&m_storeLock);
                 deleted = m_store->DeletePersistedFace(sid, faceId);
+                m_store->ReleasePlaintext();
                 LeaveCriticalSection(&m_storeLock);
                 StartTemplateLearner();
             }
@@ -510,6 +554,7 @@ void FaceService::Run() {
             {
                 EnterCriticalSection(&m_storeLock);
                 reloaded = m_store->LoadDatabase();
+                m_store->ReleasePlaintext();
                 LeaveCriticalSection(&m_storeLock);
             }
             // Enrollment changed the templates: every era window describes
@@ -529,7 +574,7 @@ void FaceService::Run() {
                 }
                 m_pipeServer->Disconnect();
                 FACELOGIN_ERROR(L"Database reload failed — users.dat parse error; "
-                                L"previous in-memory database retained");
+                                L"authentication disabled until a valid reload");
             }
         }
         else if (request == ipc::MSG_CONFIG_RELOAD) {
@@ -639,7 +684,7 @@ BindingDecision FaceService::VerifyIdentityBinding(
         return BindingDecision{BindingDecisionKind::Retry, {}};
     }
 
-    if (roundBest &&
+    if (roundBest && m_config.ema_learning &&
         (!roundBest->faceId || identity->distance < roundBest->distance)) {
         roundBest->sid = identity->sid;
         roundBest->username = identity->username;
@@ -745,6 +790,16 @@ bool FaceService::SendAuthErrorMessage(const std::wstring& message) {
 
 bool FaceService::ProcessAuthRequest() {
     const auto authDeadline = ipc::MakeAuthDeadline();
+    AuthTemplateLease templates(*m_store, m_storeLock);
+    if (ipc::RemainingAuthTimeMs(authDeadline) == 0) {
+        SendTerminalMessage(ipc::MSG_AUTH_TIMEOUT);
+        return false;
+    }
+    if (!templates.valid) {
+        FACELOGIN_ERROR(L"Authentication template decryption failed");
+        SendAuthErrorMessage(L"账户凭据不可用，请使用密码登录");
+        return false;
+    }
     if (m_store->GetUserCount() == 0) {
         FACELOGIN_WARN(L"No registered users");
         SendAuthErrorMessage(L"没有注册用户");
@@ -755,7 +810,8 @@ bool FaceService::ProcessAuthRequest() {
     std::wstring initialSid;
     AuthWorkerResult workerResult;
     float identityMissDistance = -1.0f;
-    LearningSample roundBest;   // best frame of the round, learning candidate
+    LearningSample roundBest;
+    SecureVectorGuard<float> roundBestGuard(roundBest.embedding);   // best frame of the round, learning candidate
     // Tier snapshot at round start: the acquired worker was spawned with
     // this generation's config, and a mid-round reload must not shift log
     // denominators under an in-flight exchange.
@@ -903,6 +959,7 @@ bool FaceService::ProcessAuthRequest() {
     workerResult.cleanupMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - reapStart).count();
 
+    FACELOGIN_INFO(L"Authentication template decrypt/parse: %.3f ms", templates.decryptMs);
     FACELOGIN_INFO(L"Credentials sent for %s\\%s", domain.c_str(),
                    credential->username.c_str());
     FACELOGIN_INFO(L"Identity binding complete: user=%s, distance=%.4f, same_sid=%u/%u",
