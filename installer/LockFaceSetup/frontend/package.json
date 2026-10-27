@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../../scripts/stage_licenses.ps1",
+    "prebuild": "npm run check:i18n && powershell -NoProfile -ExecutionPolicy Bypass -File ../../../scripts/stage_licenses.ps1",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:i18n": "node ../../../tools/i18n/check.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

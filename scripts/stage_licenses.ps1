@@ -9,7 +9,9 @@ $copies = @(
     @{ source = 'LICENSE'; name = 'LICENSE.txt' },
     @{ source = 'THIRD_PARTY_NOTICES.txt'; name = 'THIRD_PARTY_NOTICES.txt' },
     @{ source = 'third_party/MODEL_LICENSES.txt'; name = 'MODEL_LICENSES.txt' },
-    @{ source = 'docs/legal/privacy-notice.txt'; name = 'PRIVACY.txt' }
+    @{ source = 'docs/legal/privacy-notice.txt'; name = 'PRIVACY.txt' },
+    @{ source = 'docs/legal/privacy-notice.en.txt'; name = 'PRIVACY.en.txt' },
+    @{ source = 'third_party/MODEL_LICENSES.en.txt'; name = 'MODEL_LICENSES.en.txt' }
 )
 foreach ($copy in $copies) {
     $source = Join-Path $root $copy.source

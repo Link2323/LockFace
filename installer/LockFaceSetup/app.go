@@ -38,6 +38,24 @@ func (a *App) GetMode() map[string]bool {
 	}
 }
 
+func (a *App) GetLanguageSettings() map[string]string {
+	return map[string]string{"locale": internal.UILanguage(), "mode": internal.LanguageMode()}
+}
+
+func (a *App) SetLanguageMode(mode string) bool {
+	if !internal.SetUILanguageMode(mode) {
+		return false
+	}
+	if a.ctx != nil {
+		title := internal.UIText("LockFace 安装程序")
+		if a.uninstallMode {
+			title = internal.UIText("LockFace 卸载程序")
+		}
+		runtime.WindowSetTitle(a.ctx, title)
+	}
+	return true
+}
+
 // ProgressEvent is sent to the frontend during install/uninstall.
 type ProgressEvent struct {
 	Percent int    `json:"percent"`
@@ -66,7 +84,7 @@ func (a *App) GetDefaultPaths() map[string]string {
 // Returns empty string if the user cancels.
 func (a *App) PickDirectory() string {
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "选择安装目录",
+		Title: internal.UIText("选择安装目录"),
 	})
 	if err != nil {
 		return ""
@@ -88,104 +106,104 @@ func (a *App) IsInstalled() bool {
 func (a *App) Install(installDir string) map[string]interface{} {
 	var err error
 
-	a.emit(0, "开始安装", "running", "")
+	a.emit(0, internal.UIText("开始安装"), "running", "")
 	installDir = filepath.Clean(installDir)
 
 	// Validate the complete, exact model set before stopping a working prior
 	// installation. This also detects a corrupted installer payload early.
-	a.emit(0, "校验安装资源", "running", "")
+	a.emit(0, internal.UIText("校验安装资源"), "running", "")
 	if err = internal.ValidateEmbeddedResources(); err != nil {
-		a.emit(0, "校验安装资源", "fail", err.Error())
-		return result(false, fmt.Sprintf("安装资源校验失败: %v", err))
+		a.emit(0, internal.UIText("校验安装资源"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("安装资源校验失败: %v"), err))
 	}
-	a.emit(0, "校验安装资源", "done", "")
+	a.emit(0, internal.UIText("校验安装资源"), "done", "")
 
 	// Step 1: Stop and delete existing service
-	a.emit(0, "停止并删除已有服务", "running", "")
+	a.emit(0, internal.UIText("停止并删除已有服务"), "running", "")
 	if err = internal.StopAndDeleteService(); err != nil {
-		a.emit(0, "停止并删除已有服务", "fail", err.Error())
+		a.emit(0, internal.UIText("停止并删除已有服务"), "fail", err.Error())
 		return result(false, err.Error())
 	}
-	a.emit(12, "停止并删除已有服务", "done", "")
+	a.emit(12, internal.UIText("停止并删除已有服务"), "done", "")
 
 	// Step 1.5: Close programs the update is about to overwrite. A console
 	// left running since the previous install (its finish-page auto-launch)
 	// holds the image lock on LockFaceConsole.exe and would fail extraction.
 	// Any LockFaceService.exe alive after the SCM stop is a stray standalone
 	// or an in-flight auth worker — same lock, same treatment.
-	a.emit(12, "关闭运行中的程序", "running", "")
+	a.emit(12, internal.UIText("关闭运行中的程序"), "running", "")
 	for _, image := range []string{"LockFaceService.exe", "LockFaceConsole.exe"} {
 		killed, kerr := internal.KillProcessesByName(image)
 		if kerr != nil {
-			a.emit(12, "关闭运行中的程序", "warn", kerr.Error())
+			a.emit(12, internal.UIText("关闭运行中的程序"), "warn", kerr.Error())
 		} else if killed > 0 {
-			a.emit(12, "关闭运行中的程序", "running", fmt.Sprintf("已结束 %s（%d 个）", image, killed))
+			a.emit(12, internal.UIText("关闭运行中的程序"), "running", fmt.Sprintf(internal.UIText("已结束 %s（%d 个）"), image, killed))
 		}
 	}
-	a.emit(12, "关闭运行中的程序", "done", "")
+	a.emit(12, internal.UIText("关闭运行中的程序"), "done", "")
 
 	// Step 2: Create directories
-	a.emit(12, "创建目标目录", "running", "")
+	a.emit(12, internal.UIText("创建目标目录"), "running", "")
 	if err = os.MkdirAll(installDir, 0755); err != nil {
-		a.emit(12, "创建目标目录", "fail", err.Error())
+		a.emit(12, internal.UIText("创建目标目录"), "fail", err.Error())
 		return result(false, err.Error())
 	}
-	a.emit(25, "创建目标目录", "done", "")
+	a.emit(25, internal.UIText("创建目标目录"), "done", "")
 
 	// Protect the root before writing executable/model bytes into it. Files
 	// extracted below inherit only SYSTEM/Administrators write access, closing
 	// the replacement window that would exist if ACLs were applied afterwards.
-	a.emit(25, "设置数据目录权限", "running", "")
+	a.emit(25, internal.UIText("设置数据目录权限"), "running", "")
 	if err = internal.SetDirectoryACL(installDir); err != nil {
-		a.emit(25, "设置数据目录权限", "fail", err.Error())
-		return result(false, fmt.Sprintf("设置安装目录安全权限失败: %v", err))
+		a.emit(25, internal.UIText("设置数据目录权限"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("设置安装目录安全权限失败: %v"), err))
 	}
-	a.emit(30, "设置数据目录权限", "done", "")
+	a.emit(30, internal.UIText("设置数据目录权限"), "done", "")
 
 	// Step 3: Write registry paths — DataPath is the install dir itself, C++ appends \models
-	a.emit(30, "配置注册表路径", "running", "")
+	a.emit(30, internal.UIText("配置注册表路径"), "running", "")
 	if err = internal.WriteRegString(REGVAL_INSTALL_PATH, installDir); err != nil {
-		a.emit(30, "配置注册表路径", "fail", err.Error())
-		return result(false, fmt.Sprintf("写入安装路径失败: %v", err))
+		a.emit(30, internal.UIText("配置注册表路径"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("写入安装路径失败: %v"), err))
 	}
 	if err = internal.WriteRegString(REGVAL_DATA_PATH, installDir); err != nil {
-		a.emit(30, "配置注册表路径", "fail", err.Error())
-		return result(false, fmt.Sprintf("写入数据路径失败: %v", err))
+		a.emit(30, internal.UIText("配置注册表路径"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("写入数据路径失败: %v"), err))
 	}
-	a.emit(35, "配置注册表路径", "done", "")
+	a.emit(35, internal.UIText("配置注册表路径"), "done", "")
 
 	// Lock the registry key's DACL (security #3): now that the DataPath/
 	// InstallPath values are written, protect them against non-admin
 	// redirection. Failure is fatal — an unprotected key leaves the data
 	// directory redirectable, which the C++ allow-list alone only partially
 	// mitigates.
-	a.emit(35, "保护注册表", "running", "")
+	a.emit(35, internal.UIText("保护注册表"), "running", "")
 	if err = internal.SetRegistryKeyACL(); err != nil {
-		a.emit(35, "保护注册表", "fail", err.Error())
-		return result(false, fmt.Sprintf("注册表安全保护失败: %v", err))
+		a.emit(35, internal.UIText("保护注册表"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("注册表安全保护失败: %v"), err))
 	}
-	a.emit(36, "保护注册表", "done", "")
+	a.emit(36, internal.UIText("保护注册表"), "done", "")
 
 	// The privacy notice was accepted in the UI before Install() was called.
 	// Record it now that the registry key cannot be rewritten by non-admins.
-	a.emit(36, "记录隐私说明阅读确认", "running", "")
+	a.emit(36, internal.UIText("记录隐私说明阅读确认"), "running", "")
 	if err = internal.RecordConsent(); err != nil {
-		a.emit(36, "记录隐私说明阅读确认", "fail", err.Error())
-		return result(false, fmt.Sprintf("记录隐私说明阅读确认失败: %v", err))
+		a.emit(36, internal.UIText("记录隐私说明阅读确认"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("记录隐私说明阅读确认失败: %v"), err))
 	}
-	a.emit(36, "记录隐私说明阅读确认", "done", "")
+	a.emit(36, internal.UIText("记录隐私说明阅读确认"), "done", "")
 
 	// Step 4: Extract all embedded resources
-	a.emit(36, "复制文件", "running", "")
+	a.emit(36, internal.UIText("复制文件"), "running", "")
 	if err = internal.ExtractAll(installDir, func(step, total int, name string) {
-		a.emit(36+step*24/total, "复制文件", "running", name)
+		a.emit(36+step*24/total, internal.UIText("复制文件"), "running", name)
 	}); err != nil {
-		a.emit(36, "复制文件", "fail", err.Error())
-		return result(false, fmt.Sprintf("复制文件失败: %v", err))
+		a.emit(36, internal.UIText("复制文件"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("复制文件失败: %v"), err))
 	}
 	if err = internal.ValidateInstalledModels(installDir); err != nil {
-		a.emit(60, "校验已复制模型", "fail", err.Error())
-		return result(false, fmt.Sprintf("模型文件校验失败: %v", err))
+		a.emit(60, internal.UIText("校验已复制模型"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("模型文件校验失败: %v"), err))
 	}
 	// Step 4.5: Create data/ and log/ directories, ensure config.json defaults
 	dataDir := filepath.Join(installDir, "data")
@@ -197,58 +215,58 @@ func (a *App) Install(installDir string) map[string]interface{} {
 	// thresholds) onto any existing config, and create a default config when
 	// none exists. Other user settings are preserved.
 	if err := internal.EnsureConfigDefaults(configPath); err != nil {
-		a.emit(60, "写入默认设置", "warn", err.Error())
+		a.emit(60, internal.UIText("写入默认设置"), "warn", err.Error())
 	} else {
-		a.emit(60, "写入默认设置", "done", "")
+		a.emit(60, internal.UIText("写入默认设置"), "done", "")
 	}
 
-	a.emit(60, "复制文件", "done", "")
+	a.emit(60, internal.UIText("复制文件"), "done", "")
 
 	// Re-apply recursively as a postcondition in case an extracted resource
 	// carried or acquired an unexpected explicit ACL.
-	a.emit(60, "验证目录权限", "running", "")
+	a.emit(60, internal.UIText("验证目录权限"), "running", "")
 	if err = internal.SetDirectoryACL(installDir); err != nil {
-		a.emit(60, "验证目录权限", "fail", err.Error())
-		return result(false, fmt.Sprintf("设置安装目录安全权限失败: %v", err))
+		a.emit(60, internal.UIText("验证目录权限"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("设置安装目录安全权限失败: %v"), err))
 	}
 	// data\ (users.dat) then gets a tighter ACL with NO Users read entry —
 	// after the sweep above, whose /T would otherwise re-grant Users onto the
 	// data subtree. Fatal on failure: a Users-readable users.dat defeats the
 	// DPAPI machine-scope encryption (any local account could decrypt it).
 	if err = internal.SetDataDirectoryACL(dataDir); err != nil {
-		a.emit(60, "验证目录权限", "fail", err.Error())
-		return result(false, fmt.Sprintf("设置数据目录安全权限失败: %v", err))
+		a.emit(60, internal.UIText("验证目录权限"), "fail", err.Error())
+		return result(false, fmt.Sprintf(internal.UIText("设置数据目录安全权限失败: %v"), err))
 	}
-	a.emit(67, "验证目录权限", "done", "")
+	a.emit(67, internal.UIText("验证目录权限"), "done", "")
 
 	// Step 6: Register COM DLL
-	a.emit(67, "注册登录组件", "running", "")
+	a.emit(67, internal.UIText("注册登录组件"), "running", "")
 	dllPath := filepath.Join(installDir, "LockFaceCredentialProvider.dll")
 	if err = internal.RegisterCOMDLL(dllPath); err != nil {
-		a.emit(67, "注册登录组件", "fail", err.Error())
+		a.emit(67, internal.UIText("注册登录组件"), "fail", err.Error())
 		return result(false, err.Error())
 	}
-	a.emit(75, "注册登录组件", "done", "")
+	a.emit(75, internal.UIText("注册登录组件"), "done", "")
 
 	// Step 7: Install service (stops old service first)
-	a.emit(75, "安装并启动认证服务", "running", "")
+	a.emit(75, internal.UIText("安装并启动认证服务"), "running", "")
 	svcPath := filepath.Join(installDir, "LockFaceService.exe")
 	if err = internal.InstallService(svcPath); err != nil {
-		a.emit(75, "安装并启动认证服务", "fail", err.Error())
+		a.emit(75, internal.UIText("安装并启动认证服务"), "fail", err.Error())
 		return result(false, err.Error())
 	}
-	a.emit(90, "安装并启动认证服务", "done", "")
+	a.emit(90, internal.UIText("安装并启动认证服务"), "done", "")
 
 	// Step 8: Register in Add/Remove Programs. uninstall.exe and
 	// LockFaceConsole.exe are part of the payload (ExtractAll deployed them
 	// per the manifest); the entry only points at the uninstaller. Failure
 	// here leaves the install fully functional — warn, don't fail.
 	if entryErr := internal.WriteUninstallEntry(installDir, appVersion); entryErr != nil {
-		a.emit(100, "完成", "warn", "写入应用列表条目失败："+entryErr.Error())
+		a.emit(100, internal.UIText("完成"), "warn", internal.UIText("写入应用列表条目失败：")+entryErr.Error())
 	}
 
-	a.emit(100, "完成", "done", "")
-	return result(true, "安装完成。")
+	a.emit(100, internal.UIText("完成"), "done", "")
+	return result(true, internal.UIText("安装完成。"))
 }
 
 // LaunchConsole starts the enrollment console detached: elevated token
@@ -264,10 +282,10 @@ func (a *App) LaunchConsole() map[string]interface{} {
 	}
 	consolePath := filepath.Join(installDir, "LockFaceConsole.exe")
 	if !internal.FileExists(consolePath) {
-		return result(false, "未找到注册程序："+consolePath)
+		return result(false, internal.UIText("未找到注册程序：")+consolePath)
 	}
 	if err := internal.StartProgram(consolePath); err != nil {
-		return result(false, "打开注册向导失败："+err.Error())
+		return result(false, internal.UIText("打开注册向导失败：")+err.Error())
 	}
 	return result(true, "")
 }
@@ -278,27 +296,27 @@ func (a *App) Uninstall() map[string]interface{} {
 	cleanupFailed := false
 	rebootRequired := false
 
-	a.emit(0, "开始卸载", "running", "")
+	a.emit(0, internal.UIText("开始卸载"), "running", "")
 
 	// Step 1: Stop and delete service
-	a.emit(0, "停止并删除认证服务", "running", "")
+	a.emit(0, internal.UIText("停止并删除认证服务"), "running", "")
 	if err = internal.StopAndDeleteService(); err != nil {
-		a.emit(0, "停止并删除认证服务", "fail", err.Error())
+		a.emit(0, internal.UIText("停止并删除认证服务"), "fail", err.Error())
 		return result(false, err.Error())
 	}
-	a.emit(30, "停止并删除认证服务", "done", "")
+	a.emit(30, internal.UIText("停止并删除认证服务"), "done", "")
 
 	// Step 1.5: Close programs whose files are about to be deleted, so
 	// removal finishes now instead of deferring to the reboot queue. Best
 	// effort only — the reboot-pending path below already covers survivors.
-	a.emit(30, "关闭运行中的程序", "running", "")
+	a.emit(30, internal.UIText("关闭运行中的程序"), "running", "")
 	for _, image := range []string{"LockFaceService.exe", "LockFaceConsole.exe"} {
 		internal.KillProcessesByName(image)
 	}
-	a.emit(30, "关闭运行中的程序", "done", "")
+	a.emit(30, internal.UIText("关闭运行中的程序"), "done", "")
 
 	// Step 2: Unregister COM DLL
-	a.emit(30, "注销登录组件", "running", "")
+	a.emit(30, internal.UIText("注销登录组件"), "running", "")
 	installDir := internal.ReadRegString(REGVAL_INSTALL_PATH, "")
 	if installDir == "" {
 		// A previous uninstall may have removed the registry key while a
@@ -313,13 +331,13 @@ func (a *App) Uninstall() map[string]interface{} {
 		dllPath := filepath.Join(installDir, "LockFaceCredentialProvider.dll")
 		if err = internal.UnregisterCOMDLL(dllPath); err != nil {
 			cleanupFailed = true
-			a.emit(30, "注销登录组件", "warn", err.Error())
+			a.emit(30, internal.UIText("注销登录组件"), "warn", err.Error())
 		} else {
-			a.emit(50, "注销登录组件", "done", "")
+			a.emit(50, internal.UIText("注销登录组件"), "done", "")
 		}
 	} else {
 		internal.UnregisterCOMDLL("")
-		a.emit(50, "注销登录组件", "done", "")
+		a.emit(50, internal.UIText("注销登录组件"), "done", "")
 	}
 
 	// Step 3: Delete installed program files AND user data (data/, log/,
@@ -330,24 +348,24 @@ func (a *App) Uninstall() map[string]interface{} {
 	// we own has been deleted and the folder is confirmed empty, so an
 	// unexpected/unknown file (not deployed by us) leaves the dir in place and
 	// never gets silently wiped.
-	a.emit(50, "删除程序文件", "running", "")
+	a.emit(50, internal.UIText("删除程序文件"), "running", "")
 	if installDir != "" && internal.DirExists(installDir) {
 		if !internal.IsSafeInstallDir(installDir) {
 			cleanupFailed = true
-			a.emit(50, "删除程序文件", "warn", "安装目录校验失败，已保留该目录。")
+			a.emit(50, internal.UIText("删除程序文件"), "warn", internal.UIText("安装目录校验失败，已保留该目录。"))
 		} else {
 			removed, filesPending, rmErr := internal.RemoveInstalledFiles(installDir, true)
 			installPending := filesPending
 			if rmErr != nil {
 				cleanupFailed = true
-				a.emit(70, "删除程序文件", "warn",
-					fmt.Sprintf("已删除 %d 个文件，部分文件删除失败：%v", removed, rmErr))
+				a.emit(70, internal.UIText("删除程序文件"), "warn",
+					fmt.Sprintf(internal.UIText("已删除 %d 个文件，部分文件删除失败：%v"), removed, rmErr))
 			} else if filesPending {
-				a.emit(70, "删除程序文件", "warn",
-					fmt.Sprintf("已删除 %d 个文件，其余占用文件已安排在重启后删除。", removed))
+				a.emit(70, internal.UIText("删除程序文件"), "warn",
+					fmt.Sprintf(internal.UIText("已删除 %d 个文件，其余占用文件已安排在重启后删除。"), removed))
 			} else {
-				a.emit(70, "删除程序文件", "done",
-					fmt.Sprintf("已删除 %d 个程序文件及用户数据。", removed))
+				a.emit(70, internal.UIText("删除程序文件"), "done",
+					fmt.Sprintf(internal.UIText("已删除 %d 个程序文件及用户数据。"), removed))
 			}
 
 			// Remove the (now empty) install directory — guarded so it only
@@ -357,11 +375,11 @@ func (a *App) Uninstall() map[string]interface{} {
 				installPending = installPending || dirPending
 				if dirErr != nil {
 					cleanupFailed = true
-					a.emit(70, "删除程序文件", "warn",
-						fmt.Sprintf("安装目录删除失败：%v", dirErr))
+					a.emit(70, internal.UIText("删除程序文件"), "warn",
+						fmt.Sprintf(internal.UIText("安装目录删除失败：%v"), dirErr))
 				} else if dirPending {
-					a.emit(70, "删除程序文件", "warn",
-						"安装目录已验证安排在重启后删除。")
+					a.emit(70, internal.UIText("删除程序文件"), "warn",
+						internal.UIText("安装目录已验证安排在重启后删除。"))
 				} else if removedDir {
 					// A transient lock may have cleared during finalization. The
 					// install tree is gone now, so stale pending-delete entries do
@@ -369,8 +387,8 @@ func (a *App) Uninstall() map[string]interface{} {
 					installPending = false
 				} else if !removedDir {
 					cleanupFailed = true
-					a.emit(70, "删除程序文件", "warn",
-						"安装目录仍有残留文件，且未能安排重启删除。")
+					a.emit(70, internal.UIText("删除程序文件"), "warn",
+						internal.UIText("安装目录仍有残留文件，且未能安排重启删除。"))
 				}
 			} else {
 				installPending = false
@@ -378,7 +396,7 @@ func (a *App) Uninstall() map[string]interface{} {
 			rebootRequired = rebootRequired || installPending
 		}
 	} else {
-		a.emit(70, "删除程序文件", "done", "")
+		a.emit(70, internal.UIText("删除程序文件"), "done", "")
 	}
 
 	// Step 4: Remove shared runtime data under %ProgramData%\LockFace
@@ -388,45 +406,45 @@ func (a *App) Uninstall() map[string]interface{} {
 	// standalone — but on such machines it holds real data that must not
 	// survive a full uninstall. Done before the registry key is deleted so the
 	// data path is still resolvable if this ever switches back to registry.
-	a.emit(70, "删除运行数据", "running", "")
+	a.emit(70, internal.UIText("删除运行数据"), "running", "")
 	removedData, dataPending, dataErr := internal.RemoveProgramData()
 	rebootRequired = rebootRequired || dataPending
 	if dataErr != nil {
 		cleanupFailed = true
-		a.emit(80, "删除运行数据", "warn",
-			fmt.Sprintf("运行数据删除失败：%v", dataErr))
+		a.emit(80, internal.UIText("删除运行数据"), "warn",
+			fmt.Sprintf(internal.UIText("运行数据删除失败：%v"), dataErr))
 	} else if dataPending {
-		a.emit(80, "删除运行数据", "warn", "运行数据已安排在重启后删除。")
+		a.emit(80, internal.UIText("删除运行数据"), "warn", internal.UIText("运行数据已安排在重启后删除。"))
 	} else if removedData {
-		a.emit(80, "删除运行数据", "done", "已删除运行数据目录。")
+		a.emit(80, internal.UIText("删除运行数据"), "done", internal.UIText("已删除运行数据目录。"))
 	} else {
-		a.emit(80, "删除运行数据", "done", "无运行数据目录。")
+		a.emit(80, internal.UIText("删除运行数据"), "done", internal.UIText("无运行数据目录。"))
 	}
 
 	// Step 5: Clean registry — remove the whole HKLM\SOFTWARE\LockFace key.
 	// The service writes runtime values (e.g. UserLoggedIn) that the installer
 	// never created, so deleting only InstallPath/DataPath would leave the key
 	// behind.
-	a.emit(80, "清理注册表", "running", "")
+	a.emit(80, internal.UIText("清理注册表"), "running", "")
 	if cleanupFailed {
 		// Keep InstallPath so a custom install location can be found and
 		// cleaned again after the failure is resolved. A default path is only
 		// a fallback.
-		a.emit(80, "清理注册表", "warn", "保留安装路径，修复问题后可再次运行卸载。")
+		a.emit(80, internal.UIText("清理注册表"), "warn", internal.UIText("保留安装路径，修复问题后可再次运行卸载。"))
 	} else {
 		if regErr := internal.DeleteRegKey(); regErr != nil {
 			cleanupFailed = true
-			a.emit(80, "清理注册表", "warn", regErr.Error())
+			a.emit(80, internal.UIText("清理注册表"), "warn", regErr.Error())
 		} else if entryErr := internal.DeleteUninstallEntry(); entryErr != nil {
 			cleanupFailed = true
-			a.emit(80, "清理注册表", "warn", entryErr.Error())
+			a.emit(80, internal.UIText("清理注册表"), "warn", entryErr.Error())
 		} else if consentErr := internal.DeletePerUserConsentRecords(); consentErr != nil {
 			// Best-effort per-user cleanup (PRIVACY.txt 12.4): a locked hive
 			// only warns — the machine record is already gone.
-			a.emit(80, "清理注册表", "warn",
-				fmt.Sprintf("部分用户同意记录未删除：%v", consentErr))
+			a.emit(80, internal.UIText("清理注册表"), "warn",
+				fmt.Sprintf(internal.UIText("部分用户同意记录未删除：%v"), consentErr))
 		} else {
-			a.emit(90, "清理注册表", "done", "")
+			a.emit(90, internal.UIText("清理注册表"), "done", "")
 		}
 	}
 
@@ -441,19 +459,19 @@ func (a *App) Uninstall() map[string]interface{} {
 	}
 
 	// Step 7: Notify complete
-	a.emit(90, "完成", "running", "")
-	message := "卸载完成，登录界面已恢复为默认密码登录。程序文件、人脸数据和日志已全部删除。"
+	a.emit(90, internal.UIText("完成"), "running", "")
+	message := internal.UIText("卸载完成，登录界面已恢复为默认密码登录。程序文件、人脸数据和日志已全部删除。")
 	status := "done"
 	success := true
 	if cleanupFailed {
-		message = "卸载未完全完成：存在未删除且未能安排重启删除的项目。安装路径已保留，请查看上方错误后重试。"
+		message = internal.UIText("卸载未完全完成：存在未删除且未能安排重启删除的项目。安装路径已保留，请查看上方错误后重试。")
 		status = "fail"
 		success = false
 	} else if rebootRequired {
-		message = "卸载操作已完成；部分被占用文件和目录已验证安排在重启 Windows 后删除。"
+		message = internal.UIText("卸载操作已完成；部分被占用文件和目录已验证安排在重启 Windows 后删除。")
 		status = "warn"
 	}
-	a.emit(100, "完成", status, message)
+	a.emit(100, internal.UIText("完成"), status, message)
 
 	response := result(success, message)
 	response["rebootRequired"] = rebootRequired

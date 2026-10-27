@@ -20,9 +20,9 @@ function createLogsModule(deps) {
   // Console-friendly labels for the learner's skip-reason keys (server-side
   // keys are stable ASCII; unknown keys fall through verbatim).
   var LEARN_REASONS = {
-    distance: '距离门', clarity: '落点明确性', cone: '姿态锥',
-    norm: '范数地板', interval: '节奏间隔', disabled: '学习已关闭',
-    vanished: '模板已移除', error: '其他错误'
+    distance: lfT("distance_gate"), clarity: lfT("identity_margin"), cone: lfT("pose_cone"),
+    norm: lfT("norm_floor"), interval: lfT("update_interval"), disabled: lfT("learning_disabled"),
+    vanished: lfT("template_removed"), error: lfT("other_error")
   };
 
   function renderLearningStatus(force) {
@@ -34,51 +34,51 @@ function createLogsModule(deps) {
     try {
       var st = JSON.parse(H.GetLearningStatus());
       if (st.error) {
-        html = '<div class="log-warn">学习状态不可用: ' + escapeHtml(st.error) +
-               '（需后台服务运行）</div>';
+        html = "<div class=\"log-warn\">" + lfT("learning_status_unavailable") + escapeHtml(st.error) +
+               lfT("the_service_must_be_running") + "</div>";
       } else {
-        html = '<div class="log-info">[渐进式学习] ' + (st.enabled ? '已开启' : '已关闭') +
-               ' · 距离门上限 ' + Number(st.gate_cap).toFixed(2) +
+        html = "<div class=\"log-info\">" + lfT("template_learning") + (st.enabled ? lfT("enabled") : lfT("disabled")) +
+               lfT("distance_cap") + Number(st.gate_cap).toFixed(2) +
                ' · α=' + Number(st.alpha).toFixed(2) +
-               ' · 间隔 ' + st.interval + 's · 每10秒自动刷新</div>';
-        html += '<div class="log-debug">[每脸统计]</div>';
+               lfT("interval") + st.interval + lfT("s_refreshes_every_10_seconds") + "</div>";
+        html += "<div class=\"log-debug\">" + lfT("per_face_statistics") + "</div>";
         if (!st.faces || !st.faces.length) {
-          html += '<div class="log-debug">暂无学习记录（认证成功后此处出现统计）</div>';
+          html += "<div class=\"log-debug\">" + lfT("no_learning_records_yet_statistics_appear_after") + "</div>";
         } else {
           for (var i = 0; i < st.faces.length; i++) {
             var f = st.faces[i];
             var p20 = (f.era_p20 >= 0)
-              ? '纪元p20 ' + Number(f.era_p20).toFixed(3) + '（' + f.era_rounds + '轮，按槽独立）'
-              : '纪元样本不足（' + f.era_rounds + '/5轮，门暂用账号池化/上限）';
-            html += '<div class="log-info">' + escapeHtml(f.user || '?') + ' 脸' + f.face +
-                    '(' + escapeHtml(f.label || '?') + ') · 累计 ' + f.total + ' 次 · 今日 ' + f.today +
-                    ' · 最近接受 ' + (f.last || '从未') + ' · ' + p20 + '</div>';
+              ? lfT("epoch_p20") + Number(f.era_p20).toFixed(3) + '（' + f.era_rounds + lfT("rounds_independent_per_slot")
+              : lfT("not_enough_epoch_samples") + f.era_rounds + lfT("5_rounds_using_account_pool_cap");
+            html += '<div class="log-info">' + escapeHtml(f.user || '?') + lfT("face") + f.face +
+                    '(' + escapeHtml(f.label || '?') + lfT("total") + f.total + lfT("today") + f.today +
+                    lfT("last_accepted") + (f.last || lfT("never")) + ' · ' + p20 + '</div>';
           }
         }
-        html += '<div class="log-debug">[最近事件]（新→旧，最多24条）</div>';
+        html += "<div class=\"log-debug\">" + lfT("recent_events_newest_first_up_to_24") + "</div>";
         if (!st.recent || !st.recent.length) {
-          html += '<div class="log-debug">暂无事件</div>';
+          html += "<div class=\"log-debug\">" + lfT("no_events") + "</div>";
         } else {
           for (var j = 0; j < st.recent.length; j++) {
             var ev = st.recent[j];
             var who = escapeHtml(ev.user || '?') + '/' + escapeHtml(ev.label || '?');
             if (ev.ok) {
-              html += '<div class="log-info">' + ev.t + '  [OK]   已更新  d=' +
+              html += '<div class="log-info">' + ev.t + lfT("ok_updated_d") +
                       Number(ev.d).toFixed(3) + ' α=' + Number(ev.alpha).toFixed(3) +
                       '  ' + who + '</div>';
             } else {
               var reason = LEARN_REASONS[ev.reason] || ev.reason;
               var detail = (ev.reason === 'distance')
-                ? 'd=' + Number(ev.d).toFixed(3) + ' > 门' + Number(ev.gate).toFixed(3)
+                ? 'd=' + Number(ev.d).toFixed(3) + lfT("gate") + Number(ev.gate).toFixed(3)
                 : 'd=' + Number(ev.d).toFixed(3);
-              html += '<div class="log-warn">' + ev.t + '  [跳过] ' + escapeHtml(reason) +
+              html += '<div class="log-warn">' + ev.t + lfT("skipped") + escapeHtml(reason) +
                       '  ' + detail + '  ' + who + '</div>';
             }
           }
         }
       }
     } catch(e) {
-      html = '<div class="log-error">读取学习状态失败: ' + escapeHtml(e.message) + '</div>';
+      html = "<div class=\"log-error\">" + lfT("unable_to_read_learning_status") + escapeHtml(e.message) + '</div>';
     }
     viewer.innerHTML = html;
   }
@@ -142,8 +142,8 @@ function createLogsModule(deps) {
     try { ok = src === 'console' ? H.ClearLog() : H.ClearFileLog(src); } catch(e) {}
     if (ok) document.getElementById('log-viewer').textContent = '';
     var btn = document.getElementById('btn-clear-log');
-    btn.textContent = ok ? '已清空' : '清空失败，请检查日志权限';
-    setTimeout(function() { btn.textContent = '清空日志'; }, ok ? 1500 : 6000);
+    btn.textContent = ok ? lfT("cleared") : lfT("unable_to_clear_check_log_permissions");
+    setTimeout(function() { btn.textContent = lfT("clear_logs"); }, ok ? 1500 : 6000);
   }
 
   // Copy exactly what the viewer currently shows (the selected source). The app
@@ -154,8 +154,8 @@ function createLogsModule(deps) {
     if (!text) return;
     var btn = document.getElementById('btn-copy-log');
     var done = function() {
-      btn.textContent = '已复制';
-      setTimeout(function() { btn.textContent = '复制'; }, 1500);
+      btn.textContent = lfT("copied");
+      setTimeout(function() { btn.textContent = lfT("copy"); }, 1500);
     };
     var fallback = function() {
       var ta = document.createElement('textarea');

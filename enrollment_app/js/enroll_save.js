@@ -16,9 +16,9 @@ function createEnrollSaveModule(deps) {
   function showSavedWithoutReload() {
     showScreen('cam');
     document.getElementById('fld-pass').value = '';
-    setCaption('人脸已保存');
+    setCaption(lfT("face_saved"));
     previewCtl.restartPreview();
-    showBanner('cam', '人脸已保存，但后台服务未确认加载，暂不能确认人脸登录可用。请检查服务状态和日志，无需重复保存。', 'error', 15000);
+    showBanner('cam', lfT("your_face_was_saved_but_the_service"), 'error', 15000);
   }
 
   // Show the append-face confirmation screen (current account already has
@@ -36,18 +36,18 @@ function createEnrollSaveModule(deps) {
     try { document.getElementById('append-face-label').value = ''; } catch(e) {}
 
     if (isReplace) {
-      document.getElementById('append-title').textContent = '替换全部人脸';
+      document.getElementById('append-title').textContent = lfT("replace_all_faces");
       document.getElementById('append-label-field').style.display = 'none';
       document.getElementById('append-info').textContent =
-        '多角度录入将替换当前账号的 ' + faceCount + ' 张旧脸（正面 / 左转 / 右转各一张）。旧脸数据将被清除。';
-      document.getElementById('btn-append-text').textContent = '确认替换';
-      showBanner('append', '多角度重录入：旧脸将被替换，账号密码不变。', 'ok');
+        lfT("enroll_replace_info", {count: faceCount});
+      document.getElementById('btn-append-text').textContent = lfT("confirm_replacement");
+      showBanner('append', lfT("multi_angle_enrollment_old_faces_will_be"), 'ok');
     } else {
-      document.getElementById('append-title').textContent = '添加新人脸';
+      document.getElementById('append-title').textContent = lfT("add_a_face");
       document.getElementById('append-label-field').style.display = '';
       document.getElementById('append-info').textContent =
-        '当前账号已有 ' + faceCount + ' 张脸，将补录「' + captureCtl.angleLabel(captureCtl.firstAngle()) + '」角度。追加无需再次输入密码。';
-      document.getElementById('btn-append-text').textContent = '确认追加';
+        lfT("enroll_append_info", {count: faceCount, angle: captureCtl.angleLabel(captureCtl.firstAngle())});
+      document.getElementById('btn-append-text').textContent = lfT("confirm_addition");
     }
   }
 
@@ -63,14 +63,14 @@ function createEnrollSaveModule(deps) {
 
       if (ok) {
         showScreen('cam');
-        setCaption('准备就绪');
-        var okMsg = '新脸已添加成功！可按 Win+L 锁定屏幕测试人脸登录。';
+        setCaption(lfT("ready"));
+        var okMsg = lfT("face_added_press_win_l_to_lock");
         showBanner('cam', okMsg, 'ok');
         previewCtl.restartPreview();
       } else if (savedWithoutReload()) {
         showSavedWithoutReload();
       } else {
-        showBanner('append', '人脸保存失败。请检查服务状态、日志和人脸数量后重试。', 'error', 10000);
+        showBanner('append', lfT("unable_to_save_face_check_the_service"), 'error', 10000);
       }
     });
   }
@@ -79,7 +79,7 @@ function createEnrollSaveModule(deps) {
     showScreen('cam');
     // The captured samples were discarded by this cancel — never show the old
     //「已采 N 帧」total again.
-    setCaption('已采 0 帧');
+    setCaption(lfT("capture_count", {count: 0}));
     previewCtl.restartPreview();
   }
 
@@ -89,13 +89,13 @@ function createEnrollSaveModule(deps) {
   function onPwdCancel() {
     showScreen('cam');
     document.getElementById('fld-pass').value = '';
-    setCaption('已采 0 帧');
+    setCaption(lfT("capture_count", {count: 0}));
     previewCtl.restartPreview();
   }
 
   function onSave() {
     var pass = document.getElementById('fld-pass').value;
-    if (!pass) { showBanner('pwd', '请输入密码。', 'error'); return; }
+    if (!pass) { showBanner('pwd', lfT("enter_your_password"), 'error'); return; }
 
     withBusy([document.getElementById('btn-save'), document.getElementById('btn-save-cancel')],
              document.getElementById('save-spinner'),
@@ -105,20 +105,20 @@ function createEnrollSaveModule(deps) {
       try { label = document.getElementById('fld-face-label').value.trim(); } catch(e) {}
       try { passwordValid = H.ValidatePassword(pass); } catch(e) { validationFailed = true; }
       if (validationFailed) {
-        showBanner('pwd', '无法完成密码验证，请稍后重试并检查日志。', 'error', 10000);
+        showBanner('pwd', lfT("unable_to_complete_password_verification_try_again"), 'error', 10000);
       } else if (passwordValid) {
         var ok = false;
         try { ok = H.SaveEnrollment(pass, label); } catch(e) {}
         if (!ok) {
           if (savedWithoutReload()) showSavedWithoutReload();
-          else showBanner('pwd', '人脸保存失败。密码已验证，请检查服务状态和日志后重试。', 'error', 10000);
+          else showBanner('pwd', lfT("password_verified_but_saving_the_face_failed"), 'error', 10000);
           return;
         }
         // Return to the camera (main) screen immediately
         showScreen('cam');
         document.getElementById('fld-pass').value = '';
-        setCaption('准备就绪');
-        var okMsg = '录入成功！可按 Win+L 锁定屏幕测试人脸登录。';
+        setCaption(lfT("ready"));
+        var okMsg = lfT("enrollment_complete_press_win_l_to_lock");
         showBanner('cam', okMsg, 'ok');
         previewCtl.restartPreview();
       } else {
@@ -131,10 +131,10 @@ function createEnrollSaveModule(deps) {
         try { acctType = document.getElementById('fld-acct-type').value; } catch(e) {}
         if (acctType === 'msa') {
           showBanner('pwd',
-            '密码验证失败。若你最近更改过微软账号密码，请先按 Win+L 锁屏，用新密码登录一次，再回来录入。',
+            lfT("password_verification_failed_if_you_recently_changed"),
             'error', 15000);
         } else {
-          showBanner('pwd', '密码错误，请确认是你的 Windows 登录密码。', 'error');
+          showBanner('pwd', lfT("incorrect_password_enter_your_windows_sign_in"), 'error');
         }
       }
     });

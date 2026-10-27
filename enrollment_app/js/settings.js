@@ -52,10 +52,10 @@ function createSettingsModule(deps) {
 
   function configSaveError(status) {
     if (status === 'reload_failed') {
-      return '设置已保存，但后台服务未确认安全重载；请检查服务状态和模型文件后重试。';
+      return lfT("settings_saved_but_a_safe_service_reload");
     }
-    if (status === 'save_failed') return '设置保存失败，请检查日志后重试。';
-    return '无法确认设置保存结果，请检查服务状态和日志后重试。';
+    if (status === 'save_failed') return lfT("unable_to_save_settings_check_the_logs");
+    return lfT("unable_to_confirm_whether_settings_were_saved");
   }
 
   function pickerError(text) {
@@ -70,9 +70,9 @@ function createSettingsModule(deps) {
   // wire format stays unlock_frames {5,3,2}. Anything unexpected from config
   // displays as the standard 3.
   var UNLOCK_TIERS = [
-    {frames: 5, name: '严格'},
-    {frames: 3, name: '标准'},
-    {frames: 2, name: '极速'}
+    {frames: 5, name: lfT("strict")},
+    {frames: 3, name: lfT("standard")},
+    {frames: 2, name: lfT("fastest")}
   ];
   var curTierIdx = 1;
 
@@ -116,14 +116,14 @@ function createSettingsModule(deps) {
       var camSel = document.getElementById('cfg-camera');
       var currentCam = cfg.camera_device || '';
       // Keep the "default" option as first.
-      camSel.innerHTML = '<option value="">默认（第一个设备）</option>';
+      camSel.innerHTML = "<option value=\"\">" + lfT("camera_default_option") + "</option>";
       try {
         var camList = JSON.parse(H.GetCameraList());
         var found = false;
         for (var i = 0; i < camList.length; i++) {
           var opt = document.createElement('option');
           opt.value = camList[i].path;
-          opt.textContent = camList[i].name || ('摄像头 ' + (i + 1));
+          opt.textContent = camList[i].name || (lfT("camera") + (i + 1));
           camSel.appendChild(opt);
           if (currentCam && camList[i].path === currentCam) found = true;
         }
@@ -134,7 +134,7 @@ function createSettingsModule(deps) {
           // user knows; the backend refuses to substitute another device.
           var missingOpt = document.createElement('option');
           missingOpt.value = currentCam;
-          missingOpt.textContent = '(未找到: ' + currentCam + ')';
+          missingOpt.textContent = lfT("not_found") + currentCam + ')';
           camSel.appendChild(missingOpt);
           camSel.value = currentCam;
         }
@@ -166,7 +166,7 @@ function createSettingsModule(deps) {
       document.getElementById('cfg-learn-gate').value = lgThr;
       document.getElementById('cfg-learn-gate-val').textContent = lgThr.toFixed(2);
       syncSelects();
-    } catch(e) { showBanner('settings', '读取设置失败: ' + e.message, 'error'); }
+    } catch(e) { showBanner('settings', lfT("unable_to_load_settings") + e.message, 'error'); }
   }
 
   function onSaveSettings() {
@@ -189,10 +189,10 @@ function createSettingsModule(deps) {
       unlock_frames: UNLOCK_TIERS[tierIdx].frames,
       learning_distance_gate: parseFloat(document.getElementById('cfg-learn-gate').value)
     });
-    showBanner('settings', '正在保存设置并等待后台服务确认…', 'ok', 30000);
+    showBanner('settings', lfT("saving_settings_and_waiting_for_the_service"), 'ok', 30000);
     saveConfig(cfg, function(status) {
       if (status === 'saved') {
-        showBanner('settings', '设置已保存并通知后台服务。', 'ok');
+        showBanner('settings', lfT("settings_saved_and_the_service_notified"), 'ok');
       } else {
         showBanner('settings', configSaveError(status), 'error', 15000);
       }
@@ -217,7 +217,7 @@ function createSettingsModule(deps) {
     document.getElementById('cfg-learn-gate').value = 0.65;
     document.getElementById('cfg-learn-gate-val').textContent = '0.65';
     syncSelects();
-    showBanner('settings', '已恢复默认值，点击“保存设置”后生效。', 'ok');
+    showBanner('settings', lfT("defaults_restored_click_save_settings_to_apply"), 'ok');
   }
 
   // ==================================================================
@@ -236,7 +236,7 @@ function createSettingsModule(deps) {
     for (var i = 0; i < camList.length; i++) {
       var opt = document.createElement('option');
       opt.value = camList[i].path;
-      opt.textContent = camList[i].name || ('摄像头 ' + (i + 1));
+      opt.textContent = camList[i].name || (lfT("camera") + (i + 1));
       sel.appendChild(opt);
     }
     document.getElementById('cam-picker-overlay').classList.add('active');
@@ -250,17 +250,17 @@ function createSettingsModule(deps) {
     pickerError('');
     var cfg;
     try { cfg = JSON.parse(H.GetConfig()); }
-    catch(e) { pickerError('无法读取摄像头设置，请检查日志后重试。'); return; }
+    catch(e) { pickerError(lfT("unable_to_read_camera_settings_check_the")); return; }
     cfg.camera_device = path;
     var isCurrent = guardCurrent(function() { return true; });
     var resumePreview = guardCurrent(function() {
-      showBanner('cam', '已选择摄像头，正在启动预览...', 'ok');
+      showBanner('cam', lfT("camera_selected_starting_preview"), 'ok');
       try { H.StopPreview(); } catch(e) {}
       setTimeout(guardCurrent(previewCtl.restartPreview), 100);
     });
-    document.getElementById('cam-picker-confirm').textContent = '正在保存，请稍候…';
+    document.getElementById('cam-picker-confirm').textContent = lfT("saving_please_wait");
     saveConfig(cfg, function(status) {
-      document.getElementById('cam-picker-confirm').textContent = '使用此摄像头';
+      document.getElementById('cam-picker-confirm').textContent = lfT("use_this_camera");
       if (status === 'cancelled') return;
       if (status === 'saved') {
         document.getElementById('cam-picker-overlay').classList.remove('active');
@@ -276,7 +276,7 @@ function createSettingsModule(deps) {
   function onCamPickerSkip() {
     if (saving) return;
     document.getElementById('cam-picker-overlay').classList.remove('active');
-    showBanner('cam', '将使用当前摄像头设置，可在设置页随时更改。', 'ok');
+    showBanner('cam', lfT("using_the_current_camera_settings_you_can"), 'ok');
   }
 
   return {

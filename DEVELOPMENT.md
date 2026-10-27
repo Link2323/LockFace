@@ -17,6 +17,7 @@
 
 | 改动目标 | 代码入口 | 联查文档 | 最低验证 |
 |---|---|---|---|
+| 中英文界面、语言选择、提示文案 | `enrollment_app/locales/`、安装器 `frontend/src/locales/`、`common/ui_language.h` / `ui_messages.inc`、安装器 `internal/ui_language.go` / `ui_messages.json` | [`localization.md`](docs/modules/localization.md) | `node tools/i18n/check.cjs` + 注册页面回归；对应 C++ 构建、Go 测试和前端构建 |
 | 认证循环、活体、识别、超时 | `face_service/FaceService.cpp`、`face_service/auth_pipeline.*`、`face_service/auth_worker*`、`vision/onnx_models.*` | [`face-service.md`](docs/modules/face-service.md)、[`auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md) | Release 构建 + `AuthWorkerProtocolTest` + `ModelIntegrityTest` + `LivenessTimingTest` + `AuthPipelineTest` + 锁屏 |
 | 认证总时限、锁屏超时与迟到终态 | `common/ipc_protocol.h`、`face_service/FaceService.cpp`、`auth_worker_client.*`、`auth_pipeline.*`、`credential_provider/LockFaceCredential.*`、`pipe_client.*` | [`ipc.md`](docs/contracts/ipc.md)、[`auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md)、[`windows-clients.md`](docs/modules/windows-clients.md) | 三端 Release 构建 + `AuthPipelineTest` + `IpcProtocolTest` + 锁屏；5 秒共用预算不得按阶段重置 |
 | worker 启动、私有 IPC、Job/超时 | `face_service/authentication_residency.*`、`face_service/auth_worker_client.*`、`auth_worker_protocol.*`、`main.cpp` | [`auth-worker-ipc.md`](docs/contracts/auth-worker-ipc.md) | `AuthWorkerProtocolTest` + `AuthenticationResidencyTest` + 进程/Job 故障注入 |

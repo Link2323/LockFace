@@ -53,9 +53,9 @@ func main() {
 
 	app := NewApp()
 
-	title := "LockFace 安装程序"
+	title := internal.UIText("LockFace 安装程序")
 	if uninstallerBuild {
-		title = "LockFace 卸载程序"
+		title = internal.UIText("LockFace 卸载程序")
 	}
 
 	// Paint the caption the same white as the page background — the LockFace

@@ -206,6 +206,8 @@ func TestEnrollmentUIConstantsMatchCpp(t *testing.T) {
 	captureUI := repoRead(t, "enrollment_app", "js", "capture_ui.js")
 	previewJS := repoRead(t, "enrollment_app", "js", "preview.js")
 	facesJS := repoRead(t, "enrollment_app", "js", "faces.js")
+	zhCopy := repoRead(t, "enrollment_app", "locales", "zh-CN.json")
+	enCopy := repoRead(t, "enrollment_app", "locales", "en.json")
 
 	// mustParseOne returns the first capture group of re in src, failing the
 	// test with a "copy was refactored" message when the pattern is gone.
@@ -253,13 +255,25 @@ func TestEnrollmentUIConstantsMatchCpp(t *testing.T) {
 	}
 	leftDeg := strings.TrimPrefix(targets[1], "-")
 	rightDeg := strings.TrimPrefix(targets[2], "-")
-	if leftDeg != mustParseOne("left instruction degrees", captureUI,
+	if leftDeg != mustParseOne("left instruction degrees", zhCopy,
 		regexp.MustCompile(`左侧约 (\d+)°`)) {
 		t.Errorf("left instruction copy does not match |kAngleTargets[1]| = %s", leftDeg)
 	}
-	if rightDeg != mustParseOne("right instruction degrees", captureUI,
+	if rightDeg != mustParseOne("right instruction degrees", zhCopy,
 		regexp.MustCompile(`右侧约 (\d+)°`)) {
 		t.Errorf("right instruction copy does not match |kAngleTargets[2]| = %s", rightDeg)
+	}
+	var english map[string]string
+	if err := json.Unmarshal([]byte(enCopy), &english); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ key, degree string }{
+		{"capture_instruction_left", leftDeg},
+		{"capture_instruction_right", rightDeg},
+	} {
+		if got := mustParseOne(item.key, english[item.key], regexp.MustCompile(`about (\d+)°`)); got != item.degree {
+			t.Errorf("English angle instruction %s = %s, want %s", item.key, got, item.degree)
+		}
 	}
 	// Multi-angle capture iterates exactly the angle-table length.
 	if wantAngles != mustParseOne("multi-angle angle count", captureUI,
@@ -279,11 +293,13 @@ func TestEnrollmentUIConstantsMatchCpp(t *testing.T) {
 	// --- Faces-per-account cap in the UI copy.
 	maxFaces := mustParseOne("kMaxFacesPerUser", storeH, regexp.MustCompile(`kMaxFacesPerUser = (\d+)`))
 	for _, site := range []struct{ name, src, re string }{
-		{"faces.js counter text", facesJS, `' / (\d+) 张'`},
+		{"Chinese counter text", zhCopy, `/ (\d+) 张`},
 		{"faces.js append pre-check", facesJS, `faceCount >= (\d+)`},
-		{"faces.js cap modal copy", facesJS, `已有 (\d+) 张人脸`},
+		{"Chinese cap modal copy", zhCopy, `已有 (\d+) 张人脸`},
 		{"capture_ui.js single-angle pre-check", captureUI, `faceCount >= (\d+)`},
-		{"capture_ui.js cap banner copy", captureUI, `上限（(\d+) 张脸）`},
+		{"Chinese cap banner copy", zhCopy, `上限（(\d+) 张脸）`},
+		{"English counter text", enCopy, `/ (\d+) faces`},
+		{"English cap copy", enCopy, `limit of (\d+) faces`},
 	} {
 		got := mustParseOne(site.name, site.src, regexp.MustCompile(site.re))
 		if got != "" && got != maxFaces {

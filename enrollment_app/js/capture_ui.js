@@ -6,16 +6,16 @@ function createCaptureCtl(deps) {
   var captureFlow = createCaptureFlow(deps.timers);
   var ANGLE_LABELS = ['正面', '左转', '右转'];
   var ANGLE_INSTR = {
-    0: '请正对摄像头，保持不动',
-    1: '请将头转向左侧约 30°',
-    2: '请将头转向右侧约 30°'
+    0: lfT("face_the_camera_and_hold_still"),
+    1: lfT("capture_instruction_left"),
+    2: lfT("capture_instruction_right")
   };
   return {
     isActive: function() { return captureFlow.isActive(); },
     canShowIdleTotal: function() { return captureFlow.canShowIdleTotal(); },
     isMultiAngle: function() { return captureFlow.isMultiAngle(); },
     firstAngle: function() { return captureFlow.firstAngle(); },
-    angleLabel: function(i) { return ANGLE_LABELS[i]; },
+    angleLabel: function(i) { return lfStoredLabel(ANGLE_LABELS[i]); },
     instr: function(i) { return ANGLE_INSTR[i]; },
     begin: function(multi, firstAngle) { captureFlow.begin(multi, firstAngle); },
     end: function() { captureFlow.end(); },
@@ -56,7 +56,7 @@ function createCaptureUi(deps) {
     btn.disabled = false;
     btn.classList.remove('btn-primary');
     btn.classList.add('btn-secondary');
-    document.getElementById('cap-btn-text').textContent = '取消采集';
+    document.getElementById('cap-btn-text').textContent = lfT("cancel_capture");
     document.getElementById('cap-spinner').style.display = 'none';
   }
   function resetCaptureUi() {
@@ -65,7 +65,7 @@ function createCaptureUi(deps) {
     btn.disabled = false;
     btn.classList.add('btn-primary');
     btn.classList.remove('btn-secondary');
-    document.getElementById('cap-btn-text').textContent = '开始采集';
+    document.getElementById('cap-btn-text').textContent = lfT("start_capture");
     document.getElementById('cap-spinner').style.display = 'none';
   }
   function hideCaptureProgress() {
@@ -82,8 +82,8 @@ function createCaptureUi(deps) {
     try { H.CancelCapture(); } catch(e) {}
     resetCaptureUi();
     hideCaptureProgress();
-    setCaption('已采 0 帧');
-    showBanner('cam', '已取消采集。', 'ok');
+    setCaption(lfT("capture_count", {count: 0}));
+    showBanner('cam', lfT("capture_cancelled"), 'ok');
   }
 
   function onCapture(consentOverride) {
@@ -107,7 +107,7 @@ function createCaptureUi(deps) {
     var multi = false;
     try { multi = document.getElementById('chk-multi-angle').checked; } catch(e) {}
     if (!multi && faceCount >= 3) {
-      showBanner('cam', '已达每账号上限（3 张脸）。请用多角度录入替换全部，或先删除旧脸。', 'error', 6000);
+      showBanner('cam', lfT("the_limit_is_3_faces_per_account"), 'error', 6000);
       return;
     }
 
@@ -127,7 +127,7 @@ function createCaptureUi(deps) {
     } catch(e) {
       resetCaptureUi();
       hideCaptureProgress();
-      showBanner('cam', '开始采集失败: ' + e.message, 'error');
+      showBanner('cam', lfT("unable_to_start_capture") + e.message, 'error');
     }
   }
 
@@ -156,8 +156,8 @@ function createCaptureUi(deps) {
     if (started === false) {
       resetCaptureUi();
       hideCaptureProgress();
-      setCaption('等待上一次采集结束...');
-      showBanner('cam', '采集未能启动：上一次采集可能仍在进行，请稍候几秒再试。', 'error');
+      setCaption(lfT("waiting_for_the_previous_capture_to_end"));
+      showBanner('cam', lfT("capture_could_not_start_the_previous_capture"), 'error');
       return;
     }
 
@@ -168,8 +168,8 @@ function createCaptureUi(deps) {
     // too — the previous angle's「完成」caption otherwise lingers until the
     // first poll (~200ms), which reads as a stuck bar.
     document.getElementById('cap-fill').style.width = '0%';
-    setCaption((total > 1 ? '角度 ' + (idx + 1) + '/' + total + ' · ' : '')
-               + (captureCtl.instr(idx) || '采集人脸样本...'));
+    setCaption((total > 1 ? lfT("capture_angle_prefix", {current: idx + 1, total: total}) : '')
+               + (captureCtl.instr(idx) || lfT("capturing_face_samples")));
 
     // Watchdog: if the server reports no activity for 25s, the capture thread
     // is stuck (e.g. camera stall) — fail visibly instead of hanging forever.
@@ -195,16 +195,16 @@ function createCaptureUi(deps) {
         captureCtl.stopPolling();
         resetCaptureUi();
         hideCaptureProgress();
-        setCaption('采集未开始');
-        showBanner('cam', '采集超时未开始：摄像头无响应，请检查摄像头后重试。', 'error');
+        setCaption(lfT("capture_has_not_started"));
+        showBanner('cam', lfT("capture_timed_out_before_starting_check_the"), 'error');
         return;
       }
 
       // Every angle has its own liveness phase; side-angle COM calls must not
       // inherit a stale proof from a previous capture.
       if (st.livenessChecking) {
-        setCaption((total > 1 ? '角度 ' + (idx + 1) + '/' + total + ' · ' : '')
-                   + '正在进行活体检测...');
+        setCaption((total > 1 ? lfT("capture_angle_prefix", {current: idx + 1, total: total}) : '')
+                   + lfT("checking_liveness"));
         return;
       }
 
@@ -213,24 +213,24 @@ function createCaptureUi(deps) {
         captureCtl.stopPolling();
         resetCaptureUi();
         hideCaptureProgress();
-        setCaption('采集失败');
+        setCaption(lfT("capture_failed"));
         var failures = {
-          no_frames: '摄像头未提供新的画面，采集已停止。请检查连接、占用和权限后重试。',
-          no_face: '未检测到人脸。请将面部置于取景框内、改善光线后重试。',
-          inference_failed: '人脸模型推理失败，请检查模型文件和日志后重试。',
-          liveness_timeout: '未能完成活体检测，请保持面部清晰并正对摄像头后重试。',
-          liveness_failed: '活体检测未通过，请改善光线、保持面部无遮挡后重试。',
-          sample_failed: '人脸样本采集未完成，请调整姿态和光线后重试。'
+          no_frames: lfT("the_camera_stopped_providing_new_frames_check"),
+          no_face: lfT("no_face_detected_place_your_face_in"),
+          inference_failed: lfT("face_model_inference_failed_check_the_model"),
+          liveness_timeout: lfT("liveness_check_could_not_finish_keep_your"),
+          liveness_failed: lfT("liveness_check_failed_improve_the_lighting_uncover"),
+          sample_failed: lfT("face_capture_is_incomplete_adjust_your_pose")
         };
-        showBanner('cam', failures[st.failureReason] || '采集失败，请检查摄像头、光线和日志后重试。', 'error', 10000);
+        showBanner('cam', failures[st.failureReason] || lfT("capture_failed_check_the_camera_lighting_and"), 'error', 10000);
         return;
       }
 
       // Still collecting this angle — show instruction + progress.
       if (st.collected < st.target) {
-        setCaption((total > 1 ? '角度 ' + (idx + 1) + '/' + total + ' · ' : '')
-                   + (captureCtl.instr(st.angle) || '采集中') + ' · '
-                   + st.collected + '/' + st.target + ' 帧');
+        setCaption((total > 1 ? lfT("capture_angle_prefix", {current: idx + 1, total: total}) : '')
+                   + (captureCtl.instr(st.angle) || lfT("capturing")) + ' · '
+                   + st.collected + '/' + st.target + lfT("frames"));
         var pct = Math.round(st.collected / st.target * 100);
         document.getElementById('cap-fill').style.width = pct + '%';
         return;
@@ -241,8 +241,8 @@ function createCaptureUi(deps) {
       // which next to「角度 N · 完成」and a frozen 100% bar read as stuck.
       captureCtl.stopPolling();
       document.getElementById('cap-fill').style.width = '100%';
-      setCaption(total > 1 ? '角度 ' + (idx + 1) + '/' + total + ' 完成'
-                           : '「' + captureCtl.angleLabel(idx) + '」采集完成');
+      setCaption(total > 1 ? lfT("capture_angle_complete", {current: idx + 1, total: total})
+                           : lfT("capture_complete", {angle: captureCtl.angleLabel(idx)}));
       if (idx + 1 < total) {
         captureCtl.scheduleNext(function() { captureAngleSequence(idx + 1, total); });
         return;
@@ -256,7 +256,7 @@ function createCaptureUi(deps) {
   function finishCapture() {
     resetCaptureUi();
     hideCaptureProgress();
-    setCaption('准备就绪');
+    setCaption(lfT("ready"));
 
     previewCtl.stopLoop();
     H.StopPreview();
@@ -300,11 +300,11 @@ function createCaptureUi(deps) {
       var passLabel = document.getElementById('fld-pass-label');
       var passInput = document.getElementById('fld-pass');
       if (acctType === 'msa') {
-        passLabel.textContent = '微软账号密码';
-        passInput.placeholder = '输入你的微软账号密码';
+        passLabel.textContent = lfT("microsoft_account_password");
+        passInput.placeholder = lfT("enter_your_microsoft_account_password");
       } else {
-        passLabel.textContent = 'Windows 密码';
-        passInput.placeholder = '输入你的登录密码';
+        passLabel.textContent = lfT("windows_password");
+        passInput.placeholder = lfT("enter_your_sign_in_password");
       }
     } catch(e) {}
 

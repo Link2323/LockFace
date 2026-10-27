@@ -1,5 +1,6 @@
-// Appearance picker: the title-bar gear opens a three-way menu (浅色 / 深色 /
-// 跟随系统, system is the default). The choice is persisted by the native host
+// The title-bar gear groups color mode and language. This controller owns
+// menu visibility and color mode; i18n.js owns the language rows and status.
+// The color choice is persisted by the native host
 // (HKCU ThemeMode) and applied here as a data-theme attribute on <html> —
 // set synchronously during page script evaluation, before the first paint.
 // "system" resolves through prefers-color-scheme (WebView2 tracks the Windows
@@ -28,7 +29,10 @@ function createThemeCtl(deps) {
     }
     for (var i = 0; i < MODES.length; i++) {
       var row = document.getElementById('theme-row-' + MODES[i]);
-      if (row) row.classList.toggle('on', MODES[i] === mode);
+      if (row) {
+        row.classList.toggle('on', MODES[i] === mode);
+        row.setAttribute('aria-checked', String(MODES[i] === mode));
+      }
     }
     var btn = document.getElementById('theme-button');
     if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');

@@ -1,5 +1,7 @@
 # 安装器模块
 
+安装、卸载界面和进度支持简体中文与英文；切换语言会重新要求阅读对应隐私说明。机器级语言设置、文案入口与验证见 [`localization.md`](localization.md)。
+
 目录：`installer/LockFaceSetup/`
 
 `LockFaceSetup.exe` 使用 Go、Wails v2 和 Vue 3，负责部署与卸载，不参与运行时认证或命名管道通信。构建命令与资源白名单只在 [`BUILD.md`](../BUILD.md) 维护。

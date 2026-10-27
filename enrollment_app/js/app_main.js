@@ -145,6 +145,7 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
   // First synchronous action: the data-theme attribute must land before the
   // first paint so an explicit dark preference never flashes light.
   theme.init();
+  lfApplyLanguage();
 
   customSelect.enhanceAll();
 
@@ -192,7 +193,7 @@ consoleApp.ui.bindEnterKey('refresh-pass', 'refresh-confirm', consoleApp.account
       // an ended capture flow: the total is stale once the
       // confirm/cancel/save screen was left.
       if (st.done && st.total > 0 && !st.livenessChecking && !st.cancelled && captureCtl.canShowIdleTotal()) {
-        ui.setCaption('已采 ' + st.total + ' 帧');
+        ui.setCaption(lfT("capture_count", {count: st.total}));
       }
     } catch(e) {}
   }, 300);

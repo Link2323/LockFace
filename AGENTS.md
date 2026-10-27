@@ -65,6 +65,8 @@ LockFace（2026-10 由 FaceLogin 更名并脱离上游独立，同月完成内�
 
 ## 验证与文档同步
 
+- 修改用户可见文案时同步补齐简体中文和英文；语言规则、文案入口与检查见 [`docs/modules/localization.md`](docs/modules/localization.md)。已有角度标签是持久化数据，显示翻译不能改变其保存值或补录判断。
+
 - 代码改动至少运行对应模块的构建或静态检查。安装器改动运行 `go test ./...`；前端改动运行 `npm run build`，命令目录和其他验证入口见 [`docs/BUILD.md`](docs/BUILD.md)。
 - 认证、相机和 Credential Provider 路径若未由自动化覆盖，交付时说明是否执行 GUI 或锁屏实测；未执行时说明原因。
 - 若改动影响路径、协议、模型、部署资源、CLSID、配置或 `users.dat` 格式，同步更新 `AGENTS.md`、`DEVELOPMENT.md` 及相关契约/模块文档中的事实。

@@ -1,3 +1,4 @@
+#include "../common/ui_language.h"
 #include "LockFaceProvider.h"
 #include "LockFaceCredential.h"
 #include "dll_lifetime.h"
@@ -21,24 +22,24 @@ LockFaceProvider::LockFaceProvider() {
 
     m_rgFieldDescriptors[kFieldTitle].dwFieldID = kFieldTitle;
     m_rgFieldDescriptors[kFieldTitle].cpft = CPFT_LARGE_TEXT;
-    m_rgFieldDescriptors[kFieldTitle].pszLabel = const_cast<LPWSTR>(L"人脸登录");
+    m_rgFieldDescriptors[kFieldTitle].pszLabel = const_cast<LPWSTR>(facelogin::ui::Text(L"人脸登录"));
     m_rgFieldDescriptors[kFieldTitle].guidFieldType = GUID_NULL;
 
     m_rgFieldDescriptors[kFieldStatus].dwFieldID = kFieldStatus;
     m_rgFieldDescriptors[kFieldStatus].cpft = CPFT_SMALL_TEXT;
-    m_rgFieldDescriptors[kFieldStatus].pszLabel = const_cast<LPWSTR>(L"状态");
+    m_rgFieldDescriptors[kFieldStatus].pszLabel = const_cast<LPWSTR>(facelogin::ui::Text(L"状态"));
     m_rgFieldDescriptors[kFieldStatus].guidFieldType = GUID_NULL;
 
     // Submit button (hidden, auto-logon handles submission)
     m_rgFieldDescriptors[kFieldSubmit].dwFieldID = kFieldSubmit;
     m_rgFieldDescriptors[kFieldSubmit].cpft = CPFT_SUBMIT_BUTTON;
-    m_rgFieldDescriptors[kFieldSubmit].pszLabel = const_cast<LPWSTR>(L"提交");
+    m_rgFieldDescriptors[kFieldSubmit].pszLabel = const_cast<LPWSTR>(facelogin::ui::Text(L"提交"));
     m_rgFieldDescriptors[kFieldSubmit].guidFieldType = GUID_NULL;
 
     // Command link (switch to password)
     m_rgFieldDescriptors[kFieldSwitchLink].dwFieldID = kFieldSwitchLink;
     m_rgFieldDescriptors[kFieldSwitchLink].cpft = CPFT_COMMAND_LINK;
-    m_rgFieldDescriptors[kFieldSwitchLink].pszLabel = const_cast<LPWSTR>(L"切换到密码登录");
+    m_rgFieldDescriptors[kFieldSwitchLink].pszLabel = const_cast<LPWSTR>(facelogin::ui::Text(L"切换到密码登录"));
     m_rgFieldDescriptors[kFieldSwitchLink].guidFieldType = GUID_NULL;
 
     // Small text — the "请按任意键重试" hint line on failure tiles.
@@ -47,7 +48,7 @@ LockFaceProvider::LockFaceProvider() {
     // field instead of an embedded newline in the status text.
     m_rgFieldDescriptors[kFieldRetryHint].dwFieldID = kFieldRetryHint;
     m_rgFieldDescriptors[kFieldRetryHint].cpft = CPFT_SMALL_TEXT;
-    m_rgFieldDescriptors[kFieldRetryHint].pszLabel = const_cast<LPWSTR>(L"重试提示");
+    m_rgFieldDescriptors[kFieldRetryHint].pszLabel = const_cast<LPWSTR>(facelogin::ui::Text(L"重试提示"));
     m_rgFieldDescriptors[kFieldRetryHint].guidFieldType = GUID_NULL;
 }
 

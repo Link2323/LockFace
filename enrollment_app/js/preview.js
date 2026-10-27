@@ -190,9 +190,9 @@ function createPreview(deps) {
         var diff = f.targetYaw - f.yaw;      // >0 keep turning own-left, <0 own-right
         var inGate = Math.abs(diff) <= 10;   // same ±10° gate the collector uses
         col = inGate ? '#1bb253' : '#f59e0b';
-        hint = inGate ? '角度到位 · 请保持'
-                      : '再' + (diff > 0 ? '左转 ' : '右转 ') +
-                      Math.round(Math.abs(diff)) + '°';
+        hint = inGate ? lfT("angle_reached_hold_still")
+                      : lfT(diff > 0 ? "preview_turn_left" : "preview_turn_right",
+                            {degrees: Math.round(Math.abs(diff))});
       }
 
       // Viewfinder-style corner brackets instead of the old hard rectangle —
@@ -291,7 +291,7 @@ function createPreview(deps) {
     // The startup overlay sits above the banner; dismiss it on failure so
     // the error and its recovery guidance are actually visible.
     document.getElementById('cam-loading').style.display = 'none';
-    showBanner('cam', '预览启动失败：请检查摄像头占用、权限、驱动和模型文件；可切换页面后返回重试。', 'error', 15000);
+    showBanner('cam', lfT("unable_to_start_preview_check_camera_use"), 'error', 15000);
     return false;
   }
 

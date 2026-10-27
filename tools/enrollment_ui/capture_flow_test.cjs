@@ -18,6 +18,13 @@ const CMAKE_JS_LIST = fs.readFileSync(
 assert.ok(CMAKE_JS_LIST, 'ENROLLMENT_JS_SOURCES not found in enrollment_app/CMakeLists.txt');
 const PAGE_SOURCES = [...CMAKE_JS_LIST[1].matchAll(/js\/([\w.-]+\.js)/g)].map(m => m[1]);
 
+
+function loadI18n(context) {
+  context.LF_MESSAGES = Object.fromEntries(['zh-CN', 'en'].map(lang => [lang,
+    JSON.parse(fs.readFileSync(path.join(__dirname, '../../enrollment_app/locales', lang + '.json'), 'utf8'))]));
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../enrollment_app/js/i18n.js'), 'utf8'), context);
+}
+
 function fixture() {
   let id = 0;
   const pending = new Map();
@@ -113,6 +120,7 @@ function page(overrides) {
     },
     console
   });
+  loadI18n(context);
   for (const file of PAGE_SOURCES) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../../enrollment_app/js', file), 'utf8'), context);
   }
@@ -158,6 +166,7 @@ function previewFixture(initialFrame = 'jpeg-a') {
       Object.defineProperty(this, 'src', { set() { this.complete = false; imageRequests++; } });
     }
   });
+  loadI18n(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,
     '../../enrollment_app/js/preview.js'), 'utf8'), context);
   const preview = context.createPreview({ host: {
@@ -823,7 +832,7 @@ test('the consent pill opens a status dialog with view and withdraw actions', ()
   assert.ok(p.element('modal-overlay').classList.contains('active'));
   assert.equal(p.element('modal-ok').textContent, '查看隐私说明');
   assert.equal(p.element('modal-mid').textContent, '撤回同意');
-  assert.ok(p.element('modal-message').textContent.indexOf('你已同意') === 0);
+  assert.ok(p.element('modal-message').textContent.includes('你已同意'));
   p.context.onModalCancel();
   assert.ok(!p.element('modal-overlay').classList.contains('active'));
 });
@@ -848,7 +857,7 @@ test('the status dialog offers consent without a current record', () => {
   } });
   p.app.consent.statusMenu();
   assert.equal(p.element('modal-message').textContent,
-               '未同意隐私说明，摄像头已停止。点击“重新同意”可恢复预览。');
+               '未同意隐私说明，摄像头已停止。\n\n点击“重新同意”可恢复预览。');
   assert.equal(p.element('modal-mid').textContent, '重新同意');
   assert.notEqual(p.element('modal-mid').style.display, 'none');
 });
@@ -1325,4 +1334,49 @@ test('disabled camera select facade cannot open or commit a changed selection', 
   popup.children[1].events.click(event);
   assert.equal(sel.selectedIndex, 1);
   assert.equal(changes, 1);
+});
+
+
+test('English capture keeps stored Chinese angle keys and finds the missing slot', () => {
+  const p = page({host: {GetUiLanguage: () => 'en'}});
+  assert.equal(p.app.captureCtl.angleLabel(0), 'Front');
+  assert.equal(p.app.captureCtl.angleLabel(1), 'Left');
+  assert.equal(p.app.captureCtl.firstMissingAngle({'正面': true, '左转': true}), 2);
+  assert.equal(p.app.captureCtl.instr(1), 'Turn left about 30°');
+  assert.equal(p.context.lfStoredLabel('My own face name'), 'My own face name');
+  assert.equal(p.context.lfT('capture_count', {count: 5}), '5 frames captured');
+});
+
+test('English service reload failure remains a saved enrollment rather than a retry', () => {
+  const p = page({host: {GetUiLanguage: () => 'en',
+    GetEnrollmentSaveStatus: () => 'reload_failed', SaveEnrollment: () => false,
+    StartPreview: () => true, ValidatePassword: () => true}});
+  p.element('fld-pass').value = 'synthetic-test-password';
+  p.app.enrollSave.onSave();
+  for (const fn of [...p.timeouts.values()]) fn();
+  assert.match(p.element('cam-banner').textContent, /service has not confirmed/);
+  assert.equal(p.element('fld-pass').value, '');
+});
+
+test('English consent does not resume a pending withdrawal', () => {
+  const p = page({grantConsent: false, host: {GetUiLanguage: () => 'en',
+    GetPrivacyConsent: () => JSON.stringify({noticeVersion: '1.1', withdrawalPending: true})}});
+  assert.equal(p.app.consent.granted(), false);
+  p.app.consent.refreshStatus();
+  assert.equal(p.element('btn-consent-status').textContent, 'Withdrawal pending');
+});
+
+test('language changes persist through the host and report failure without changing active UI', () => {
+  const saved = [];
+  const p = page({host: {GetUiLanguage: () => 'en',
+    SetLanguageMode: mode => {saved.push(mode); return mode === 'zh-CN';}}});
+  p.context.onLanguagePick('zh-CN');
+  assert.deepEqual(saved, ['zh-CN']);
+  assert.equal(p.element('language-status').textContent, 'Language saved');
+  assert.equal(p.element('language-row-zh-CN').getAttribute('aria-checked'), 'true');
+  assert.equal(p.element('language-row-system').getAttribute('aria-checked'), 'false');
+  assert.equal(p.context.lfLocale, 'en');
+  p.context.onLanguagePick('bad-language');
+  assert.match(p.element('language-status').textContent, /Unable to save language/);
+  assert.equal(p.element('language-row-zh-CN').getAttribute('aria-checked'), 'true');
 });

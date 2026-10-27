@@ -31,7 +31,7 @@ func WriteUninstallEntry(installDir, version string) error {
 		}
 		return nil
 	}
-	if err := set("DisplayName", "LockFace 人脸识别登录"); err != nil {
+	if err := set("DisplayName", UIText("LockFace 人脸识别登录")); err != nil {
 		return err
 	}
 	if err := set("DisplayVersion", version); err != nil {

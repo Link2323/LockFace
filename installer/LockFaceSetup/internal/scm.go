@@ -136,8 +136,8 @@ func createService(m *mgr.Mgr, exePath string) (*mgr.Service, error) {
 		mgr.Config{
 			StartType:    mgr.StartAutomatic,
 			ErrorControl: mgr.ErrorNormal,
-			DisplayName:  "LockFace 人脸认证服务",
-			Description:  "LockFace — 基于人脸识别的 Windows 登录认证服务",
+			DisplayName:  UIText("LockFace 人脸认证服务"),
+			Description:  UIText("LockFace — 基于人脸识别的 Windows 登录认证服务"),
 			ServiceType:  windows.SERVICE_WIN32_OWN_PROCESS,
 		},
 	)
@@ -237,23 +237,17 @@ func InstallService(exePath string) error {
 		// SAC / code integrity kills the process during DLL load before it
 		// can log anything; surface the blocked file instead of bare 1053.
 		if blocked := DetectCodeIntegrityBlock(); blocked != "" {
-			return fmt.Errorf("start service: %w（%s 被 Smart App Control/代码完整性拦截，"+
-				"服务进程启动即被终止。请在 Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 "+
-				"中选择\"关闭\"后重新运行安装程序）", err, blocked)
+			return fmt.Errorf(UIText("start service: %w（%s 被 Smart App Control/代码完整性拦截，服务进程启动即被终止。请在 Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 中选择\"关闭\"后重新运行安装程序）"), err, blocked)
 		}
 		// Antivirus quarantine of a payload file fails the start the same
 		// way; Windows Defender at least leaves a detectable trail.
 		if blocked := DetectDefenderBlock(); blocked != "" {
-			return fmt.Errorf("start service: %w（%s 已被 Windows Defender 检测并隔离/拦截。"+
-				"请在 Windows 安全中心 → 病毒和威胁防护 → 保护历史记录 中恢复该文件并允许，"+
-				"或将安装目录加入排除项后重新运行安装程序）", err, blocked)
+			return fmt.Errorf(UIText("start service: %w（%s 已被 Windows Defender 检测并隔离/拦截。请在 Windows 安全中心 → 病毒和威胁防护 → 保护历史记录 中恢复该文件并允许，或将安装目录加入排除项后重新运行安装程序）"), err, blocked)
 		}
 		// 1053 with zero service log lines means the process died before
 		// main(); without an event trail the honest answer is the checklist.
 		if err == windows.ERROR_SERVICE_REQUEST_TIMEOUT {
-			return fmt.Errorf("start service: %w（服务进程启动后很快退出且未写任何日志。"+
-				"常见原因：Smart App Control 或杀毒软件拦截未签名程序、系统缺少 Visual C++ 运行库；"+
-				"处理办法见运维手册\"系统要求\"与\"常见问题\"）", err)
+			return fmt.Errorf(UIText("start service: %w（服务进程启动后很快退出且未写任何日志。常见原因：Smart App Control 或杀毒软件拦截未签名程序、系统缺少 Visual C++ 运行库；处理办法见运维手册\"系统要求\"与\"常见问题\"）"), err)
 		}
 		return fmt.Errorf("start service: %w", err)
 	}

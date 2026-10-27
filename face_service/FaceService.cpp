@@ -1,3 +1,4 @@
+#include "../common/ui_language.h"
 #include "FaceService.h"
 #include "auth_pipeline.h"
 #include "../vision/face_align.h"
@@ -932,7 +933,7 @@ bool FaceService::Install(const std::wstring& exePath) {
     }
 
     SC_HANDLE hService = CreateServiceW(
-        hSCManager, SERVICE_NAME, L"LockFace 人脸认证服务",
+        hSCManager, SERVICE_NAME, facelogin::ui::Text(L"LockFace 人脸认证服务"),
         SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
         SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
         exePath.c_str(), nullptr, nullptr, nullptr,
@@ -954,7 +955,7 @@ bool FaceService::Install(const std::wstring& exePath) {
 
     SERVICE_DESCRIPTIONW desc = {};
     desc.lpDescription = const_cast<LPWSTR>(
-        L"LockFace \u2014 基于人脸识别的 Windows 登录认证服务");
+        facelogin::ui::Text(L"LockFace — 基于人脸识别的 Windows 登录认证服务"));
     ChangeServiceConfig2W(hService, SERVICE_CONFIG_DESCRIPTION, &desc);
 
     SERVICE_FAILURE_ACTIONSW fa = {};

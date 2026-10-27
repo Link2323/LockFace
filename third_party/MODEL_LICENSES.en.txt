@@ -1,0 +1,21 @@
+LockFace Bundled Model Licenses
+
+LockFace uses the following pretrained models for face detection, recognition and liveness detection. Each model is supplied by its publisher and distributed with LockFace under the Apache License 2.0 declared at publication. Also read THIRD_PARTY_NOTICES.txt in the installation package for the relevant license texts and source notices.
+
+Model: SCRFD 10G GNKPS
+Purpose: face detection and five-point landmark localization
+Source and modifications: weights published by Kun-Hsiang Lin / DOCSAID. LockFace modifies the graph structure and applies INT8 quantization.
+
+Model: OpenCV SFace 2021dec
+Purpose: face feature extraction
+Source and modifications: FP32 weights from a pinned OpenCV Zoo revision. LockFace removes 174 redundantly listed weight entries from the model input list. Weights and computation nodes remain unchanged.
+
+Model: MiniFASNetV2
+Purpose: liveness detection
+Source: ONNX weights published by yakhyo.
+
+Model: MiniFASNetV1SE
+Purpose: liveness detection
+Source: ONNX weights published by yakhyo.
+
+LockFace original code is covered by the MIT License supplied in the project root. That license does not replace the individual third-party model licenses. Model licenses and source notices do not provide additional assurances about rights to training data.

@@ -1,3 +1,4 @@
+#include "../common/ui_language.h"
 #include "WebviewHost.h"
 #include "EnrollmentWizard.h"
 #include "privacy_withdrawal.h"
@@ -31,6 +32,13 @@ static void AdjustAppWindowRect(RECT& rect, DWORD style, UINT dpi, bool customFr
 // consent record (below) and the appearance preference (here).
 static const wchar_t* kUserPrefsKeyPath = L"SOFTWARE\\LockFace";
 static const wchar_t* kThemeModeName = L"ThemeMode";
+
+// The console applies language changes on its next launch. Keep document
+// selection in the same language as the already-created page.
+static bool ConsoleIsEnglish() {
+    static const bool english = facelogin::ui::IsEnglish();
+    return english;
+}
 
 enum class ThemePref { System, Light, Dark };
 
@@ -709,7 +717,7 @@ void WebviewHost::EnableCustomFrame() {
     }) \
     X(CancelCapture, 35, m_wizard->CancelCapture()) \
     X(GetLearningStatus, 37, if (res) *res = MakeStr(m_wizard->GetLearningStatus())) \
-    X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadLicenseDocument(OptionalArg(p, 0)))) \
+    X(GetLicenseDocument, 38, if (res) *res = MakeStr(ReadUiLicenseDocument(OptionalArg(p, 0)))) \
     X(GetPrivacyConsent, 39, if (res) *res = MakeStr(GetPrivacyConsentJson())) \
     X(AcceptPrivacyConsent, 40, if (res) *res = MakeBool(RecordPrivacyConsent())) \
     X(WithdrawPrivacyConsent, 41, if (res) *res = MakeBool(m_wizard->WithdrawPrivacyConsent())) \
@@ -735,6 +743,11 @@ void WebviewHost::EnableCustomFrame() {
             ApplyWindowTheme(m_hWnd, self ? self->m_controller : nullptr); \
         } \
         if (res) *res = MakeBool(ok); \
+    }) \
+    X(GetUiLanguage, 50, if (res) *res = MakeStr(ConsoleIsEnglish() ? "en" : "zh-CN")) \
+    X(GetLanguageMode, 51, if (res) *res = MakeStr(facelogin::WstrToUtf8(facelogin::ui::LanguageMode()))) \
+    X(SetLanguageMode, 52, { \
+        if (res) *res = MakeBool(facelogin::ui::SetLanguageMode(OptionalArg(p, 0))); \
     }) \
     X(GetEnrollmentSaveStatus, 47, if (res) *res = MakeStr(m_wizard->GetEnrollmentSaveStatus())) \
     X(GetConfigSaveStatus, 48, if (res) *res = MakeStr(m_wizard->GetConfigSaveStatus())) \
@@ -825,7 +838,8 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
     // Expose only the four canonical documents shipped beside the console.
     // The allow-list also prevents path traversal through the WebView bridge.
     if (name != L"LICENSE.txt" && name != L"THIRD_PARTY_NOTICES.txt" &&
-        name != L"MODEL_LICENSES.txt" && name != L"PRIVACY.txt") {
+        name != L"MODEL_LICENSES.txt" && name != L"PRIVACY.txt" &&
+        name != L"MODEL_LICENSES.en.txt" && name != L"PRIVACY.en.txt") {
         return "Unsupported license document.";
     }
 
@@ -836,6 +850,13 @@ static std::string ReadLicenseDocument(const std::wstring& name) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return "License document is unavailable. Reinstall LockFace or restore the license files beside LockFaceConsole.exe.";
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+static std::string ReadUiLicenseDocument(const std::wstring& name) {
+    if (ConsoleIsEnglish() && (name == L"PRIVACY.txt" || name == L"MODEL_LICENSES.txt")) {
+        return ReadLicenseDocument(name.substr(0, name.size() - 4) + L".en.txt");
+    }
+    return ReadLicenseDocument(name);
 }
 
 // ==========================================================================

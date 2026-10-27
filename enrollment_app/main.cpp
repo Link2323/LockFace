@@ -1,3 +1,4 @@
+#include "../common/ui_language.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -56,7 +57,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
                                         L"Local\\LockFaceConsoleInstance");
     if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-        MessageBoxW(nullptr, L"LockFace 控制台已在运行。",
+        MessageBoxW(nullptr, facelogin::ui::Text(L"LockFace 控制台已在运行。"),
                     L"LockFace Console", MB_OK | MB_ICONWARNING | MB_TOPMOST);
         CloseHandle(instanceMutex);
         return 0;
@@ -98,8 +99,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         file.read(reinterpret_cast<char*>(&version), sizeof(version));
         if (file.good() && magic == 0x474F4C46 && (version == 4 || version == 5)) {
             MessageBoxW(nullptr,
-                L"本版本已切换为 SFace。旧人脸数据已停用，请为每个账户重新录入正面、左转和右转人脸。完成录入前请使用 Windows 密码登录。",
-                L"需要重新录入人脸", MB_OK | MB_ICONINFORMATION);
+                facelogin::ui::Text(L"本版本已切换为 SFace。旧人脸数据已停用，请为每个账户重新录入正面、左转和右转人脸。完成录入前请使用 Windows 密码登录。"),
+                facelogin::ui::Text(L"需要重新录入人脸"), MB_OK | MB_ICONINFORMATION);
         }
     }
 

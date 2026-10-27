@@ -3,6 +3,7 @@
 # app_main.js last: top-level wiring references earlier files' functions);
 # tools/enrollment_ui/capture_flow_test.cjs parses this list at run time.
 set(ENROLLMENT_JS_SOURCES
+    js/i18n.js
     js/capture_flow.js
     js/ui_common.js
     js/custom_select.js
@@ -24,7 +25,11 @@ foreach(js IN LISTS ENROLLMENT_JS_SOURCES)
         "${CMAKE_CURRENT_SOURCE_DIR}/${js}")
 endforeach()
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/styles.css" ENROLLMENT_CSS)
-set(ENROLLMENT_JS "")
+foreach(locale IN ITEMS zh-CN en)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/locales/${locale}.json")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/locales/${locale}.json" ENROLLMENT_LOCALE_${locale})
+endforeach()
+set(ENROLLMENT_JS "var LF_MESSAGES = {\"zh-CN\": ${ENROLLMENT_LOCALE_zh-CN}, \"en\": ${ENROLLMENT_LOCALE_en}};\n")
 foreach(js IN LISTS ENROLLMENT_JS_SOURCES)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${js}" ENROLLMENT_JS_CHUNK)
     string(APPEND ENROLLMENT_JS "${ENROLLMENT_JS_CHUNK}\n")

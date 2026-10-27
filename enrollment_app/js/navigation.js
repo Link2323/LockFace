@@ -13,7 +13,7 @@ function createNavigation(deps) {
   var enterHooks = {};
   var SCREENS = {cam: 'screen-cam', pwd: 'screen-pwd', faces: 'screen-faces',
                  append: 'screen-append', settings: 'screen-settings', logs: 'screen-logs'};
-  var TAB_NAMES = {cam: '录入', faces: '人脸', settings: '设置', logs: '日志'};
+  var TAB_NAMES = {cam: lfT("enroll"), faces: lfT("faces"), settings: lfT("settings"), logs: lfT("logs")};
 
   // Unguarded direct swap for the flow screens (password/append and the
   // return to cam after save/cancel — a capture has always just ended there,
@@ -34,7 +34,7 @@ function createNavigation(deps) {
     // A capture in flight owns the DirectShow graph — pausing the preview to
     // idle the camera would abort it. Block the switch; cancel first instead.
     if (currentTab === 'cam' && captureCtl.isActive()) {
-      showBanner('cam', '正在采集，请先取消采集再切换页面。', 'error');
+      showBanner('cam', lfT("capture_is_running_cancel_it_before_switching"), 'error');
       return;
     }
 

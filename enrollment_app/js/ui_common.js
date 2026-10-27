@@ -5,7 +5,7 @@
 function createUiCommon(deps) {
   var H = deps.host;
 
-  var PRIVACY_ITEM_START = /^(?:\d+\.\d+|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/;
+  var PRIVACY_ITEM_START = /^(?:\d+\.\d+|\(\d+\)|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/;
 
   function splitNumberedItems(text) {
     var lines = text.split('\n').map(function(line) { return line.trim(); }).filter(Boolean);
@@ -39,12 +39,12 @@ function createUiCommon(deps) {
       if (!value) return;
       var firstLine = value.split('\n')[0].trim();
       if (beforeNotice) {
-        if (firstLine.indexOf('特别提示：') === 0) {
+        if ((firstLine.indexOf('特别提示：') === 0 || firstLine.indexOf('Important:') === 0)) {
           blocks.push({ kind: 'callout', text: value.replace(/\n+/g, ' ') });
           beforeNotice = false;
           return;
         }
-        if (firstLine.indexOf('隐私说明与知情同意书') >= 0) {
+        if ((firstLine.indexOf('隐私说明与知情同意书') >= 0 || firstLine.indexOf('Privacy Notice and Informed Consent') >= 0)) {
           blocks.push({ kind: 'title', text: firstLine });
           return;
         }
@@ -59,7 +59,7 @@ function createUiCommon(deps) {
         if (meta) blocks.push({ kind: 'meta', text: meta });
         return;
       }
-      if (/^第[一二三四五六七八九十百]+条\s/.test(firstLine)) {
+      if (/^(?:第[一二三四五六七八九十百]+条\s|Article \d+\.)/.test(firstLine)) {
         blocks.push({ kind: 'heading', text: firstLine });
         var rest = value.split('\n').slice(1).join('\n').trim();
         if (rest) privacyAddParagraph(blocks, rest);
@@ -77,11 +77,11 @@ function createUiCommon(deps) {
       if (!lines.length) return;
       if (index === 0) {
         blocks.push({ kind: 'title', text: normalizeParagraph(paragraph) });
-      } else if (lines[0].indexOf('模型：') === 0) {
+      } else if ((lines[0].indexOf('模型：') === 0 || lines[0].indexOf('Model:') === 0)) {
         blocks.push({ kind: 'heading', text: lines[0] });
         if (lines.length > 1) blocks.push({ kind: 'items', items: lines.slice(1) });
       } else {
-        blocks.push({ kind: lines[0].indexOf('LockFace 自有代码') === 0 ? 'callout' : 'paragraph',
+        blocks.push({ kind: (lines[0].indexOf('LockFace 自有代码') === 0 || lines[0].indexOf('LockFace original code') === 0) ? 'callout' : 'paragraph',
                       text: normalizeParagraph(paragraph) });
       }
     });
@@ -139,12 +139,12 @@ function createUiCommon(deps) {
     });
     var content = document.getElementById('license-content');
     content.classList.remove('license-document');
-    content.textContent = '正在读取许可文件…';
+    content.textContent = lfT("reading_license_document");
     try {
       var text = H.GetLicenseDocument(button.dataset.license);
       renderLicenseDocument(content, text, button.dataset.license);
     } catch (e) {
-      content.textContent = '无法读取许可文件：' + (e && e.message ? e.message : String(e));
+      content.textContent = lfT("unable_to_read_license_document") + (e && e.message ? e.message : String(e));
     }
   }
 
@@ -171,6 +171,7 @@ function createUiCommon(deps) {
   var modalCb = null;
 
   function showAppModal(opts) {
+    document.getElementById('modal-overlay').classList.toggle('consent-status', opts.variant === 'consent');
     modalCb = { onOk: opts.onOk || null, onCancel: opts.onCancel || null,
                 onMid: opts.onMid || null };
     document.getElementById('modal-title').textContent = opts.title || '';
@@ -180,8 +181,8 @@ function createUiCommon(deps) {
     var input = document.getElementById('modal-input');
     input.style.display = opts.input ? '' : 'none';
     input.value = opts.value || '';
-    document.getElementById('modal-ok').textContent = opts.okText || '确定';
-    document.getElementById('modal-cancel').textContent = opts.cancelText || '取消';
+    document.getElementById('modal-ok').textContent = opts.okText || lfT("ok");
+    document.getElementById('modal-cancel').textContent = opts.cancelText || lfT("cancel");
     var mid = document.getElementById('modal-mid');
     mid.style.display = opts.midText ? '' : 'none';
     mid.textContent = opts.midText || '';
@@ -274,7 +275,7 @@ function createUiCommon(deps) {
   // Preview owns starting/first-frame/failure status. A newer capture,
   // cancellation or consent message takes precedence over its late first frame.
   function beginPreviewStatus() {
-    setCaption('正在启动摄像头...');
+    setCaption(lfT("starting_camera"));
     var expected = captionRevision;
     function update(text) {
       if (captionRevision !== expected) return;
@@ -282,8 +283,8 @@ function createUiCommon(deps) {
       expected = captionRevision;
     }
     return {
-      ready: function() { update('准备就绪，点击“开始采集”录入人脸。'); },
-      failed: function() { update('预览启动失败，请检查摄像头和模型。'); }
+      ready: function() { update(lfT("ready_click_start_capture_to_enroll_your")); },
+      failed: function() { update(lfT("unable_to_start_preview_check_the_camera")); }
     };
   }
 

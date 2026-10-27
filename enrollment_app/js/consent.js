@@ -15,7 +15,7 @@ function createConsentGate(deps) {
   var pending = null;
   var withdrawalFailed = false;
   var generation = 0;
-  var consentRequiredText = '未同意隐私说明，摄像头已停止。';
+  var consentRequiredText = lfT("privacy_consent_not_granted_the_camera_is");
 
   // Deferred work belongs to the consent under which it was scheduled. A
   // later acceptance does not revive work queued before a withdrawal.
@@ -51,15 +51,16 @@ function createConsentGate(deps) {
   }
 
   function markCameraPending() {
-    setCaption('正在启动摄像头...');
+    setCaption(lfT("starting_camera"));
     var loading = document.getElementById('cam-loading');
     if (!loading) return;
     loading.style.display = 'flex';
     loading.classList.remove('fade');
+    loading.classList.remove('is-blocked');
     var spinner = loading.querySelector('.spinner-dark');
     if (spinner) spinner.style.display = '';
     var text = loading.querySelector('.loading-text');
-    if (text) text.textContent = '正在启动摄像头...';
+    if (text) text.textContent = lfT("starting_camera");
   }
 
   function markCameraBlocked() {
@@ -68,10 +69,12 @@ function createConsentGate(deps) {
     if (!loading) return;
     loading.style.display = 'flex';
     loading.classList.remove('fade');
+    loading.classList.add('is-blocked');
+    document.getElementById('camera-state-title').textContent = lfT('camera_off');
     var spinner = loading.querySelector('.spinner-dark');
     if (spinner) spinner.style.display = 'none';
     var text = loading.querySelector('.loading-text');
-    if (text) text.textContent = consentRequiredText + '点击“开始采集”或隐私状态按钮可重新同意。';
+    if (text) text.textContent = lfT("camera_consent_hint");
   }
 
   function showConsentRequired() {
@@ -122,7 +125,7 @@ function createConsentGate(deps) {
       var accepted = false;
       try { accepted = H.AcceptPrivacyConsent() === true; } catch(e) {}
       if (!accepted) {
-        ui.showBanner('cam', '未能保存同意，请先完成待处理的撤回，或检查权限后重试。摄像头保持关闭。', 'error', 15000);
+        ui.showBanner('cam', lfT("unable_to_save_consent_finish_any_pending"), 'error', 15000);
         refreshStatus();
         return;
       }
@@ -156,10 +159,10 @@ function createConsentGate(deps) {
     markCameraBlocked();
     refreshStatus();
     if (confirmed) {
-      ui.showBanner('cam', '已撤回同意，当前账户的人脸、保存的密码和旧备份已清理。', 'ok', 12000);
+      ui.showBanner('cam', lfT("consent_withdrawn_faces_saved_password_and_old"), 'ok', 12000);
     } else {
       markWithdrawalPending();
-      ui.showBanner('cam', '摄像头已停止，但未能确认撤回及数据删除完成。请检查服务状态并重试；此前的人脸登录可能仍可用。', 'error', 20000);
+      ui.showBanner('cam', lfT("the_camera_is_off_but_withdrawal_and"), 'error', 20000);
     }
   }
 
@@ -174,12 +177,13 @@ function createConsentGate(deps) {
     markCameraBlocked();
     var loading = document.getElementById('cam-loading');
     var text = loading && loading.querySelector('.loading-text');
-    if (text) text.textContent = '摄像头未启动：撤回处理中';
-    setCaption('撤回处理中：请完成数据删除后再重新同意。');
+    document.getElementById('camera-state-title').textContent = lfT('withdrawal_pending');
+    if (text) text.textContent = lfT("withdrawal_pending_finish_deleting_data_before_giving");
+    setCaption(lfT("withdrawal_pending_finish_deleting_data_before_giving"));
   }
 
   function fmtTime(t) {
-    if (typeof t !== 'string' || t.length < 16) return '未知';
+    if (typeof t !== 'string' || t.length < 16) return lfT("unknown");
     return t.slice(0, 10) + ' ' + t.slice(11, 16);
   }
 
@@ -199,21 +203,21 @@ function createConsentGate(deps) {
     if (!pill) return;
     var s = readState();
     if (s.blocked) {
-      pill.textContent = '撤回处理中';
+      pill.textContent = lfT("withdrawal_pending");
       pill.className = 'consent-pill state-warn';
-      pill.title = '数据删除尚未确认完成，点击重试撤回';
+      pill.title = lfT("deletion_is_not_yet_confirmed_click_to");
     } else if (s.current) {
-      pill.textContent = '已同意隐私说明';
+      pill.textContent = lfT("privacy_consent_granted");
       pill.className = 'consent-pill state-ok';
-      pill.title = '已同意《LockFace 人脸识别隐私说明与知情同意书》，点击可查看或撤回';
+      pill.title = lfT("you_consented_to_the_lockface_face_recognition");
     } else if (s.has) {
-      pill.textContent = '隐私说明需重新同意';
+      pill.textContent = lfT("privacy_consent_needs_renewal");
       pill.className = 'consent-pill state-warn';
-      pill.title = '隐私说明有更新，重新同意后摄像头才会启动，点击查看详情';
+      pill.title = lfT("the_privacy_notice_has_changed_renew_consent");
     } else {
-      pill.textContent = '未同意隐私说明';
+      pill.textContent = lfT("privacy_consent_not_granted");
       pill.className = 'consent-pill';
-      pill.title = '同意后才能启动摄像头和采集，点击查看详情';
+      pill.title = lfT("consent_is_required_to_start_the_camera");
     }
   }
 
@@ -222,30 +226,29 @@ function createConsentGate(deps) {
   function statusMenu() {
     var s = readState();
     var opts = {
-      title: '隐私同意',
-      okText: '查看隐私说明',
-      cancelText: '关闭',
+      variant: 'consent',
+      title: lfT("privacy_consent"),
+      okText: lfT("view_privacy_notice"),
+      cancelText: lfT("close"),
       onOk: openPrivacyNotice
     };
     if (s.blocked) {
-      opts.message = '撤回及数据删除尚未确认完成，或撤回状态无法读取。摄像头和录入保持关闭。请检查服务与权限后重试；此前的人脸登录可能仍可用。';
-      opts.midText = '重试撤回';
+      opts.message = lfT("withdrawal_and_deletion_are_unconfirmed_or_the");
+      opts.midText = lfT("retry_withdrawal");
       opts.onMid = withdraw;
     } else if (s.current || s.has) {
-      opts.message = '你已同意《LockFace 人脸识别隐私说明与知情同意书》' +
-                     '（' + fmtTime(s.st.record.time) + '）。摄像头与人脸采集在此同意下运行；' +
-                     '撤回将删除当前账户全部人脸及保存的密码，并清理旧备份；再次使用需要重新录入。';
-      if (!s.current) opts.message = '你此前同意的隐私说明已更新。可以直接撤回并删除已有数据；如需继续采集，请从录入页重新同意。' +
-        '撤回将删除当前账户全部人脸及保存的密码，并清理旧备份。';
-      opts.midText = '撤回同意';
+      opts.message = lfT("consent_record_info", {time: fmtTime(s.st.record.time)});
+      if (!s.current) opts.message = lfT("the_privacy_notice_you_previously_accepted_has") +
+        lfT("withdrawal_deletes_all_faces_and_the_saved_2");
+      opts.midText = lfT("withdraw_consent");
       opts.onMid = withdraw;
     } else if (s.st) {
-      opts.message = consentRequiredText + '点击“重新同意”可恢复预览。';
+      opts.message = consentRequiredText + '\n\n' + lfT("click_renew_consent_to_restore_the_preview");
     } else {
-      opts.message = '同意记录暂时读取不到；下次启动会重新征求同意。';
+      opts.message = lfT("the_consent_record_is_temporarily_unavailable_you");
     }
     if (!s.blocked && !s.current && !s.has) {
-      opts.midText = '重新同意';
+      opts.midText = lfT("renew_consent");
       opts.onMid = function() {
         show(function() { previewCtl.restartPreview(); });
       };
@@ -280,7 +283,7 @@ function createConsentGate(deps) {
     refreshStatus();
     if (readState().blocked) {
       markWithdrawalPending();
-      ui.showBanner('cam', '上次撤回尚未确认完成。请点击“撤回处理中”重试；摄像头和录入保持关闭，此前的人脸登录可能仍可用。', 'error', 20000);
+      ui.showBanner('cam', lfT("the_previous_withdrawal_is_not_yet_confirmed"), 'error', 20000);
       return;
     }
     // A remembered acceptance of the current notice version resumes without

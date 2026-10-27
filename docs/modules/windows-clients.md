@@ -2,6 +2,8 @@
 
 本文覆盖锁屏 Credential Provider 和注册控制台。两者都调用 `facelogin_common`，但运行环境、权限和 DataPath 处理不同。
 
+界面支持简体中文和英文。语言偏好、显示翻译与持久化角度标签的边界见 [`localization.md`](localization.md)；右上角“外观与语言”菜单中的语言选择在下次打开时生效，锁屏按机器偏好显示。
+
 ## Credential Provider
 
 目录：`credential_provider/`

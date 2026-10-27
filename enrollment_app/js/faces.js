@@ -17,25 +17,25 @@ function createFacesModule(deps) {
       var faces = JSON.parse(H.GetFacesJson());
       var count = H.GetFaceCount();
       var list = document.getElementById('face-list');
-      document.getElementById('faces-count').textContent = count + ' / 3 张';
+      document.getElementById('faces-count').textContent = lfT("faces_count", {count: count});
       try { document.getElementById('faces-user').textContent = H.GetUsername(); } catch(e) {}
 
       if (faces.length === 0) {
-        list.innerHTML = '<div class="face-empty">尚未录入人脸。切换到“录入”页开始录入。</div>';
+        list.innerHTML = "<div class=\"face-empty\">" + lfT("no_faces_enrolled_open_enroll_to_get") + "</div>";
         return;
       }
       var html = '';
       for (var i = 0; i < faces.length; i++) {
         var f = faces[i];
         html += '<div class="face-item">'
-          + '<span class="face-name" title="' + escapeHtml(f.label) + '">' + escapeHtml(f.label) + '</span>'
+          + '<span class="face-name" title="' + escapeHtml(lfStoredLabel(f.label)) + '">' + escapeHtml(lfStoredLabel(f.label)) + '</span>'
           + '<span class="face-id">#' + f.id + '</span>'
-          + '<button class="btn btn-secondary" onclick="onRenameFace(' + f.id + ')">重命名</button>'
-          + '<button class="btn btn-secondary" onclick="onDeleteFace(' + f.id + ')">删除</button>'
+          + '<button class="btn btn-secondary" onclick="onRenameFace(' + f.id + ")\">" + lfT("rename") + "</button>"
+          + '<button class="btn btn-secondary" onclick="onDeleteFace(' + f.id + ")\">" + lfT("delete") + "</button>"
           + '</div>';
       }
       list.innerHTML = html;
-    } catch(e) { showBanner('faces', '读取人脸失败: ' + e.message, 'error'); }
+    } catch(e) { showBanner('faces', lfT("unable_to_load_faces") + e.message, 'error'); }
   }
 
   function goAddFace() {
@@ -50,18 +50,18 @@ function createFacesModule(deps) {
     // "覆盖/追加都要继续" vs "什么都不做" must be separately clickable.
     if (multi && faceCount > 0) {
       showAppModal({
-        title: '覆盖重录？',
-        message: '当前账号已有 ' + faceCount + ' 张人脸。多角度录入将覆盖全部旧脸（正面/左转/右转各一张）。',
-        okText: '覆盖重录',
-        midText: '单角度追加',
+        title: lfT("replace_existing_faces"),
+        message: lfT("faces_replace_info", {count: faceCount}),
+        okText: lfT("replace_faces"),
+        midText: lfT("add_one_angle"),
         onMid: function() {
           try { document.getElementById('chk-multi-angle').checked = false; } catch(e) {}
           switchTab('cam');
-          showBanner('cam', '点击「开始采集」即可补录缺失角度（正面/左转/右转）。', 'ok', 6000);
+          showBanner('cam', lfT("click_start_capture_to_add_the_missing"), 'ok', 6000);
         },
         onOk: function() {
           switchTab('cam');
-          showBanner('cam', '多角度重录入：将覆盖当前账号全部旧脸（正面/左转/右转）。', 'ok', 6000);
+          showBanner('cam', lfT("multi_angle_enrollment_replaces_all_old_faces"), 'ok', 6000);
         }
         // 取消: plain dismiss — no side effect, user stays on the faces screen.
       });
@@ -73,57 +73,57 @@ function createFacesModule(deps) {
     if (faceCount >= 3) {
       try { document.getElementById('chk-multi-angle').checked = true; } catch(e) {}
       showAppModal({
-        title: '覆盖重录？',
-        message: '当前账号已有 3 张人脸，已达上限。继续将使用多角度录入（正面/左转/右转）覆盖全部旧脸。',
-        okText: '覆盖重录',
+        title: lfT("replace_existing_faces"),
+        message: lfT("this_account_has_reached_the_limit_of"),
+        okText: lfT("replace_faces"),
         onOk: function() {
           switchTab('cam');
-          showBanner('cam', '多角度重录入：将覆盖当前账号全部旧脸（正面/左转/右转）。', 'ok', 6000);
+          showBanner('cam', lfT("multi_angle_enrollment_replaces_all_old_faces"), 'ok', 6000);
         }
       });
       return;
     }
 
     switchTab('cam');
-    showBanner('cam', '点击「开始采集」即可为当前账号追加一张新人脸。', 'ok', 6000);
+    showBanner('cam', lfT("click_start_capture_to_add_a_face"), 'ok', 6000);
   }
 
   function onDeleteFace(id) {
     showAppModal({
-      title: '删除这张脸？',
-      message: '删除后不可恢复。',
-      okText: '删除',
+      title: lfT("delete_this_face"),
+      message: lfT("this_cannot_be_undone"),
+      okText: lfT("delete_2"),
       onOk: function() {
         try {
-          finishMutation(H.DeleteFace(id), '已删除。', '删除失败，请检查日志后重试。');
-        } catch(e) { showBanner('faces', '删除失败: ' + e.message, 'error'); }
+          finishMutation(H.DeleteFace(id), lfT("deleted"), lfT("unable_to_delete_check_the_logs_and"));
+        } catch(e) { showBanner('faces', lfT("unable_to_delete") + e.message, 'error'); }
       }
     });
   }
 
   function onRenameFace(id) {
     showAppModal({
-      title: '为这张脸命名',
+      title: lfT("name_this_face"),
       input: true,
-      okText: '保存',
+      okText: lfT("save"),
       onOk: function(name) {
         name = (name || '').trim();
         try {
-          finishMutation(H.RenameFace(id, name), '已重命名。', '重命名失败，请检查日志后重试。');
-        } catch(e) { showBanner('faces', '重命名失败: ' + e.message, 'error'); }
+          finishMutation(H.RenameFace(id, name), lfT("renamed"), lfT("unable_to_rename_check_the_logs_and"));
+        } catch(e) { showBanner('faces', lfT("unable_to_rename") + e.message, 'error'); }
       }
     });
   }
 
   function onClearAllFaces() {
     showAppModal({
-      title: '清空全部人脸？',
-      message: '清空后将无法使用人脸登录。',
-      okText: '清空',
+      title: lfT("clear_all_faces"),
+      message: lfT("face_sign_in_will_no_longer_be"),
+      okText: lfT("clear"),
       onOk: function() {
         try {
-          finishMutation(H.ClearAllFaces(), '已清空全部人脸。', '清空失败，请检查日志后重试。');
-        } catch(e) { showBanner('faces', '清空失败: ' + e.message, 'error'); }
+          finishMutation(H.ClearAllFaces(), lfT("all_faces_cleared"), lfT("unable_to_clear_faces_check_the_logs"));
+        } catch(e) { showBanner('faces', lfT("unable_to_clear_faces") + e.message, 'error'); }
       }
     });
   }
@@ -138,7 +138,7 @@ function createFacesModule(deps) {
     try { persisted = H.GetAccountSaveStatus() === 'reload_failed'; } catch(e) {}
     if (persisted) {
       loadFaces();
-      showBanner('faces', '更改已保存，但后台服务未确认加载；列表已更新。请检查服务状态和日志，无需重复操作。', 'error', 15000);
+      showBanner('faces', lfT("changes_saved_and_the_list_updated_but"), 'error', 15000);
     } else {
       showBanner('faces', failure, 'error', 10000);
     }

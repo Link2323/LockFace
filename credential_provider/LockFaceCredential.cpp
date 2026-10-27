@@ -1,3 +1,4 @@
+#include "../common/ui_language.h"
 #include "LockFaceCredential.h"
 #include "LockFaceProvider.h"
 #include "dll_lifetime.h"
@@ -314,7 +315,7 @@ void LockFaceCredential::QueueInputAfterSelection(
 // would flash. The input watcher queues EventKind::WaitingPrompt once the
 // foreground credential view is quiet (InputDetectionThreadProc); only that event ever
 // puts this text on the tile.
-static const wchar_t kWaitingPrompt[] = L"按下任意按键以开始人脸识别";
+static const wchar_t* WaitingPrompt() { return facelogin::ui::Text(L"按下任意按键以开始人脸识别"); }
 
 // ============================================================================
 // Construction / Destruction
@@ -465,7 +466,7 @@ void LockFaceCredential::DispatchEvent() {
         // the watcher's visible-state mirror true and lose the prompt for the
         // rest of the round.
         if (m_selected && m_state == State::Waiting) {
-            SetStatusText(event->success ? kWaitingPrompt : L"");
+            SetStatusText(event->success ? WaitingPrompt() : L"");
             NotifyStatusText();
         }
         break;
@@ -479,7 +480,7 @@ void LockFaceCredential::DispatchEvent() {
     case EventKind::ConnectFailure:
         if (m_state == State::Authenticating) {
             PresentRetryableFailure(event->success ? State::Failed : State::Error,
-                event->success ? L"识别超时，请重试" : L"人脸登录服务不可用", false);
+                event->success ? facelogin::ui::Text(L"识别超时，请重试") : facelogin::ui::Text(L"人脸登录服务不可用"), false);
         }
         break;
     }
@@ -742,7 +743,7 @@ STDMETHODIMP LockFaceCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
 
     switch (dwFieldID) {
     case kFieldTitle:
-        return SHStrDupW(L"人脸登录", ppwsz);
+        return SHStrDupW(facelogin::ui::Text(L"人脸登录"), ppwsz);
 
     case kFieldStatus:
         switch (m_state) {
@@ -767,10 +768,10 @@ STDMETHODIMP LockFaceCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
                 return SHStrDupW(snapshot.c_str(), ppwsz);
             }
             return SHStrDupW(m_state == State::Authenticating || m_state == State::Ready
-                                 ? L"正在识别..."
+                                 ? facelogin::ui::Text(L"正在识别...")
                                  : m_state == State::Failed
-                                       ? L"人脸识别失败"
-                                       : L"人脸登录服务不可用",
+                                       ? facelogin::ui::Text(L"人脸识别失败")
+                                       : facelogin::ui::Text(L"人脸登录服务不可用"),
                              ppwsz);
         }
         default:
@@ -781,10 +782,10 @@ STDMETHODIMP LockFaceCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz) {
         return SHStrDupW(L"", ppwsz);
 
     case kFieldSwitchLink: // Command link — password switch, deselected list view only
-        return SHStrDupW(L"切换到密码登录", ppwsz);
+        return SHStrDupW(facelogin::ui::Text(L"切换到密码登录"), ppwsz);
 
     case kFieldRetryHint: // Retry hint line (visibility is state-driven, see GetFieldState)
-        return SHStrDupW(L"请按任意键重试", ppwsz);
+        return SHStrDupW(facelogin::ui::Text(L"请按任意键重试"), ppwsz);
 
     default:
         return E_INVALIDARG;
@@ -907,7 +908,7 @@ STDMETHODIMP LockFaceCredential::GetSerialization(
         if (authDeadline != facelogin::ipc::AuthDeadline{} &&
             facelogin::ipc::RemainingAuthTimeMs(authDeadline) == 0) {
             FACELOGIN_WARN(L"Auth timed out waiting for service response");
-            PresentRetryableFailure(State::Failed, L"识别超时，请重试");
+            PresentRetryableFailure(State::Failed, facelogin::ui::Text(L"识别超时，请重试"));
             *pcpgsr = CPGSR_NO_CREDENTIAL_FINISHED;
             return S_OK;
         }
@@ -953,7 +954,7 @@ STDMETHODIMP LockFaceCredential::GetSerialization(
         // A failed pack leaves no retained copy and the password is already
         // zeroed — later polls could not succeed either. Present a terminal
         // failure instead of spinning NOT_FINISHED.
-        PresentRetryableFailure(State::Error, L"凭据封装失败，请使用密码登录");
+        PresentRetryableFailure(State::Error, facelogin::ui::Text(L"凭据封装失败，请使用密码登录"));
         *pcpgsr = CPGSR_NO_CREDENTIAL_FINISHED;
     }
     return S_OK;
@@ -990,7 +991,7 @@ STDMETHODIMP LockFaceCredential::ReportResult(
         facelogin::SecureClearWString(m_password);
         PresentRetryableFailure(
             State::Failed,
-            L"Windows 拒绝了保存的凭据，请使用密码登录并重新录入人脸");
+            facelogin::ui::Text(L"Windows 拒绝了保存的凭据，请使用密码登录并重新录入人脸"));
     }
 
     return S_OK;
@@ -1006,7 +1007,7 @@ void LockFaceCredential::StartAuth() {
     StopInputDetectionThread();
     StopAuthThread();
     if (!EnsureDispatcher()) {
-        PresentRetryableFailure(State::Error, L"人脸登录服务不可用");
+        PresentRetryableFailure(State::Error, facelogin::ui::Text(L"人脸登录服务不可用"));
         return;
     }
     ++m_generation;
@@ -1017,7 +1018,7 @@ void LockFaceCredential::StartAuth() {
     const auto deadline = facelogin::ipc::MakeAuthDeadline();
     m_authDeadline.store(deadline);
     m_state = State::Authenticating;
-    SetStatusText(L"正在识别...");
+    SetStatusText(facelogin::ui::Text(L"正在识别..."));
     m_hAuthStop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     auto context = new (std::nothrow) WorkerContext{
         this, m_hAuthStop, m_generation, deadline, m_inputDetectionRound};
@@ -1033,7 +1034,7 @@ void LockFaceCredential::StartAuth() {
     if (!m_hAuthThread) {
         delete context;
         StopAuthThread();
-        PresentRetryableFailure(State::Error, L"人脸登录服务不可用");
+        PresentRetryableFailure(State::Error, facelogin::ui::Text(L"人脸登录服务不可用"));
         return;
     }
     NotifyStatusText();
@@ -1301,7 +1302,7 @@ HRESULT LockFaceCredential::SwitchToPasswordProvider() {
 
 void LockFaceCredential::SetStatusText(const std::wstring& text) {
     AssertOwner();
-    m_statusText = text;
+    m_statusText = facelogin::ui::Text(text);
 }
 
 std::wstring LockFaceCredential::SnapshotStatusText() {
@@ -1360,7 +1361,7 @@ void LockFaceCredential::OnPipeResponse(bool success, const std::wstring& messag
             return;
         } else if (result.status == facelogin::ipc::AuthResult::Status::Timeout) {
             FACELOGIN_INFO(L"OnPipeResponse: Auth timeout");
-            PresentRetryableFailure(State::Failed, L"识别超时，请重试");
+            PresentRetryableFailure(State::Failed, facelogin::ui::Text(L"识别超时，请重试"));
             return;
         } else if (result.status == facelogin::ipc::AuthResult::Status::Error) {
             FACELOGIN_WARN(L"OnPipeResponse: Auth error: %s", result.errorMessage.c_str());
@@ -1369,13 +1370,13 @@ void LockFaceCredential::OnPipeResponse(bool success, const std::wstring& messag
             PresentRetryableFailure(
                 State::Error,
                 result.errorMessage.empty()
-                    ? L"人脸登录服务不可用"
+                    ? facelogin::ui::Text(L"人脸登录服务不可用")
                     : result.errorMessage);
             return;
         }
     } else {
         FACELOGIN_WARN(L"OnPipeResponse: Read failed — server disconnected?");
-        PresentRetryableFailure(State::Error, L"人脸登录服务不可用");
+        PresentRetryableFailure(State::Error, facelogin::ui::Text(L"人脸登录服务不可用"));
         return;
     }
 }
@@ -1394,7 +1395,7 @@ void LockFaceCredential::PresentRetryableFailure(
     m_state = failureState;
     facelogin::SecureClearWString(m_password);
     m_authDeadline.store({});
-    SetStatusText(statusText.empty() ? L"人脸识别失败" : statusText);
+    SetStatusText(statusText.empty() ? facelogin::ui::Text(L"人脸识别失败") : statusText);
 
     // A terminal state ends any pending Ready handoff — the retained packed
     // credential (which carries the plaintext password) must not survive it.
@@ -1406,7 +1407,7 @@ void LockFaceCredential::PresentRetryableFailure(
     // retry the hint actually serves; password/re-enroll instructions
     // (e.g. "请使用密码登录并重新录入人脸") stay — the hint does not
     // replace them.
-    for (const wchar_t* tail : {L"，请重试", L"，请使用真实人脸"}) {
+    for (const wchar_t* tail : {L"，请重试", L"，请使用真实人脸", L", please try again", L", please use a real face"}) {
         const size_t tailLen = wcslen(tail);
         if (m_statusText.size() > tailLen &&
             m_statusText.compare(m_statusText.size() - tailLen, tailLen,

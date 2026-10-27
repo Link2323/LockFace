@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { lfT, locale, languageMode, initLanguage, setLanguageMode } from './i18n'
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { GetDefaultPaths, Install, Uninstall, PickDirectory, IsInstalled, LaunchConsole, GetMode } from '../wailsjs/go/main/App'
 import { EventsOn, EventsOff, Quit } from '../wailsjs/runtime'
@@ -18,16 +19,17 @@ const installDone = ref(false)
 const launchChecked = ref(true)
 const finishError = ref('')
 const finishing = ref(false)
+const languageChanging = ref(false)
 // Uninstaller build (or full installer run with --uninstall): land on the
 // uninstall page; the slim build has no install capability at all.
 const hideTabs = ref(false)
 const licenseDialog = ref<HTMLDialogElement | null>(null)
-const licenseDocuments = [
-  { path: 'LICENSE.txt', label: '项目许可' },
-  { path: 'THIRD_PARTY_NOTICES.txt', label: '第三方声明' },
-  { path: 'MODEL_LICENSES.txt', label: '模型许可' },
-  { path: 'PRIVACY.txt', label: '隐私说明' },
-]
+const licenseDocuments = computed(() => [
+  { path: 'LICENSE.txt', label: lfT("project_license") },
+  { path: 'THIRD_PARTY_NOTICES.txt', label: lfT("third_party_notices") },
+  { path: 'MODEL_LICENSES.txt', label: lfT("model_licenses") },
+  { path: 'PRIVACY.txt', label: lfT("privacy_notice") },
+])
 const licenseDocument = ref('LICENSE.txt')
 const licenseText = ref('')
 const licenseCache = new Map<string, string>()
@@ -48,7 +50,7 @@ type ConsentBlock = {
   items?: string[]
 }
 
-const ITEM_START = /^(?:\d+\.\d+|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/
+const ITEM_START = /^(?:\d+\.\d+|\(\d+\)|（[一二三四五六七八九十]+）|[一二三四五六七八九十]+、)/
 
 // The canonical notice keeps each clause on one line (structure lines carry
 // the parsing: article headings, x.y clause numbers, （一） items); clause
@@ -94,12 +96,12 @@ const consentBlocks = computed<ConsentBlock[]>(() => {
     if (!text) continue
     const firstLine = text.split('\n')[0].trim()
     if (beforeNotice) {
-      if (firstLine.startsWith('特别提示：')) {
+      if ((firstLine.startsWith('特别提示：') || firstLine.startsWith('Important:'))) {
         blocks.push({ kind: 'callout', text: text.replace(/\n+/g, ' ') })
         beforeNotice = false
         continue
       }
-      if (firstLine.includes('隐私说明与知情同意书')) {
+      if ((firstLine.includes('隐私说明与知情同意书') || firstLine.includes('Privacy Notice and Informed Consent'))) {
         blocks.push({ kind: 'title', text: firstLine })
         continue
       }
@@ -114,7 +116,7 @@ const consentBlocks = computed<ConsentBlock[]>(() => {
       if (meta) blocks.push({ kind: 'meta', text: meta })
       continue
     }
-    if (/^第[一二三四五六七八九十百]+条\s/.test(firstLine)) {
+    if ((/^(?:第[一二三四五六七八九十百]+条\s|Article \d+\.)/.test(firstLine))) {
       blocks.push({ kind: 'heading', text: firstLine })
       const rest = text.split('\n').slice(1).join('\n').trim()
       if (rest) pushParagraph(blocks, rest)
@@ -126,25 +128,28 @@ const consentBlocks = computed<ConsentBlock[]>(() => {
 })
 
 async function fetchDocument(path: string): Promise<string> {
-  let text = licenseCache.get(path)
+  const cacheKey = locale.value + ':' + path
+  let text = licenseCache.get(cacheKey)
   if (text === undefined) {
-    const response = await fetch(new URL(path, document.baseURI))
-    if (!response.ok) throw new Error(`读取失败 (${response.status})`)
+    const localizedPath = locale.value === 'en' && (path === 'PRIVACY.txt' || path === 'MODEL_LICENSES.txt')
+      ? path.replace('.txt', '.en.txt') : path
+    const response = await fetch(new URL(localizedPath, document.baseURI))
+    if (!response.ok) throw new Error(lfT('unable_to_read_status', {status: response.status}))
     text = await response.text()
-    licenseCache.set(path, text)
+    licenseCache.set(cacheKey, text)
   }
   return text
 }
 
 async function showLicenseDocument(path: string) {
   licenseDocument.value = path
-  licenseText.value = '正在读取…'
+  licenseText.value = lfT("reading")
   try {
     const text = await fetchDocument(path)
     if (licenseDocument.value === path) licenseText.value = text
   } catch (err: unknown) {
     if (licenseDocument.value === path) {
-      licenseText.value = err instanceof Error ? err.message : '无法读取许可文件'
+      licenseText.value = err instanceof Error ? err.message : lfT("unable_to_read_license_document")
     }
   }
 }
@@ -186,7 +191,7 @@ async function loadConsentText() {
   try {
     consentText.value = await fetchDocument(CONSENT_DOCUMENT)
   } catch (err: unknown) {
-    consentError.value = err instanceof Error ? err.message : '无法读取隐私说明'
+    consentError.value = err instanceof Error ? err.message : lfT("unable_to_read_privacy_notice")
   } finally {
     consentLoading.value = false
     await nextTick()
@@ -228,12 +233,37 @@ async function declineConsent() {
   await doExit()
 }
 
+async function changeLanguage(event: Event) {
+  const picker = event.target as HTMLSelectElement
+  if (running.value || languageChanging.value || consentLoading.value) return
+  languageChanging.value = true
+  try {
+    await setLanguageMode(picker.value)
+    consentAccepted.value = false
+    consentChecked.value = false
+    consentScrolled.value = false
+    consentText.value = ''
+    consentError.value = ''
+    if (consentScroller.value) consentScroller.value.scrollTop = 0
+    if (consentDialog.value?.open) await loadConsentText()
+    if (licenseDialog.value?.open) await showLicenseDocument(licenseDocument.value)
+  } catch (err: unknown) {
+    picker.value = languageMode.value
+    const message = err instanceof Error ? err.message : String(err)
+    if (consentDialog.value?.open) consentError.value = message
+    else { resultMessage.value = message; resultSuccess.value = false; showResult.value = true }
+  } finally {
+    languageChanging.value = false
+  }
+}
+
 function openLicenses() {
   licenseDialog.value?.showModal()
   void showLicenseDocument(licenseDocument.value)
 }
 
 onMounted(async () => {
+  try { await initLanguage() } catch { /* Keep Chinese if the host is unavailable. */ }
   let uninstallMode = false
   try {
     const mode = await GetMode()
@@ -255,7 +285,7 @@ onMounted(async () => {
     // Keep installDir non-empty so the install button isn't permanently disabled
     // on a marshalling failure — surface the error as the result banner instead.
     installDir.value = 'C:\\Program Files\\LockFace'
-    resultMessage.value = '初始化失败：' + (err?.message || String(err))
+    resultMessage.value = lfT("initialization_failed") + (err?.message || String(err))
     resultSuccess.value = false
     showResult.value = true
   }
@@ -269,7 +299,7 @@ async function doPickDirectory() {
       installDir.value = dir
     }
   } catch (err: any) {
-    resultMessage.value = '选择目录失败：' + (err?.message || String(err))
+    resultMessage.value = lfT("unable_to_choose_directory") + (err?.message || String(err))
     resultSuccess.value = false
     showResult.value = true
   }
@@ -319,7 +349,7 @@ async function doInstall() {
     }
 
   } catch (err: any) {
-    resultMessage.value = err?.message || String(err) || '安装失败'
+    resultMessage.value = err?.message || String(err) || lfT("installation_failed")
     resultSuccess.value = false
     showResult.value = true
   } finally {
@@ -335,7 +365,7 @@ async function doFinish() {
     if (launchChecked.value) {
       const r = await LaunchConsole()
       if (!r.success) {
-        finishError.value = r.message || '打开注册向导失败'
+        finishError.value = r.message || lfT("unable_to_open_enrollment")
         finishing.value = false
         return
       }
@@ -356,7 +386,7 @@ async function doExit() {
 }
 
 async function doUninstall() {
-  if (!confirm('确定要卸载 LockFace 人脸登录吗？\n\n⚠️ 卸载将删除所有程序文件、人脸数据和日志，且不可恢复！')) return
+  if (!confirm(lfT("uninstall_lockface_face_sign_in_n_n"))) return
 
   running.value = true
   showResult.value = false
@@ -377,7 +407,7 @@ async function doUninstall() {
     resultSuccess.value = result.success
     showResult.value = true
   } catch (err: any) {
-    resultMessage.value = err?.message || String(err) || '卸载失败'
+    resultMessage.value = err?.message || String(err) || lfT("uninstallation_failed")
     resultSuccess.value = false
     showResult.value = true
   } finally {
@@ -391,8 +421,12 @@ async function doUninstall() {
   <div class="flex flex-col h-screen bg-white select-none">
     <!-- Header -->
     <div class="px-8 pt-3 pb-2">
-      <h1 class="text-2xl font-light tracking-tight text-gray-900">LockFace</h1>
-      <p class="text-sm text-gray-400 font-light">人脸识别登录系统 · {{ showInstall ? '安装程序' : '卸载程序' }}</p>
+      <div class="flex items-center justify-between gap-4"><h1 class="text-2xl font-light tracking-tight text-gray-900">LockFace</h1><select :value="languageMode" :disabled="running || consentLoading || languageChanging" @change="changeLanguage" :aria-label="lfT('language')" class="max-w-40 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">
+        <option value="system">{{ lfT('follow_windows') }}</option>
+        <option value="zh-CN">简体中文</option>
+        <option value="en">English</option>
+      </select></div>
+      <p class="text-sm text-gray-400 font-light">{{ lfT('face_recognition_sign_in') }} · {{ showInstall ? lfT("installer") : lfT("uninstaller") }}</p>
     </div>
 
     <!-- Mode Tabs (hidden in the uninstaller build) -->
@@ -402,61 +436,61 @@ async function doUninstall() {
                  showInstall ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600']"
         @click="toggleMode('install')"
         :disabled="running"
-      >{{ alreadyInstalled ? '更新' : '安装' }}</button>
+      >{{ alreadyInstalled ? lfT("update") : lfT("install") }}</button>
       <button
         :class="['pb-2 text-sm font-medium transition-colors',
                  !showInstall ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600']"
         @click="toggleMode('uninstall')"
         :disabled="running"
-      >卸载</button>
+      >{{ lfT("uninstall") }}</button>
     </div>
 
     <!-- Body -->
-    <div class="flex-1 px-8 py-6">
+    <div class="flex-1 min-h-0 overflow-y-auto px-8 py-6">
       <!-- Install mode -->
       <div v-if="showInstall && !running && !showResult && !installDone">
-        <label class="block text-xs text-gray-500 uppercase tracking-wider mb-2">安装目录</label>
+        <label class="block text-xs text-gray-500 uppercase tracking-wider mb-2">{{ lfT("installation_directory") }}</label>
         <div class="flex items-center gap-3">
           <input
             v-model="installDir"
             class="flex-1 rounded-lg px-3 py-2 text-sm border border-gray-200 bg-gray-50
                    focus:outline-none focus:border-gray-400 transition-colors text-gray-800"
-            placeholder="选择安装目录"
+            :placeholder="lfT('choose_installation_directory')"
           />
           <button
             class="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200
                    hover:bg-gray-100 transition-colors text-gray-500"
             @click="doPickDirectory"
-            title="选择文件夹"
+            :title="lfT('choose_folder')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
           </button>
         </div>
-        <p class="mt-1 text-xs text-gray-400">建议保留默认目录：<code class="text-gray-500">C:\Program Files\</code> 受系统保护，可防止程序文件被篡改。</p>
+        <p class="mt-1 text-xs text-gray-400">{{ lfT("we_recommend_the_default_directory") }}<code class="text-gray-500">C:\Program Files\</code> {{ lfT("is_protected_by_windows_to_help_prevent") }}</p>
 
         <div class="mt-5 rounded-[10px] border border-gray-200 px-4 py-3.5">
           <div class="flex items-center justify-between gap-4">
             <div class="flex min-w-0 items-center gap-2.5">
-              <p class="text-[15px] font-semibold text-gray-900">人脸识别隐私说明</p>
+              <p class="text-[15px] font-semibold text-gray-900">{{ lfT("face_recognition_privacy_notice") }}</p>
               <span
                 class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px]"
                 :class="consentAccepted ? 'border-gray-200 text-gray-500' : 'border-amber-300 text-amber-700'"
               >
                 <span class="h-1.5 w-1.5 rounded-full" :class="consentAccepted ? 'bg-emerald-500' : 'bg-amber-500'"></span>
-                {{ consentAccepted ? '已确认阅读' : '待阅读' }}
+                {{ consentAccepted ? lfT("reading_acknowledged") : lfT("not_read_yet") }}
               </span>
             </div>
             <button class="flex-shrink-0 text-xs text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-gray-900" @click="openConsent">
-              {{ consentAccepted ? '重新阅读' : '阅读全文' }}
+              {{ consentAccepted ? lfT("read_again") : lfT("read_full_notice") }}
             </button>
           </div>
           <p class="mt-2.5 text-xs leading-relaxed text-gray-500">
-            人脸仅在本机用于登录比对，不保存照片或视频，不上传。本机保存人脸模板、账户标识、加密密码及日志；模板通过目录权限保护，未另行加密。
+            {{ lfT("faces_are_matched_locally_for_sign_in") }}
           </p>
           <p v-if="!consentAccepted" class="mt-2 text-[11px] text-gray-400">
-            安装前请阅读说明。安装阅读确认不授权采集人脸；每位使用者须在注册界面单独授权。
+            {{ lfT("read_the_notice_before_installing_installation_acknowledgment") }}
           </p>
         </div>
 
@@ -464,21 +498,20 @@ async function doUninstall() {
           class="mt-5 w-full rounded-lg py-2.5 text-sm font-medium bg-gray-900 text-white
                  hover:bg-gray-800 transition-colors disabled:opacity-40"
           @click="doInstall"
-          :disabled="!installDir || !consentAccepted"
-        >{{ alreadyInstalled ? '更新' : '安装' }}</button>
+          :disabled="!installDir || !consentAccepted || languageChanging"
+        >{{ alreadyInstalled ? lfT("update") : lfT("install") }}</button>
       </div>
 
       <!-- Uninstall mode -->
       <div v-if="!showInstall && !running && !showResult">
         <p class="text-sm text-gray-600 leading-relaxed">
-          卸载将停止并删除 LockFace 服务、注销登录组件、删除全部程序文件，
-          以及 <strong>人脸数据和日志（不可恢复）</strong>，并移除安装目录。
+          {{ lfT("uninstalling_stops_and_removes_the_lockface_service") }} <strong>{{ lfT("face_data_and_logs_cannot_be_recovered") }}</strong>{{ lfT("and_removes_the_installation_directory") }}
         </p>
         <button
           class="mt-6 w-full rounded-lg py-2.5 text-sm font-medium border border-gray-300 text-gray-700
                  hover:bg-gray-100 transition-colors disabled:opacity-40"
           @click="doUninstall"
-        >卸载 LockFace</button>
+        >{{ lfT("uninstall_lockface") }}</button>
       </div>
 
       <!-- Progress -->
@@ -508,7 +541,7 @@ async function doUninstall() {
           class="w-full rounded-lg py-2 text-sm text-gray-500 border border-gray-200
                  hover:bg-gray-50 transition-colors"
           @click="hideTabs ? doExit() : (showResult = false)"
-        >{{ hideTabs ? '退出' : '返回' }}</button>
+        >{{ hideTabs ? lfT("exit") : lfT("back") }}</button>
       </div>
 
       <!-- Install finish page: success + optional console launch -->
@@ -520,13 +553,13 @@ async function doUninstall() {
             </svg>
           </div>
           <div>
-            <p class="text-lg font-medium text-gray-900">安装成功</p>
-            <p class="text-sm text-gray-500 leading-relaxed">人脸认证服务已启动，登录界面已启用人脸选项。<br>注册人脸后即可使用人脸登录。</p>
+            <p class="text-lg font-medium text-gray-900">{{ lfT("installation_complete") }}</p>
+            <p class="text-sm text-gray-500 leading-relaxed">{{ lfT("the_authentication_service_is_running_and_face") }}<br>{{ lfT("enroll_your_face_to_start_using_face") }}</p>
           </div>
         </div>
         <label class="flex items-center gap-2.5 text-sm text-gray-700 cursor-pointer select-text">
           <input type="checkbox" v-model="launchChecked" class="w-4 h-4 accent-gray-900" />
-          立即打开人脸注册向导
+          {{ lfT("open_face_enrollment_now") }}
         </label>
         <p v-if="finishError" class="text-xs text-red-600">{{ finishError }}</p>
         <button
@@ -534,21 +567,21 @@ async function doUninstall() {
                  hover:bg-gray-800 transition-colors disabled:opacity-40"
           @click="doFinish"
           :disabled="finishing"
-        >完成</button>
+        >{{ lfT("finish") }}</button>
       </div>
     </div>
 
     <!-- Footer -->
     <div class="px-8 py-4 border-t border-gray-100 flex items-center justify-between">
-      <p class="text-xs text-gray-300">Windows 人脸识别登录</p>
-      <button class="text-xs text-gray-500 hover:text-gray-800" @click="openLicenses">许可说明</button>
+      <p class="text-xs text-gray-300">{{ lfT("windows_face_sign_in") }}</p>
+      <button class="text-xs text-gray-500 hover:text-gray-800" @click="openLicenses">{{ lfT("licenses") }}</button>
     </div>
     <dialog ref="licenseDialog" aria-labelledby="license-title"
       class="m-auto w-[calc(100%-2rem)] max-w-3xl rounded-lg p-0 shadow-xl backdrop:bg-black/30">
       <div class="flex max-h-[85vh] flex-col">
         <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-          <h2 id="license-title" class="text-sm font-medium text-gray-900">许可说明</h2>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="licenseDialog?.close()">关闭</button>
+          <h2 id="license-title" class="text-sm font-medium text-gray-900">{{ lfT("licenses") }}</h2>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="licenseDialog?.close()">{{ lfT("close") }}</button>
         </div>
         <div class="flex gap-4 border-b border-gray-100 px-5 pt-3">
           <button v-for="doc in licenseDocuments" :key="doc.path"
@@ -563,14 +596,19 @@ async function doUninstall() {
     <dialog ref="consentDialog" aria-labelledby="consent-title" @cancel.prevent
       class="m-auto w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-[10px] p-0 shadow-2xl backdrop:bg-slate-900/50">
       <div class="flex max-h-[92vh] flex-col bg-white">
+      <div class="flex justify-end px-8 pt-3"><select :value="languageMode" :disabled="running || consentLoading || languageChanging" @change="changeLanguage" :aria-label="lfT('language')" class="max-w-40 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">
+        <option value="system">{{ lfT('follow_windows') }}</option>
+        <option value="zh-CN">简体中文</option>
+        <option value="en">English</option>
+      </select></div>
         <div ref="consentScroller" tabindex="-1" autofocus
           class="min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none" @scroll="onConsentScroll">
           <div v-if="consentLoading" class="flex items-center gap-2 py-8 text-xs text-gray-500">
             <span class="h-3 w-3 animate-spin rounded-full border-2 border-gray-200 border-t-gray-600"></span>
-            正在读取隐私说明…
+            {{ lfT("reading_privacy_notice") }}
           </div>
           <div v-else-if="consentError" class="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-700">
-            {{ consentError }}<br>隐私说明无法显示，安装已禁用。请重新打开安装程序。
+            {{ consentError }}<br>{{ lfT("the_privacy_notice_could_not_be_displayed") }}
           </div>
           <article v-else class="mx-auto max-w-2xl">
             <template v-for="(block, index) in consentBlocks" :key="index">
@@ -597,22 +635,22 @@ async function doUninstall() {
               :disabled="consentAccepted || !!consentError"
               class="mt-0.5 h-4 w-4 flex-shrink-0 accent-gray-900" />
             <span class="text-xs leading-relaxed text-gray-700">
-              我已阅读
-              <span class="font-medium text-gray-900">《LockFace 人脸识别隐私说明与知情同意书》</span>
-              ，知悉人脸处理需由每位使用者另行授权。本次确认不代表人脸处理同意，也不代表放弃法定权利。
+              {{ lfT("i_have_read") }}
+              <span class="font-medium text-gray-900">{{ lfT("lockface_face_recognition_privacy_notice_and_informed") }}</span>
+              {{ lfT("and_understand_that_each_user_must_separately") }}
             </span>
           </label>
           <div class="mt-2.5 flex items-center justify-between gap-4">
             <span v-if="!consentScrolled && !consentAccepted && !consentError"
-              class="text-[11px] text-gray-400">请滚动阅读至底部后勾选</span>
-            <span v-else-if="consentAccepted" class="text-[11px] font-medium text-emerald-600">✓ 已确认阅读</span>
+              class="text-[11px] text-gray-400">{{ lfT("scroll_to_the_bottom_before_checking_the") }}</span>
+            <span v-else-if="consentAccepted" class="text-[11px] font-medium text-emerald-600">{{ lfT("reading_acknowledged_2") }}</span>
             <button v-if="!consentAccepted"
               class="rounded-sm text-xs text-gray-500 underline decoration-gray-300 underline-offset-4 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
-              @click="declineConsent">退出安装</button>
+              @click="declineConsent">{{ lfT("exit_installer") }}</button>
             <button v-if="consentScrolled || consentAccepted"
               class="rounded-lg bg-gray-900 px-6 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
               :disabled="!consentAccepted && !consentChecked" @click="acceptConsent">
-              {{ consentAccepted ? '关闭' : '确认已阅读' }}
+              {{ consentAccepted ? lfT("close") : lfT("acknowledge_reading") }}
             </button>
           </div>
         </div>

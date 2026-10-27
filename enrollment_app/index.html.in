@@ -7,28 +7,45 @@
 <style>@ENROLLMENT_CSS@</style>
 </head>
 <body class="__WINDOW_CHROME_CLASS__">
-<div class="window-controls" role="group" aria-label="窗口控制">
-  <button type="button" class="window-button" aria-label="最小化" title="最小化" onclick="minimizeWindow()">
+<div class="window-controls" role="group" aria-label="窗口控制" data-i18n-aria-label="window_controls">
+  <button type="button" class="window-button" aria-label="最小化" data-i18n-aria-label="minimize" title="最小化" data-i18n-title="minimize" onclick="minimizeWindow()">
     <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.5h10"/></svg>
   </button>
-  <button type="button" class="window-button window-close" aria-label="关闭" title="关闭" onclick="closeWindow()">
+  <button type="button" class="window-button window-close" aria-label="关闭" data-i18n-aria-label="close" title="关闭" data-i18n-title="close" onclick="closeWindow()">
     <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1.5 1.5 9 9m0-9-9 9"/></svg>
   </button>
 </div>
-<button type="button" class="window-button theme-button" id="theme-button" aria-label="显示模式"
-        aria-haspopup="menu" aria-expanded="false" title="显示模式" onclick="toggleThemeMenu(event)">
+<button type="button" class="window-button theme-button" id="theme-button" aria-label="外观与语言" data-i18n-aria-label="appearance_and_language"
+        aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" title="外观与语言" data-i18n-title="appearance_and_language" onclick="toggleThemeMenu(event)">
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 </button>
-<div class="theme-menu" id="theme-menu" role="menu" aria-label="显示模式" onclick="event.stopPropagation()">
-  <button type="button" class="theme-row" id="theme-row-light" role="menuitem" onclick="onThemePick('light')">
-    <span class="theme-check">✓</span>浅色模式
+<div class="theme-menu" id="theme-menu" role="menu" aria-label="外观与语言" data-i18n-aria-label="appearance_and_language" onclick="event.stopPropagation()">
+  <div role="group" aria-labelledby="theme-mode-heading">
+  <div class="theme-menu-heading" id="theme-mode-heading" data-i18n="color_mode">颜色模式</div>
+  <button type="button" class="theme-row" id="theme-row-light" role="menuitemradio" aria-checked="false" onclick="onThemePick('light')">
+    <span class="theme-check">✓</span><span data-i18n="light_mode">浅色模式</span>
   </button>
-  <button type="button" class="theme-row" id="theme-row-dark" role="menuitem" onclick="onThemePick('dark')">
-    <span class="theme-check">✓</span>深色模式
+  <button type="button" class="theme-row" id="theme-row-dark" role="menuitemradio" aria-checked="false" onclick="onThemePick('dark')">
+    <span class="theme-check">✓</span><span data-i18n="dark_mode">深色模式</span>
   </button>
-  <button type="button" class="theme-row" id="theme-row-system" role="menuitem" onclick="onThemePick('system')">
-    <span class="theme-check">✓</span>跟随系统
+  <button type="button" class="theme-row" id="theme-row-system" role="menuitemradio" aria-checked="true" onclick="onThemePick('system')">
+    <span class="theme-check">✓</span><span data-i18n="follow_windows">跟随系统</span>
   </button>
+  </div>
+  <div class="theme-menu-group" role="group" aria-labelledby="language-heading">
+    <div class="theme-menu-heading" id="language-heading" data-i18n="language">语言</div>
+    <button type="button" class="theme-row" id="language-row-zh-CN" role="menuitemradio" aria-checked="false" onclick="onLanguagePick('zh-CN')">
+      <span class="theme-check">✓</span><span lang="zh-CN">简体中文</span>
+    </button>
+    <button type="button" class="theme-row" id="language-row-en" role="menuitemradio" aria-checked="false" onclick="onLanguagePick('en')">
+      <span class="theme-check">✓</span><span lang="en">English</span>
+    </button>
+    <button type="button" class="theme-row" id="language-row-system" role="menuitemradio" aria-checked="true" onclick="onLanguagePick('system')">
+      <span class="theme-check">✓</span><span data-i18n="follow_windows">跟随系统</span>
+    </button>
+    <p class="language-menu-hint" data-i18n="language_next_open_hint">下次打开生效</p>
+    <p class="language-menu-status" id="language-status" role="status" aria-live="polite" hidden></p>
+  </div>
 </div>
 
 <!-- ================================================================== -->
@@ -37,33 +54,35 @@
 <div id="screen-cam" class="screen active">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
   <div class="tabs">
-    <span class="tab active" onclick="switchTab('cam')">录入</span>
-    <span class="tab" onclick="switchTab('faces')">人脸</span>
-    <span class="tab" onclick="switchTab('settings')">设置</span>
-    <span class="tab" onclick="switchTab('logs')">日志</span>
+    <span class="tab active" onclick="switchTab('cam')"><span data-i18n="enroll">录入</span></span>
+    <span class="tab" onclick="switchTab('faces')"><span data-i18n="faces">人脸</span></span>
+    <span class="tab" onclick="switchTab('settings')"><span data-i18n="settings">设置</span></span>
+    <span class="tab" onclick="switchTab('logs')"><span data-i18n="logs">日志</span></span>
   </div>
   <div class="cam-body">
     <div class="cam-viewport" id="viewport">
       <div class="loading-overlay" id="cam-loading">
         <div class="spinner-dark"></div>
-        <span class="loading-text">正在启动摄像头...</span>
+        <svg class="camera-state-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l24 24M12 7l2-3h6l3 5h3a3 3 0 0 1 3 3v10M24 27H6a3 3 0 0 1-3-3V12a3 3 0 0 1 3-3h3M13 13a5 5 0 0 0 7 7M20 13a5 5 0 0 0-1-1"/></svg>
+        <strong class="camera-state-title" id="camera-state-title"></strong>
+        <span class="loading-text"><span data-i18n="starting_camera">正在启动摄像头...</span></span>
       </div>
       <canvas id="bg-canvas"></canvas>
       <canvas id="face-canvas"></canvas>
-      <div class="cam-caption" id="cam-caption">请将面部置于取景框内，确保光线充足。</div>
+      <div class="cam-caption" id="cam-caption"><span data-i18n="place_your_face_in_the_frame_with">请将面部置于取景框内，确保光线充足。</span></div>
       <div class="banner" id="cam-banner"></div>
     </div>
     <div class="capture-aux">
-      <label class="chk-row" title="正面、左转 30°、右转 30° 各录 5 帧，侧脸角度也能解锁">
+      <label class="chk-row" title="正面、左转 30°、右转 30° 各录 5 帧，侧脸角度也能解锁" data-i18n-title="capture_5_frames_each_facing_forward_left">
         <input type="checkbox" id="chk-multi-angle" class="switch-input" checked>
         <span class="switch-track"></span>
-        多角度录入（推荐，侧脸可解锁）
+        <span data-i18n="multi_angle_enrollment_recommended">多角度录入（推荐，侧脸可解锁）</span>
       </label>
       <button class="consent-pill" id="btn-consent-status" onclick="onConsentStatus()"
-              title="隐私同意状态，点击查看或撤回">隐私说明</button>
+              title="隐私同意状态，点击查看或撤回" data-i18n-title="privacy_consent_status_click_to_view_or"><span data-i18n="privacy_notice">隐私说明</span></button>
     </div>
     <div id="cap-progress">
       <div class="progress-bar"><div class="fill" id="cap-fill" style="width:0%"></div></div>
@@ -71,11 +90,11 @@
     <div class="capture-row">
       <button class="btn btn-primary" id="btn-capture" onclick="onCapture()">
         <span class="spinner" id="cap-spinner"></span>
-        <span id="cap-btn-text">开始采集</span>
+        <span id="cap-btn-text"><span data-i18n="start_capture">开始采集</span></span>
       </button>
     </div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -84,39 +103,39 @@
 <div id="screen-pwd" class="screen">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
-  <div class="tabs"><span class="tab active">录入</span></div>
+  <div class="tabs"><span class="tab active"><span data-i18n="enroll">录入</span></span></div>
   <div class="pwd-body">
     <div class="banner" id="pwd-banner"></div>
-    <h2>完成录入</h2>
+    <h2><span data-i18n="complete_enrollment">完成录入</span></h2>
     <div class="field">
-      <label>用户名 (UPN)</label>
+      <label><span data-i18n="username_upn">用户名 (UPN)</span></label>
       <input type="text" id="fld-user" readonly>
     </div>
     <div class="field">
-      <label>账户类型</label>
+      <label><span data-i18n="account_type">账户类型</span></label>
       <input type="text" id="fld-acct-type" readonly>
     </div>
     <p class="sid-note" id="fld-sid-note">SID：<span id="fld-sid"></span></p>
     <div class="field">
-      <label id="fld-pass-label">Windows 密码</label>
-      <input type="password" id="fld-pass" placeholder="输入你的登录密码" autofocus>
+      <label id="fld-pass-label"><span data-i18n="windows_password">Windows 密码</span></label>
+      <input type="password" id="fld-pass" placeholder="输入你的登录密码" data-i18n-placeholder="enter_your_sign_in_password" autofocus>
     </div>
     <div class="field">
-      <label>给这张脸命名</label>
-      <input type="text" id="fld-face-label" placeholder="可留空，默认如“脸1”" maxlength="32">
+      <label><span data-i18n="name_this_face_2">给这张脸命名</span></label>
+      <input type="text" id="fld-face-label" placeholder="可留空，默认如“脸1”" data-i18n-placeholder="optional_defaults_to_face_1" maxlength="32">
     </div>
-    <p class="dim">你的密码将使用 DPAPI 加密，仅存储在本机。</p>
+    <p class="dim"><span data-i18n="your_password_is_encrypted_with_dpapi_and">你的密码将使用 DPAPI 加密，仅存储在本机。</span></p>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="btn-save" onclick="onSave()" style="flex:1">
         <span class="spinner" id="save-spinner"></span>
-        保存并录入
+        <span data-i18n="save_and_enroll">保存并录入</span>
       </button>
-      <button class="btn btn-secondary" id="btn-save-cancel" onclick="onPwdCancel()" style="flex:1">取消</button>
+      <button class="btn btn-secondary" id="btn-save-cancel" onclick="onPwdCancel()" style="flex:1"><span data-i18n="cancel">取消</span></button>
     </div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -125,28 +144,28 @@
 <div id="screen-faces" class="screen">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
   <div class="tabs">
-    <span class="tab" onclick="switchTab('cam')">录入</span>
-    <span class="tab active" onclick="switchTab('faces')">人脸</span>
-    <span class="tab" onclick="switchTab('settings')">设置</span>
-    <span class="tab" onclick="switchTab('logs')">日志</span>
+    <span class="tab" onclick="switchTab('cam')"><span data-i18n="enroll">录入</span></span>
+    <span class="tab active" onclick="switchTab('faces')"><span data-i18n="faces">人脸</span></span>
+    <span class="tab" onclick="switchTab('settings')"><span data-i18n="settings">设置</span></span>
+    <span class="tab" onclick="switchTab('logs')"><span data-i18n="logs">日志</span></span>
   </div>
   <div class="faces-body">
     <div class="banner" id="faces-banner"></div>
     <div class="faces-head">
-      <h2>人脸管理</h2>
-      <span class="samples-tag" id="faces-count">0 / 3 张</span>
+      <h2><span data-i18n="manage_faces">人脸管理</span></h2>
+      <span class="samples-tag" id="faces-count"><span data-i18n="0_3_faces">0 / 3 张</span></span>
     </div>
-    <p class="dim">当前账号：<span id="faces-user">-</span></p>
+    <p class="dim"><span data-i18n="current_account">当前账号：</span><span id="faces-user">-</span></p>
     <div class="face-list" id="face-list"></div>
     <div class="faces-actions">
-      <button class="btn btn-secondary" onclick="onClearAllFaces()">清空全部</button>
-      <button class="btn btn-primary" onclick="goAddFace()">添加新人脸</button>
+      <button class="btn btn-secondary" onclick="onClearAllFaces()"><span data-i18n="clear_all">清空全部</span></button>
+      <button class="btn btn-primary" onclick="goAddFace()"><span data-i18n="add_a_face">添加新人脸</span></button>
     </div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -155,31 +174,31 @@
 <div id="screen-append" class="screen">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
-  <div class="tabs"><span class="tab active">录入</span></div>
+  <div class="tabs"><span class="tab active"><span data-i18n="enroll">录入</span></span></div>
   <div class="pwd-body">
     <div class="banner" id="append-banner"></div>
-    <h2 id="append-title">添加新人脸</h2>
+    <h2 id="append-title"><span data-i18n="add_a_face">添加新人脸</span></h2>
     <div class="field">
-      <label>用户名 (UPN)</label>
+      <label><span data-i18n="username_upn">用户名 (UPN)</span></label>
       <input type="text" id="append-user" readonly>
     </div>
     <p class="sid-note" id="append-sid-note">SID：<span id="append-sid"></span></p>
     <div class="field" id="append-label-field">
-      <label>给这张脸命名</label>
-      <input type="text" id="append-face-label" placeholder="可留空，默认如“脸N”" maxlength="32">
+      <label><span data-i18n="name_this_face_2">给这张脸命名</span></label>
+      <input type="text" id="append-face-label" placeholder="可留空，默认如“脸N”" data-i18n-placeholder="optional_defaults_to_face_n" maxlength="32">
     </div>
-    <p class="dim" id="append-info">当前账号已有 N 张脸，将追加第 N+1 张。追加无需再次输入密码。</p>
+    <p class="dim" id="append-info"><span data-i18n="this_account_has_n_faces_face_n">当前账号已有 N 张脸，将追加第 N+1 张。追加无需再次输入密码。</span></p>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="btn-append" onclick="onAppendConfirm()" style="flex:1">
         <span class="spinner" id="append-spinner"></span>
-        <span id="btn-append-text">确认追加</span>
+        <span id="btn-append-text"><span data-i18n="confirm_addition">确认追加</span></span>
       </button>
-      <button class="btn btn-secondary" id="btn-append-cancel" onclick="onAppendCancel()" style="flex:1">取消</button>
+      <button class="btn btn-secondary" id="btn-append-cancel" onclick="onAppendCancel()" style="flex:1"><span data-i18n="cancel">取消</span></button>
     </div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -188,119 +207,119 @@
 <div id="screen-settings" class="screen">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
   <div class="tabs">
-    <span class="tab" onclick="switchTab('cam')">录入</span>
-    <span class="tab" onclick="switchTab('faces')">人脸</span>
-    <span class="tab active">设置</span>
-    <span class="tab" onclick="switchTab('logs')">日志</span>
+    <span class="tab" onclick="switchTab('cam')"><span data-i18n="enroll">录入</span></span>
+    <span class="tab" onclick="switchTab('faces')"><span data-i18n="faces">人脸</span></span>
+    <span class="tab active"><span data-i18n="settings">设置</span></span>
+    <span class="tab" onclick="switchTab('logs')"><span data-i18n="logs">日志</span></span>
   </div>
   <div class="banner" id="settings-banner"></div>
   <div class="settings-viewport">
   <div class="settings-scroll">
     <div class="pwd-body settings-body">
-    <h2>系统设置</h2>
-    <p class="dim">保存后立即生效，无需重启。</p>
+    <h2><span data-i18n="settings_2">系统设置</span></h2>
+    <p class="dim"><span data-i18n="changes_apply_when_saved_no_restart_needed">保存后立即生效，无需重启。</span></p>
 
     <div class="set-group">
-      <h3>摄像头</h3>
+      <h3><span data-i18n="camera_2">摄像头</span></h3>
       <div class="field">
-        <label>摄像头设备</label>
+        <label><span data-i18n="camera_device">摄像头设备</span></label>
         <select id="cfg-camera">
-          <option value="">默认（第一个设备）</option>
+          <option value="" data-i18n="camera_default">默认（第一个设备）</option>
         </select>
       </div>
       <div class="field">
         <div class="label-row">
-          <label>摄像头旋转</label>
-          <span class="hint">正常安装无需调整</span>
+          <label><span data-i18n="camera_rotation">摄像头旋转</span></label>
+          <span class="hint"><span data-i18n="no_adjustment_needed_for_a_normally_mounted">正常安装无需调整</span></span>
         </div>
         <select id="cfg-rotation">
-          <option value="0">不旋转 (0°)</option>
-          <option value="90">顺时针 90°</option>
+          <option value="0" data-i18n="no_rotation_0">不旋转 (0°)</option>
+          <option value="90" data-i18n="90_clockwise">顺时针 90°</option>
           <option value="180">180°</option>
-          <option value="270">顺时针 270°</option>
+          <option value="270" data-i18n="270_clockwise">顺时针 270°</option>
         </select>
       </div>
     </div>
 
     <div class="set-group">
-      <h3>识别与安全</h3>
+      <h3><span data-i18n="recognition_and_security">识别与安全</span></h3>
       <div class="field">
         <div class="label-row">
-          <label>解锁档位</label>
-          <span class="hint">活体检测计帧数</span>
+          <label><span data-i18n="unlock_mode">解锁档位</span></label>
+          <span class="hint"><span data-i18n="frames_checked_for_liveness">活体检测计帧数</span></span>
         </div>
         <div class="seg" id="cfg-unlockframes">
           <input type="radio" name="unlock-tier" id="cfg-unlockframes-0" value="0"
                  onchange="onUnlockTierInput(this.value)">
-          <label for="cfg-unlockframes-0">严格 5 帧</label>
+          <label for="cfg-unlockframes-0"><span data-i18n="strict_5_frames">严格 5 帧</span></label>
           <input type="radio" name="unlock-tier" id="cfg-unlockframes-1" value="1" checked
                  onchange="onUnlockTierInput(this.value)">
-          <label for="cfg-unlockframes-1">标准 3 帧</label>
+          <label for="cfg-unlockframes-1"><span data-i18n="standard_3_frames">标准 3 帧</span></label>
           <input type="radio" name="unlock-tier" id="cfg-unlockframes-2" value="2"
                  onchange="onUnlockTierInput(this.value)">
-          <label for="cfg-unlockframes-2">极速 2 帧</label>
+          <label for="cfg-unlockframes-2"><span data-i18n="fastest_2_frames">极速 2 帧</span></label>
           <span class="seg-thumb"></span>
         </div>
-        <p class="dim">档位越快活体检测次数越少，防照片攻击的证据也越少。</p>
+        <p class="dim"><span data-i18n="faster_modes_check_fewer_frames_and_provide">档位越快活体检测次数越少，防照片攻击的证据也越少。</span></p>
       </div>
 
       <div class="field">
         <div class="label-row">
-          <label>识别容差</label>
+          <label><span data-i18n="match_tolerance">识别容差</span></label>
           <span class="set-val" id="cfg-threshold-val">1.00</span>
         </div>
         <input type="range" id="cfg-threshold" min="0.70" max="1.00" value="1.00" step="0.01"
                oninput="document.getElementById('cfg-threshold-val').textContent=parseFloat(this.value).toFixed(2)">
-        <div class="slider-ends"><span>严（少误认）</span><span>松（少拒认）</span></div>
+        <div class="slider-ends"><span><span data-i18n="strict_fewer_false_matches">严（少误认）</span></span><span><span data-i18n="loose_fewer_false_rejections">松（少拒认）</span></span></div>
       </div>
 
       <div class="field" id="field-antispoof-threshold">
         <div class="label-row">
-          <label>反欺诈阈值</label>
+          <label><span data-i18n="anti_spoof_threshold">反欺诈阈值</span></label>
           <span class="set-val" id="cfg-asthr-val">0.28</span>
         </div>
         <input type="range" id="cfg-antispoof-threshold" min="0.15" max="0.50" value="0.28" step="0.01"
                oninput="document.getElementById('cfg-asthr-val').textContent=parseFloat(this.value).toFixed(2)">
-        <div class="slider-ends"><span>松（易被照片骗过）</span><span>严（可能误拒真人）</span></div>
+        <div class="slider-ends"><span><span data-i18n="loose_more_vulnerable_to_photos">松（易被照片骗过）</span></span><span><span data-i18n="strict_may_reject_real_faces">严（可能误拒真人）</span></span></div>
       </div>
     </div>
 
     <div class="set-group">
-      <h3>渐进式学习 <span class="badge">实验性</span></h3>
+      <h3><span data-i18n="template_learning_2">渐进式学习</span> <span class="badge"><span data-i18n="experimental">实验性</span></span></h3>
       <div class="field">
         <label class="switch-row">
           <input type="checkbox" id="cfg-learning" class="switch-input" disabled>
           <span class="switch-track"></span>
-          <span>认证成功后自动微调人脸模板</span>
+          <span><span data-i18n="fine_tune_face_templates_after_successful_authentication">认证成功后自动微调人脸模板</span></span>
         </label>
-        <p class="dim">SFace 的自动更新参数正在验证，试用期间暂时关闭。</p>
+        <p class="dim"><span data-i18n="automatic_sface_updates_are_being_validated_and">SFace 的自动更新参数正在验证，试用期间暂时关闭。</span></p>
       </div>
 
       <div class="field">
         <div class="label-row">
-          <label>自动更新幅度</label>
+          <label><span data-i18n="update_strength">自动更新幅度</span></label>
           <span class="set-val" id="cfg-learn-gate-val">0.65</span>
         </div>
         <input type="range" id="cfg-learn-gate" disabled min="0.60" max="0.68" value="0.65" step="0.01"
                oninput="document.getElementById('cfg-learn-gate-val').textContent=parseFloat(this.value).toFixed(2)">
-        <div class="slider-ends"><span>保守（更新少）</span><span>积极（更新多）</span></div>
+        <div class="slider-ends"><span><span data-i18n="conservative_smaller_updates">保守（更新少）</span></span><span><span data-i18n="aggressive_larger_updates">积极（更新多）</span></span></div>
       </div>
     </div>
 
     <div class="set-actions">
-      <button class="btn btn-secondary" id="btn-reset-settings" onclick="onResetDefaults()">恢复默认</button>
+      <button class="btn btn-secondary" id="btn-reset-settings" onclick="onResetDefaults()"><span data-i18n="restore_defaults">恢复默认</span></button>
       <button class="btn btn-primary" id="btn-save-settings" onclick="onSaveSettings()">
         <span class="spinner" id="settings-spinner"></span>
-        保存设置
+        <span data-i18n="save_settings">保存设置</span>
       </button>
     </div>
     </div>
   </div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -309,33 +328,33 @@
 <div id="screen-logs" class="screen">
   <div class="header">
     <h1>LockFace Console</h1>
-    <p>人脸识别登录系统</p>
+    <p><span data-i18n="face_recognition_sign_in">人脸识别登录系统</span></p>
   </div>
   <div class="tabs">
-    <span class="tab" onclick="switchTab('cam')">录入</span>
-    <span class="tab" onclick="switchTab('faces')">人脸</span>
-    <span class="tab" onclick="switchTab('settings')">设置</span>
-    <span class="tab active">日志</span>
+    <span class="tab" onclick="switchTab('cam')"><span data-i18n="enroll">录入</span></span>
+    <span class="tab" onclick="switchTab('faces')"><span data-i18n="faces">人脸</span></span>
+    <span class="tab" onclick="switchTab('settings')"><span data-i18n="settings">设置</span></span>
+    <span class="tab active"><span data-i18n="logs">日志</span></span>
   </div>
   <div class="logs-body">
     <div class="logs-toolbar">
-      <h2>运行日志</h2>
+      <h2><span data-i18n="logs_2">运行日志</span></h2>
       <div style="display:flex;gap:8px;align-items:center">
         <select id="log-source" onchange="refreshLogs()">
-          <option value="console">控制台(console.log)</option>
-          <option value="service">解锁结果(service.log)</option>
-          <option value="worker">识别过程(auth_worker.log)</option>
-          <option value="cp">锁屏界面(credential_provider.log)</option>
-          <option value="learning">学习状态</option>
+          <option value="console" data-i18n="console_console_log">控制台(console.log)</option>
+          <option value="service" data-i18n="sign_in_results_service_log">解锁结果(service.log)</option>
+          <option value="worker" data-i18n="recognition_auth_worker_log">识别过程(auth_worker.log)</option>
+          <option value="cp" data-i18n="lock_screen_credential_provider_log">锁屏界面(credential_provider.log)</option>
+          <option value="learning" data-i18n="learning_status">学习状态</option>
         </select>
-        <button class="btn btn-secondary" id="btn-copy-log" onclick="copyLogs()">复制</button>
+        <button class="btn btn-secondary" id="btn-copy-log" onclick="copyLogs()"><span data-i18n="copy">复制</span></button>
         <button class="btn btn-secondary" id="btn-clear-log" onclick="clearLogs()"
-                title="清空当前来源的当日日志（按天轮转的历史文件保留）">清空日志</button>
+                title="清空当前来源的当日日志（按天轮转的历史文件保留）" data-i18n-title="clear_today_s_log_for_this_source"><span data-i18n="clear_logs">清空日志</span></button>
       </div>
     </div>
     <div class="log-viewer" id="log-viewer"></div>
   </div>
-  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()">许可声明</button></div>
+  <div class="footer"><p>v__APP_VERSION__</p><button onclick="openLicenseViewer()"><span data-i18n="licenses">许可声明</span></button></div>
 </div>
 
 <!-- ================================================================== -->
@@ -343,15 +362,15 @@
 <!-- ================================================================== -->
 <div class="cam-picker-overlay" id="cam-picker-overlay">
   <div class="cam-picker">
-    <h2>选择摄像头</h2>
-    <p class="dim">检测到多台摄像头。请选择用于人脸录入与登录的摄像头。</p>
+    <h2><span data-i18n="choose_a_camera">选择摄像头</span></h2>
+    <p class="dim"><span data-i18n="multiple_cameras_detected_choose_the_camera_for">检测到多台摄像头。请选择用于人脸录入与登录的摄像头。</span></p>
     <select id="cam-picker-select"></select>
     <p class="picker-error" id="cam-picker-error" role="alert" style="display:none"></p>
     <button class="btn btn-primary" id="cam-picker-confirm" onclick="onCamPickerConfirm()">
-      使用此摄像头
+      <span data-i18n="use_this_camera">使用此摄像头</span>
     </button>
     <button class="btn btn-secondary" id="cam-picker-skip" onclick="onCamPickerSkip()">
-      稍后选择（使用默认第一个设备）
+      <span data-i18n="choose_later_use_the_first_device">稍后选择（使用默认第一个设备）</span>
     </button>
   </div>
 </div>
@@ -361,19 +380,19 @@
 <!-- ================================================================== -->
 <div class="cam-picker-overlay" id="refresh-overlay">
   <div class="cam-picker">
-    <h2 id="refresh-title">账号身份已变更</h2>
+    <h2 id="refresh-title"><span data-i18n="account_identity_changed">账号身份已变更</span></h2>
     <p class="dim" id="refresh-info">
-      检测到该账号曾使用微软账号（MSA）登录，现已切换为本地账号。
+      <span data-i18n="this_account_previously_used_a_microsoft_account_2">检测到该账号曾使用微软账号（MSA）登录，现已切换为本地账号。
       为使人脸登录继续生效，需要刷新已保存的账号信息（人脸数据将保留），
-      并更新本地密码。请输入当前 Windows 登录密码。
+      并更新本地密码。请输入当前 Windows 登录密码。</span>
     </p>
-    <input type="password" id="refresh-pass" placeholder="输入当前 Windows 登录密码">
+    <input type="password" id="refresh-pass" placeholder="输入当前 Windows 登录密码" data-i18n-placeholder="enter_your_current_windows_sign_in_password">
     <button class="btn btn-primary" id="refresh-confirm" onclick="onRefreshConfirm()">
       <span class="spinner" id="refresh-spinner"></span>
-      刷新并保留人脸
+      <span data-i18n="refresh_and_keep_faces">刷新并保留人脸</span>
     </button>
     <button class="btn btn-secondary" id="refresh-dismiss" onclick="onRefreshDismiss()">
-      暂不处理
+      <span data-i18n="not_now">暂不处理</span>
     </button>
   </div>
 </div>
@@ -386,9 +405,9 @@
     <p class="dim" id="modal-message" style="display:none"></p>
     <input type="text" id="modal-input" style="display:none" maxlength="32">
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="modal-cancel" onclick="onModalCancel()">取消</button>
+      <button class="btn btn-secondary" id="modal-cancel" onclick="onModalCancel()"><span data-i18n="cancel">取消</span></button>
       <button class="btn btn-secondary" id="modal-mid" onclick="onModalMid()" style="display:none"></button>
-      <button class="btn btn-primary" id="modal-ok" onclick="onModalOk()">确定</button>
+      <button class="btn btn-primary" id="modal-ok" onclick="onModalOk()"><span data-i18n="ok">确定</span></button>
     </div>
   </div>
 </div>
@@ -397,39 +416,39 @@
 <div class="cam-picker-overlay" id="consent-overlay" role="dialog" aria-modal="true"
      aria-labelledby="consent-title">
   <div class="cam-picker consent-modal">
-    <h2 id="consent-title">人脸登录与隐私</h2>
-    <p class="dim">人脸登录完全可选，请先了解：</p>
+    <h2 id="consent-title"><span data-i18n="face_sign_in_and_privacy">人脸登录与隐私</span></h2>
+    <p class="dim"><span data-i18n="face_sign_in_is_optional_please_read">人脸登录完全可选，请先了解：</span></p>
     <ul class="consent-list">
-      <li>人脸画面仅在本机内存中处理，不保存照片或视频，不上传。</li>
-      <li>密码经 Windows DPAPI 加密；人脸模板由本机目录权限保护，未另行加密。</li>
-      <li>可随时撤回并删除人脸数据，继续使用 Windows 密码登录。</li>
+      <li><span data-i18n="camera_images_are_processed_only_in_this">人脸画面仅在本机内存中处理，不保存照片或视频，不上传。</span></li>
+      <li><span data-i18n="passwords_are_encrypted_with_windows_dpapi_face">密码经 Windows DPAPI 加密；人脸模板由本机目录权限保护，未另行加密。</span></li>
+      <li><span data-i18n="you_can_withdraw_consent_and_delete_face">可随时撤回并删除人脸数据，继续使用 Windows 密码登录。</span></li>
     </ul>
-    <button type="button" class="consent-link" onclick="openPrivacyNotice()" aria-haspopup="dialog">阅读《隐私声明》原文</button>
+    <button type="button" class="consent-link" onclick="openPrivacyNotice()" aria-haspopup="dialog"><span data-i18n="read_the_full_privacy_notice">阅读《隐私声明》原文</span></button>
     <label class="chk-row consent-check">
       <input type="checkbox" id="consent-agree">
-      我已阅读隐私声明，同意在本机采集、保存本人的人脸信息，用于 Windows 登录。
+      <span data-i18n="i_have_read_the_privacy_notice_and">我已阅读隐私声明，同意在本机采集、保存本人的人脸信息，用于 Windows 登录。</span>
     </label>
-    <p class="dim" id="consent-hint">勾选同意后启动摄像头预览。</p>
+    <p class="dim" id="consent-hint"><span data-i18n="the_camera_preview_starts_after_you_give">勾选同意后启动摄像头预览。</span></p>
     <button class="btn btn-primary" id="btn-consent-accept" onclick="onConsentAccept()" disabled>
-      同意并开启预览
+      <span data-i18n="agree_and_start_preview">同意并开启预览</span>
     </button>
-    <button class="btn btn-secondary" onclick="onConsentDecline()">暂不同意</button>
+    <button class="btn btn-secondary" onclick="onConsentDecline()"><span data-i18n="not_now_2">暂不同意</span></button>
   </div>
 </div>
 
 <div class="cam-picker-overlay" id="license-overlay" role="dialog" aria-modal="true" aria-labelledby="license-title">
   <div class="license-modal">
     <div class="license-head">
-      <h2 id="license-title">许可声明</h2>
-      <button class="btn btn-secondary" onclick="closeLicenseViewer()">关闭</button>
+      <h2 id="license-title"><span data-i18n="licenses">许可声明</span></h2>
+      <button class="btn btn-secondary" onclick="closeLicenseViewer()"><span data-i18n="close">关闭</span></button>
     </div>
-    <div class="license-docs" role="tablist" aria-label="许可文件">
-      <button class="active" data-license="LICENSE.txt" onclick="showLicenseDocument(this)">项目许可</button>
-      <button data-license="THIRD_PARTY_NOTICES.txt" onclick="showLicenseDocument(this)">第三方声明</button>
-      <button data-license="MODEL_LICENSES.txt" onclick="showLicenseDocument(this)">模型许可</button>
-      <button data-license="PRIVACY.txt" onclick="showLicenseDocument(this)">隐私说明</button>
+    <div class="license-docs" role="tablist" aria-label="许可文件" data-i18n-aria-label="license_documents">
+      <button class="active" data-license="LICENSE.txt" onclick="showLicenseDocument(this)"><span data-i18n="project_license">项目许可</span></button>
+      <button data-license="THIRD_PARTY_NOTICES.txt" onclick="showLicenseDocument(this)"><span data-i18n="third_party_notices">第三方声明</span></button>
+      <button data-license="MODEL_LICENSES.txt" onclick="showLicenseDocument(this)"><span data-i18n="model_licenses">模型许可</span></button>
+      <button data-license="PRIVACY.txt" onclick="showLicenseDocument(this)"><span data-i18n="privacy_notice">隐私说明</span></button>
     </div>
-    <div class="license-content" id="license-content" tabindex="0">正在读取许可文件…</div>
+    <div class="license-content" id="license-content" tabindex="0"><span data-i18n="reading_license_document">正在读取许可文件…</span></div>
   </div>
 </div>
 

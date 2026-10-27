@@ -28,6 +28,8 @@ LICENSE.txt
 THIRD_PARTY_NOTICES.txt
 MODEL_LICENSES.txt
 PRIVACY.txt
+PRIVACY.en.txt
+MODEL_LICENSES.en.txt
 models/det_10g_gnkps.onnx
 models/face_recognition_sface_2021dec.onnx
 models/MiniFASNetV2.onnx
