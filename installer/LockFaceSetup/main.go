@@ -18,7 +18,7 @@ var assets embed.FS
 
 // appVersion is shown in Windows' Add/Remove Programs list. Keep in sync
 // with wails.json Info.productVersion and build/windows/info.json.
-const appVersion = "1.9.0"
+const appVersion = "1.9.1"
 
 // Registry value names under the LockFace key (the key path itself lives in
 // internal/util.go).

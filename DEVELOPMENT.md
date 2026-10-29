@@ -85,6 +85,7 @@
 ├── camera_tune.state  # 曝光/增益及可选模式，可包含尚未落带的调节进度
 ├── data/config.json
 ├── data/users.dat
+├── data/users.dat.withdraw.<SID>  # 服务已接受的撤回待办；不随恢复文件清理
 ├── log/service.log
 ├── log/auth_worker.log
 ├── log/credential_provider.log

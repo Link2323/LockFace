@@ -437,6 +437,7 @@ void TestV7NominalAnglesAndLegacyRead() {
         // Single-face account: negative runner-up = clarity gate passes.
         facelogin::CredentialStore single;
         single.SetDataDir(root);
+        Check(single.RestorePlaintext(), "validate withdrawal journal for in-memory matching fixture");
         const auto encrypted2 = facelogin::DpapiUtil::Protect(L"v5b");
         Check(single.AddFace(L"solo", L"", L"SID-SOLO", encrypted2, Basis(4)),
               "single-face account is added");
@@ -688,6 +689,79 @@ void TestLegacyPasswordMigration() {
     CleanupTempRoot(root);
 }
 
+void TestDurableWithdrawal() {
+    const auto root = MakeTempRoot();
+    Check(!root.empty(), "create durable withdrawal fixture");
+    if (root.empty()) return;
+    const std::wstring alice = L"S-1-5-21-111-222-333-1001";
+    const std::wstring bob = L"S-1-5-21-111-222-333-1002";
+    const auto path = root + L"\\data\\users.dat";
+    const auto marker = path + L".withdraw." + alice;
+    const auto password = facelogin::DpapiUtil::Protect(L"withdrawal-test-password");
+    const auto probe = Basis(0), otherProbe = Basis(1);
+    facelogin::CredentialStore service, stale;
+    service.SetDataDir(root); stale.SetDataDir(root);
+    Check(service.AddFace(L"alice", L"", alice, password, probe) &&
+          service.AddFace(L"bob", L"", bob, password, otherProbe) && service.SaveDatabase(), "seed withdrawal accounts");
+    Check(stale.LoadDatabase(), "retain pre-withdrawal enrollment snapshot");
+    Check(CopyFileW(path.c_str(), (path + L".bak").c_str(), FALSE), "seed withdrawal backup");
+    HANDLE backup = CreateFileW((path + L".bak").c_str(), GENERIC_READ, FILE_SHARE_READ,
+                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    Check(backup != INVALID_HANDLE_VALUE, "lock backup against withdrawal cleanup");
+    if (backup != INVALID_HANDLE_VALUE) {
+        Check(!service.WithdrawPersistedAccount(alice) && service.HasPendingWithdrawals(),
+              "failed cleanup durably retains withdrawal intent");
+        Check(GetFileAttributesW(marker.c_str()) != INVALID_FILE_ATTRIBUTES,
+              "withdrawal marker exists before database deletion succeeds");
+        Check(!service.FindBestIdentity(probe.data(), probe.size(), 0.8f) &&
+              !service.LoadCredentialForSid(alice), "pending account cannot match or release credentials");
+        Check(service.FindBestIdentity(otherProbe.data(), otherProbe.size(), 0.8f).has_value(),
+              "other account can still authenticate while withdrawal cleanup fails");
+        Check(!stale.SaveDatabase(true), "stale writer cannot persist withdrawn templates or refresh backup");
+        facelogin::CredentialStore restarted;
+        restarted.SetDataDir(root);
+        Check(!restarted.RetryPendingWithdrawals() && restarted.LoadDatabase(),
+              "restart can retry failed cleanup and load independent deny list");
+        restarted.ReleasePlaintext();
+        Check(restarted.RestorePlaintext() && !restarted.LoadCredentialForSid(alice) &&
+              !restarted.FindBestIdentity(probe.data(), probe.size(), 0.8f),
+              "reload and encrypted snapshot restore cannot reactivate pending account");
+        Check(restarted.RenameFace(alice, 1, L"stale") && !restarted.SaveDatabase(),
+              "enrollment edit cannot revive a pending account");
+        CloseHandle(backup);
+        Check(restarted.RetryPendingWithdrawals() && !restarted.HasPendingWithdrawals(),
+              "automatic retry finishes without console involvement");
+        Check(restarted.GetFaceCount(alice) == 0 && restarted.GetFaceCount(bob) == 1 &&
+              GetFileAttributesW(marker.c_str()) == INVALID_FILE_ATTRIBUTES &&
+              GetFileAttributesW((path + L".bak").c_str()) == INVALID_FILE_ATTRIBUTES,
+              "completed withdrawal removes account, backup and journal but preserves other account");
+    }
+    Check(service.WithdrawPersistedAccount(alice) && service.WithdrawPersistedAccount(alice),
+          "lost-response withdrawal retry is idempotent");
+    Check(!stale.SaveDatabase(), "pre-withdrawal snapshot cannot resurrect deleted account after journal removal");
+    Check(!service.WithdrawPersistedAccount(L"..\\escape") &&
+          !service.WithdrawPersistedAccount(L"SY"), "journal accepts canonical SIDs only");
+
+    // Primary commit failure must also preserve the deny list across restart.
+    Check(service.AddFace(L"alice", L"", alice, password, probe) && service.SaveDatabase(),
+          "re-enrollment after confirmed deletion can be persisted");
+    HANDLE main = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    Check(main != INVALID_HANDLE_VALUE, "lock main database against replacement");
+    if (main != INVALID_HANDLE_VALUE) {
+        Check(!service.WithdrawPersistedAccount(alice) && service.LoadDatabase() &&
+              !service.LoadCredentialForSid(alice), "failed primary commit stays blocked after reload");
+        CloseHandle(main);
+        Check(service.RetryPendingWithdrawals(), "primary commit retry completes");
+    }
+    { std::ofstream malformed(path + L".withdraw.invalid", std::ios::binary); }
+    Check(!service.LoadDatabase() && !service.RestorePlaintext() && !service.LoadCredentialForSid(bob),
+          "malformed journal fails closed instead of ignoring withdrawal state");
+    DeleteFileW((path + L".withdraw.invalid").c_str());
+    Check(service.LoadDatabase(), "journal repair permits reload");
+    CleanupTempRoot(root);
+}
+
 void TestPrivacyDeletion() {
     const auto root = MakeTempRoot();
     Check(!root.empty(), "create privacy fixture");
@@ -822,6 +896,7 @@ int wmain(int argc, wchar_t** argv) {
     if (argc == 2 && std::wstring(argv[1]) == L"--benchmark-unseal") return BenchmarkTemplateUnseal();
     if (argc != 1) return 2;
     TestEncryptedTemplateBoundary();
+    TestDurableWithdrawal();
     TestPrivacyDeletion();
     TestIdentityScopedProtection();
     TestAtomicSaveFailure();

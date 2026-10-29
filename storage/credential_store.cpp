@@ -8,6 +8,7 @@
 #include <iterator>
 #include <sstream>
 #include <cstring>
+#include <sddl.h>
 
 namespace facelogin {
 
@@ -44,6 +45,7 @@ void CredentialStore::ReleasePlaintext() {
 }
 
 bool CredentialStore::RestorePlaintext() {
+    if (!ReadPendingWithdrawals()) return false;
     if (!m_recordsSealed) return true;
     if (!m_hasDiskSnapshot) return false;
     if (!m_diskExists) { m_recordsSealed = false; m_users.clear(); return true; }
@@ -154,7 +156,7 @@ bool CredentialStore::LoadDatabase() {
     DatabaseLock lock(GetDataDir());
     const auto path = GetDataDir() + L"\\data\\users.dat";
     m_hasDiskSnapshot = false;
-    if (!lock.valid() || !LoadDatabaseFile(path, false)) return false;
+    if (!lock.valid() || !ReadPendingWithdrawals() || !LoadDatabaseFile(path, false)) return false;
     m_hasDiskSnapshot = ReadDiskSnapshot(path, m_diskExists, m_diskSnapshot);
     return m_hasDiskSnapshot;
 }
@@ -364,7 +366,10 @@ bool CredentialStore::SaveDatabase(bool refreshBackup) {
     const auto path = GetDataDir() + L"\\data\\users.dat";
     bool exists = false;
     std::string bytes;
-    if (!lock.valid() || !ReadDiskSnapshot(path, exists, bytes)) return false;
+    if (!lock.valid() || !ReadPendingWithdrawals() || !ReadDiskSnapshot(path, exists, bytes)) return false;
+    // Never persist an old snapshot containing a withdrawn account, including
+    // an enrollment or learner edit while deletion is waiting on recovery files.
+    for (const auto& user : m_users) if (IsWithdrawalBlocked(user.sid)) return false;
     if ((m_hasDiskSnapshot && (exists != m_diskExists || bytes != m_diskSnapshot)) ||
         (!m_hasDiskSnapshot && exists)) {
         FACELOGIN_ERROR(L"Database changed on disk; reload before saving stale records");
@@ -415,6 +420,110 @@ bool CredentialStore::DeletePersistedFace(const std::wstring& sid, uint32_t face
     m_purgeBackupOnSave = false;
     m_hasDiskSnapshot = ReadDiskSnapshot(path, m_diskExists, m_diskSnapshot);
     return m_hasDiskSnapshot;
+}
+
+namespace {
+constexpr wchar_t kWithdrawalPrefix[] = L"users.dat.withdraw.";
+
+bool IsCanonicalSid(const std::wstring& sid) {
+    if (sid.empty() || sid.size() > SECURITY_MAX_SID_STRING_CHARACTERS ||
+        sid.find(L'\0') != std::wstring::npos) return false;
+    PSID parsed = nullptr;
+    if (!ConvertStringSidToSidW(sid.c_str(), &parsed)) return false;
+    LPWSTR canonical = nullptr;
+    const bool ok = ConvertSidToStringSidW(parsed, &canonical) && sid == canonical;
+    if (canonical) LocalFree(canonical);
+    LocalFree(parsed);
+    return ok;
+}
+}
+
+bool CredentialStore::ReadPendingWithdrawals() {
+    m_withdrawalsReadable = false;
+    m_pendingWithdrawals.clear();
+    const auto directory = GetDataDir() + L"\\data\\";
+    WIN32_FIND_DATAW entry{};
+    HANDLE search = FindFirstFileW((directory + kWithdrawalPrefix + L"*").c_str(), &entry);
+    if (search == INVALID_HANDLE_VALUE) {
+        const auto error = GetLastError();
+        m_withdrawalsReadable = error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+        return m_withdrawalsReadable;
+    }
+    bool ok = true;
+    do {
+        const std::wstring sid = std::wstring(entry.cFileName).substr(wcslen(kWithdrawalPrefix));
+        if (!IsCanonicalSid(sid) ||
+            (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+            entry.nFileSizeHigh || entry.nFileSizeLow || m_pendingWithdrawals.size() >= 4096) {
+            ok = false;
+            break;
+        }
+        m_pendingWithdrawals.push_back(sid);
+    } while (FindNextFileW(search, &entry));
+    if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = false;
+    FindClose(search);
+    m_withdrawalsReadable = ok;
+    if (!ok) FACELOGIN_ERROR(L"Withdrawal journal unreadable; authentication refused");
+    return ok;
+}
+
+bool CredentialStore::IsWithdrawalBlocked(const std::wstring& sid) const {
+    return !m_withdrawalsReadable ||
+        std::find(m_pendingWithdrawals.begin(), m_pendingWithdrawals.end(), sid) != m_pendingWithdrawals.end();
+}
+
+bool CredentialStore::WithdrawPersistedAccount(const std::wstring& sid) {
+    if (!IsCanonicalSid(sid)) return false;
+    {
+        DatabaseLock lock(GetDataDir());
+        if (!lock.valid()) {
+            FACELOGIN_ERROR(L"Withdrawal refused: database lock unavailable (%lu)", GetLastError());
+            return false;
+        }
+        const auto path = GetDataDir() + L"\\data\\" + kWithdrawalPrefix + sid;
+        HANDLE marker = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                    FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_WRITE_THROUGH, nullptr);
+        if (marker == INVALID_HANDLE_VALUE) {
+            if (GetLastError() != ERROR_FILE_EXISTS) {
+                FACELOGIN_ERROR(L"Withdrawal intent creation failed (%lu)", GetLastError());
+                return false;
+            }
+        } else {
+            const bool flushed = FlushFileBuffers(marker) != FALSE;
+            const auto error = GetLastError();
+            CloseHandle(marker);
+            if (!flushed) {
+                FACELOGIN_ERROR(L"Withdrawal intent flush failed (%lu)", error);
+                m_withdrawalsReadable = false;
+                return false;
+            }
+        }
+        if (!ReadPendingWithdrawals()) return false;
+    }
+    // The journal survives any failure from here onward. Repeating the request
+    // is safe after lost responses, partial cleanup and process termination.
+    RetryPendingWithdrawals();
+    return m_withdrawalsReadable && !IsWithdrawalBlocked(sid);
+}
+
+bool CredentialStore::RetryPendingWithdrawals() {
+    if (!ReadPendingWithdrawals()) return false;
+    const auto pending = m_pendingWithdrawals;
+    if (pending.empty()) return true;
+    bool ok = true;
+    for (const auto& sid : pending) {
+        if (!DeletePersistedFace(sid)) { ok = false; continue; }
+        DatabaseLock lock(GetDataDir());
+        const auto path = GetDataDir() + L"\\data\\" + kWithdrawalPrefix + sid;
+        if (!lock.valid() || (!DeleteFileW(path.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND)) {
+            FACELOGIN_ERROR(L"Withdrawal journal completion failed (%lu)", GetLastError());
+            ok = false;
+        }
+    }
+    // A failed primary commit invalidates its old cached snapshot. Reload the
+    // disk state with the independent deny list so other accounts remain usable.
+    const bool loaded = LoadDatabase();
+    return loaded && ok;
 }
 
 bool CredentialStore::UpgradeLegacyPasswords() {
@@ -849,6 +958,7 @@ std::optional<CredentialStore::IdentityMatch> CredentialStore::FindBestIdentity(
     size_t comparableAccounts = 0;
 
     for (size_t i = 0; i < m_users.size(); i++) {
+        if (IsWithdrawalBlocked(m_users[i].sid)) continue;
         const auto& faces = m_users[i].faces;
         float accountBest = kInitDistance, accountSecond = kInitDistance;
         uint32_t accountBestFaceId = 0;
@@ -942,7 +1052,7 @@ CredentialStore::GetAccountFaceDistances(const std::wstring& sid,
                                          const float probeEmbedding[],
                                          size_t probeDim) const {
     std::vector<AccountFaceDistance> out;
-    if (!probeEmbedding || probeDim == 0) return out;
+    if (!probeEmbedding || probeDim == 0 || IsWithdrawalBlocked(sid)) return out;
     size_t idx = FindUserIndex(sid, L"", L"");
     if (idx >= m_users.size()) return out;
     for (const auto& face : m_users[idx].faces) {
@@ -1030,6 +1140,7 @@ bool CredentialStore::UpdateTemplateFace(const std::wstring& sid, uint32_t faceI
 
 std::optional<CredentialStore::MatchResult> CredentialStore::LoadCredentialForSid(
     const std::wstring& sid, float distance) {
+    if (IsWithdrawalBlocked(sid)) return std::nullopt;
     if (sid.empty()) {
         FACELOGIN_ERROR(L"LoadCredentialForSid called with an empty SID");
         return std::nullopt;

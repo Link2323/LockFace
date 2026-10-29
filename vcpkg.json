@@ -1,6 +1,6 @@
 {
     "name": "lockface",
-    "version-string": "1.9.0",
+    "version-string": "1.9.1",
     "description": "Custom face recognition login for Windows 11",
     "homepage": "https://github.com/Link2323/LockFace",
     "dependencies": [

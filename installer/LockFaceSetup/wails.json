@@ -8,8 +8,8 @@
   "frontend:dev:serverUrl": "auto",
   "Info": {
     "productName": "LockFace Setup",
-    "productVersion": "1.9.0",
-    "fileVersion": "1.9.0",
+    "productVersion": "1.9.1",
+    "fileVersion": "1.9.1",
     "fileDescription": "LockFace installer"
   }
 }

@@ -56,6 +56,7 @@
 | `AUTH_ACK` | CP → 服务 | CP 已复制并擦除终态传输缓冲区；服务最多等待 2 秒 |
 | `RELOAD_DB` / `RELOAD_OK` | 控制台 ↔ 服务 | 凭据数据库保存后热重载；客户端必须保持双向连接并等到 `RELOAD_OK`，不能写完即关闭 |
 | `DELETE_ENROLLMENT:SID:faceId` / `DELETE_ENROLLMENT_OK` / `DELETE_ENROLLMENT_ERROR` | 控制台 ↔ 服务 | 服务在存储锁内执行删除、清理备份与原子保存；faceId 为 uint32 十进制，0 删除整个账户，正数删除指定脸，目标不存在视为成功。SID 须合法；服务显式验证客户端 SYSTEM/启用的管理员组。客户端验证 SCM PID 与 SYSTEM 服务身份，收到 OK 才显示完成，并回 `CONTROL_ACK`；连接或响应丢失可安全重试。服务不可用时不回退到注册端直接写库。详细保存失败语义见 users.dat 契约；产品组件须同步升级。 |
+| `WITHDRAW_CONSENT:SID` / `WITHDRAW_CONSENT_OK` / `WITHDRAW_CONSENT_ERROR` | 控制台 ↔ 服务 | 专用撤回请求；规范 SID 必须等于实际客户端 TokenUser SID，服务验证管理员/SYSTEM 权限及自身 SYSTEM 身份。先持久保存服务端待办，禁止该账户匹配与凭据解密，再删除账户及恢复文件。删除或提交失败仍保持禁用，启动及运行期间自动重试；服务待办清理完成才返回 OK。客户端验证 SCM PID/SYSTEM 并回 `CONTROL_ACK`，仅 OK 后清理 HKCU 同意及待办。ERROR 或连接丢失不能证明服务是否已接受撤回，必须保留客户端待办；重复请求幂等。服务收到请求之前不能保证认证停用。 |
 | `CONFIG_RELOAD` / `CONFIG_RELOAD_OK` / `CONFIG_RELOAD_ERROR` | 控制台 ↔ 服务 | 配置热重载；无效活体配置保持 fail-closed |
 | `PROTECT_PASSWORD:password` / `PROTECT_PASSWORD_OK:HEX` / `PROTECT_PASSWORD_ERROR` | 控制台 ↔ 服务 | 仅加密，SYSTEM 服务使用用户作用域 DPAPI；密码为前缀之后全部字符（可含冒号），1..256 个 UTF-16 code units，不含内嵌 NUL。响应为 2..4096 字节密文的大写十六进制编码，客户端读取后回 `CONTROL_ACK`；无解密接口，无机器作用域回退 |
 | `LEARNING_STATUS` | 控制台 ↔ 服务 | 只读查询渐进式学习状态；响应为单条 JSON（`enabled`/`gate_cap`/`faces[]`/`recent[]`，无 OK/ERROR 后缀），服务端同步组装。数据为内存快照，服务重启清零（持久事实源是日志）。客户端读取后回 `CONTROL_ACK`。管道单实例，控制台侧按 10s 节流，不得变成高频轮询 |

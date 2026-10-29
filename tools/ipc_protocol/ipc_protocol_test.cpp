@@ -204,6 +204,17 @@ void TestMalformedMessagesFailClosed() {
 
 void TestDeletionMessages() {
     std::wstring sid;
+    Check(facelogin::ipc::ParseWithdrawConsent(L"WITHDRAW_CONSENT:S-1-5-21-111-222-333-1001", sid) &&
+          sid == L"S-1-5-21-111-222-333-1001", "withdrawal carries one canonical account SID");
+    for (const auto value : {L"WITHDRAW_CONSENT:", L"WITHDRAW_CONSENT:SY", L"WITHDRAW_CONSENT:bad-sid",
+                             L"WITHDRAW_CONSENT:S-1-5-18:0", L"DELETE_ENROLLMENT:S-1-5-18:0"}) {
+        Check(!facelogin::ipc::ParseWithdrawConsent(value, sid) && sid.empty(), "malformed withdrawal fails closed");
+    }
+    std::wstring embeddedNull = L"WITHDRAW_CONSENT:S-1-5-18";
+    embeddedNull.push_back(L'\0');
+    embeddedNull += L"suffix";
+    Check(!facelogin::ipc::ParseWithdrawConsent(embeddedNull, sid),
+          "withdrawal rejects embedded NUL");
     uint32_t id = 0;
     const std::wstring prefix = L"DELETE_ENROLLMENT:S-1-5-21-111-222-333-1001:";
     Check(facelogin::ipc::ParseDeleteEnrollment(prefix + L"0", sid, id) && id == 0 &&

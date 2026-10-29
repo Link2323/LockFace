@@ -398,7 +398,11 @@ bool FaceService::Initialize() {
 
     m_store = std::make_unique<CredentialStore>();
     m_store->SetDataDir(m_dataDir);
-    if (!m_store->UpgradeLegacyPasswords() || !m_store->LoadDatabase()) {
+    if (!m_store->UpgradeLegacyPasswords()) return false;
+    // Retry accepted withdrawals before exposing authentication. Cleanup failure
+    // keeps the durable account deny list; a corrupt/unreadable list fails load.
+    m_store->RetryPendingWithdrawals();
+    if (!m_store->LoadDatabase()) {
         FACELOGIN_ERROR(L"Failed to load credential database");
         return false;
     }
@@ -462,9 +466,21 @@ std::shared_ptr<AuthWorkerClient> FaceService::LoadAuthenticationWorker(
 
 void FaceService::Run() {
     m_running = true;
+    ULONGLONG nextWithdrawalRetry = GetTickCount64() + 30000;
 
     while (m_running) {
-        if (!m_pipeServer->WaitForClient(60000)) {
+        if (GetTickCount64() >= nextWithdrawalRetry) {
+            if (m_store->HasPendingWithdrawals()) {
+                m_learner.reset();
+                EnterCriticalSection(&m_storeLock);
+                m_store->RetryPendingWithdrawals();
+                m_store->ReleasePlaintext();
+                LeaveCriticalSection(&m_storeLock);
+                StartTemplateLearner();
+            }
+            nextWithdrawalRetry = GetTickCount64() + 30000;
+        }
+        if (!m_pipeServer->WaitForClient(30000)) {
             if (!m_running) break;
             continue;
         }
@@ -521,6 +537,23 @@ void FaceService::Run() {
             }
             SecureClearWString(request);
             SendControlResponse(response);
+            m_pipeServer->Disconnect();
+        }
+        else if (request.starts_with(ipc::MSG_WITHDRAW_CONSENT_PREFIX)) {
+            std::wstring sid, callerSid;
+            bool deleted = false;
+            // Bind withdrawal to the actual caller, never a self-reported SID.
+            if (m_pipeServer->IsClientPrivileged() && DpapiUtil::IsSystemContext() &&
+                m_pipeServer->GetClientSid(callerSid) &&
+                ipc::ParseWithdrawConsent(request, sid) && sid == callerSid) {
+                m_learner.reset();
+                EnterCriticalSection(&m_storeLock);
+                deleted = m_store->WithdrawPersistedAccount(sid);
+                m_store->ReleasePlaintext();
+                LeaveCriticalSection(&m_storeLock);
+                StartTemplateLearner();
+            }
+            SendControlResponse(deleted ? ipc::MSG_WITHDRAW_CONSENT_OK : ipc::MSG_WITHDRAW_CONSENT_ERROR);
             m_pipeServer->Disconnect();
         }
         else if (request.compare(0, wcslen(ipc::MSG_DELETE_ENROLLMENT_PREFIX),

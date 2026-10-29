@@ -13,6 +13,23 @@ static bool IsValidSid(const std::wstring& value) {
     return valid == TRUE;
 }
 
+bool ParseWithdrawConsent(const std::wstring& message, std::wstring& sid) {
+    sid.clear();
+    const std::wstring prefix(MSG_WITHDRAW_CONSENT_PREFIX);
+    if (!message.starts_with(prefix)) return false;
+    const auto value = message.substr(prefix.size());
+    if (value.size() > SECURITY_MAX_SID_STRING_CHARACTERS ||
+        value.find(L'\0') != std::wstring::npos || !IsValidSid(value)) return false;
+    PSID parsed = nullptr;
+    LPWSTR canonical = nullptr;
+    if (!ConvertStringSidToSidW(value.c_str(), &parsed)) return false;
+    const bool ok = ConvertSidToStringSidW(parsed, &canonical) && value == canonical;
+    if (canonical) LocalFree(canonical);
+    LocalFree(parsed);
+    if (ok) sid = value;
+    return ok;
+}
+
 bool ParseDeleteEnrollment(const std::wstring& message, std::wstring& sid, uint32_t& faceId) {
     sid.clear();
     faceId = 0;

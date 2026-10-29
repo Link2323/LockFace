@@ -26,6 +26,7 @@ public:
     std::string GetFacesJson();
     bool DeleteFace(int faceId);
     bool ClearAllFaces();
+    bool WithdrawConsent();
     bool RenameFace(int faceId, const std::wstring& label);
     std::string GetSaveStatus() const { return m_saveStatus; }
     int GetAccountTypeChanged();

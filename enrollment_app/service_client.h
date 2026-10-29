@@ -19,12 +19,14 @@ public:
     bool ReloadDatabase() const;
     bool AccountRequest(const enrollment::Request& request, enrollment::Snapshot& snapshot) const;
     bool DeleteEnrollment(const std::wstring& sid, uint32_t faceId = 0) const;
+    bool WithdrawConsent(const std::wstring& sid) const;
     bool ReloadConfig() const;
     bool ProtectPassword(const std::wstring& password, std::vector<uint8_t>& encrypted) const;
     // Returns the service JSON snapshot or the existing JSON error response.
     std::string QueryLearningStatus() const;
 
 private:
+    bool DeleteEnrollmentRequest(const std::wstring& sid, uint32_t faceId, bool withdrawal) const;
     std::wstring m_pipeName;
 };
 

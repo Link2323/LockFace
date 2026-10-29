@@ -84,6 +84,11 @@ EnrollmentWizard::EnrollmentWizard() {
 
     m_webcam     = std::make_unique<WebcamCaptureDS>();
     m_accounts = std::make_unique<EnrollmentAccounts>(m_dataDir, m_identity, m_serviceClient);
+    // Retry intent that could not reach the service before the last exit. Do
+    // this before any preview or account repair; failures retain the UI gate.
+    if (PrivacyWithdrawal().Read() == PrivacyWithdrawalState::Pending) {
+        PrivacyWithdrawal().Run([this]() { return m_accounts->WithdrawConsent(); });
+    }
 
     m_config = LoadConfig(m_dataDir);
     m_antiSpoofThreshold = m_config.anti_spoof_threshold;
@@ -575,7 +580,7 @@ bool EnrollmentWizard::ClearAllFaces() { return m_accounts->ClearAllFaces(); }
 bool EnrollmentWizard::WithdrawPrivacyConsent() {
     StopPreview();
     m_capture.ClearSavedSamples();
-    return PrivacyWithdrawal().Run([this]() { return m_accounts->ClearAllFaces(); });
+    return PrivacyWithdrawal().Run([this]() { return m_accounts->WithdrawConsent(); });
 }
 bool EnrollmentWizard::RenameFace(int faceId, const std::wstring& label) {
     return m_accounts->RenameFace(faceId, label);

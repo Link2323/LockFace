@@ -119,6 +119,8 @@ public:
         m_dataDir = dir;
         m_hasDiskSnapshot = false;
         m_diskSnapshot.clear();
+        m_pendingWithdrawals.clear();
+        m_withdrawalsReadable = false;
     }
 
     // Load users.dat from disk. Returns true on success.
@@ -134,6 +136,12 @@ public:
     // Service only, under its store lock. Zero removes the account; otherwise
     // removes one face. Idempotent, purges the old backup before committing.
     bool DeletePersistedFace(const std::wstring& sid, uint32_t faceId = 0);
+
+    // Persist withdrawal intent before deletion. Failed cleanup remains blocked
+    // across reload/restart and is retried by the service, independently of UI.
+    bool WithdrawPersistedAccount(const std::wstring& sid);
+    bool RetryPendingWithdrawals();
+    bool HasPendingWithdrawals() const { return !m_withdrawalsReadable || !m_pendingWithdrawals.empty(); }
 
     // Get all loaded user records
     const std::vector<UserRecord>& GetUsers() const { return m_users; }
@@ -319,6 +327,10 @@ public:
     std::wstring GetDataDir() const;
 
 private:
+    bool ReadPendingWithdrawals();
+    bool IsWithdrawalBlocked(const std::wstring& sid) const;
+    bool m_withdrawalsReadable = true;
+    std::vector<std::wstring> m_pendingWithdrawals;
     bool LoadDatabaseFile(const std::wstring& path, bool allowLegacy);
     bool LoadDatabaseBytes(std::string_view bytes, bool allowLegacy);
     bool m_recordsSealed = false;

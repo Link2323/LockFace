@@ -82,6 +82,12 @@ bool EnrollmentAccounts::ClearAllFaces() {
     return confirmed;
 }
 
+bool EnrollmentAccounts::WithdrawConsent() {
+    const bool confirmed = m_serviceClient.WithdrawConsent(session_identity::GetCurrentProcessUserSid());
+    m_saveStatus = confirmed ? "saved" : "failed";
+    return confirmed;
+}
+
 bool EnrollmentAccounts::RenameFace(int faceId, const std::wstring& label) {
     m_saveStatus = "failed";
     if (faceId <= 0) return false;

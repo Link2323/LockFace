@@ -208,11 +208,21 @@ bool EnrollmentServiceClient::AccountRequest(const enrollment::Request& request,
 }
 
 bool EnrollmentServiceClient::DeleteEnrollment(const std::wstring& sid, uint32_t faceId) const {
-    const std::wstring request = std::wstring(ipc::MSG_DELETE_ENROLLMENT_PREFIX) +
-        sid + L":" + std::to_wstring(faceId);
+    return DeleteEnrollmentRequest(sid, faceId, false);
+}
+
+bool EnrollmentServiceClient::WithdrawConsent(const std::wstring& sid) const {
+    return DeleteEnrollmentRequest(sid, 0, true);
+}
+
+bool EnrollmentServiceClient::DeleteEnrollmentRequest(const std::wstring& sid, uint32_t faceId, bool withdrawal) const {
+    const std::wstring request = withdrawal
+        ? std::wstring(ipc::MSG_WITHDRAW_CONSENT_PREFIX) + sid
+        : std::wstring(ipc::MSG_DELETE_ENROLLMENT_PREFIX) + sid + L":" + std::to_wstring(faceId);
     std::wstring parsedSid;
     uint32_t parsedId = 0;
-    if (!ipc::ParseDeleteEnrollment(request, parsedSid, parsedId)) return false;
+    if (withdrawal ? !ipc::ParseWithdrawConsent(request, parsedSid)
+                   : !ipc::ParseDeleteEnrollment(request, parsedSid, parsedId)) return false;
     // Retry is safe even if the first acknowledgement was lost.
     for (unsigned attempt = 0; attempt < 5; ++attempt) {
         HANDLE pipe = ConnectEnrollmentPipe(m_pipeName);
@@ -229,7 +239,7 @@ bool EnrollmentServiceClient::DeleteEnrollment(const std::wstring& sid, uint32_t
         }
         const auto outcome = RequestAckRoundTrip(pipe, request, 5000, 25, L"privacy deletion");
         CloseHandle(pipe);
-        if (outcome.ok) return outcome.response == ipc::MSG_DELETE_ENROLLMENT_OK;
+        if (outcome.ok) return outcome.response == (withdrawal ? ipc::MSG_WITHDRAW_CONSENT_OK : ipc::MSG_DELETE_ENROLLMENT_OK);
     }
     return false;
 }

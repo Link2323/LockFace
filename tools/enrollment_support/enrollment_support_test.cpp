@@ -332,7 +332,7 @@ void TestEnrollmentEndpointVerification() {
     Check(received.empty(), "fake endpoint receives no biometric request bytes");
 }
 
-void TestDeletionEndpointVerification() {
+void TestDeletionEndpointVerification(bool withdrawal = false) {
     const std::wstring name = L"\\\\.\\pipe\\LockFace.FakeDeletionService." +
         std::to_wstring(GetCurrentProcessId());
     HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
@@ -352,12 +352,14 @@ void TestDeletionEndpointVerification() {
         DisconnectNamedPipe(pipe);
     });
     facelogin::EnrollmentServiceClient client(name);
-    Check(!client.DeleteEnrollment(L"S-1-5-21-111-222-333-1001"),
+    Check(!(withdrawal ? client.WithdrawConsent(L"S-1-5-21-111-222-333-1001")
+                       : client.DeleteEnrollment(L"S-1-5-21-111-222-333-1001")),
           "deletion rejects a server outside the SCM SYSTEM service");
     server.join();
     CloseHandle(pipe);
     Check(received.empty(), "fake service receives no deletion target");
     Check(!client.DeleteEnrollment(L"bad-sid"), "malformed deletion target rejected before connection");
+    Check(!client.WithdrawConsent(L"bad-sid"), "malformed withdrawal rejected before connection");
 }
 
 void TestPipeClientAuthorization() {
@@ -691,6 +693,7 @@ int main() {
     TestServiceClient();
     TestPasswordEndpointVerification();
     TestDeletionEndpointVerification();
+    TestDeletionEndpointVerification(true);
     TestEnrollmentEndpointVerification();
     TestEnrollmentReconnectGap();
     TestPipeClientAuthorization();
